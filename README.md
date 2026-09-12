@@ -56,14 +56,6 @@ Copy-Item config.example.yaml config.yaml
 Copy-Item .env.example .env
 ```
 
-如果研究方向是 AgenticT2I，可直接使用已经过实际检索调优的脱敏模板：
-
-```powershell
-Copy-Item config.agentict2i.example.yaml config.yaml
-```
-
-该模板使用 45 天滚动候选池，并要求论文同时命中 Agent/LLM/VLM 与视觉生成/编辑两条概念轴；每个方向独立的状态文件会防止每日重复推荐。
-
 如果希望提升矢量图、复杂布局和图注关联效果：
 
 ```powershell

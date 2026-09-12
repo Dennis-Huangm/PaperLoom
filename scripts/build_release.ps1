@@ -35,7 +35,6 @@ $files = @(
     ".env.example",
     ".gitignore",
     "CHANGELOG.md",
-    "config.agentict2i.example.yaml",
     "config.example.yaml",
     "LICENSE",
     "pyproject.toml",
