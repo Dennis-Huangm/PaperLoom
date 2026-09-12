@@ -2,7 +2,7 @@
 
 面向 AI 研究者的本地优先科研助手：按时间范围抓取 arXiv 新论文，依据研究兴趣排序并发送每日推荐；需要深读时，再按 arXiv ID 主动生成中文阅读报告和方法图。
 
-当前版本：**v1.2.0**。发布说明见 [`RELEASE_NOTES_v1.2.0.md`](RELEASE_NOTES_v1.2.0.md)。第一份正式版 v1.0.0 仍保存在 `release/v1.0.0/`。
+当前版本：**v1.2.0**。发布说明见 [`RELEASE_NOTES_v1.2.0.md`](RELEASE_NOTES_v1.2.0.md)，历史版本变更统一记录在 [`CHANGELOG.md`](CHANGELOG.md)。
 
 开发与维护请先阅读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；正式打包按
 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) 逐项核对。

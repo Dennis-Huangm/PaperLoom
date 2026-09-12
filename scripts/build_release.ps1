@@ -47,8 +47,11 @@ foreach ($name in $files) {
         Copy-Item -LiteralPath $source -Destination $packageRoot
     }
 }
-Get-ChildItem -LiteralPath $projectRoot -File -Filter "RELEASE_NOTES_v*.md" |
-    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $packageRoot }
+$currentReleaseNotes = Join-Path $projectRoot "RELEASE_NOTES_v$Version.md"
+if (-not (Test-Path -LiteralPath $currentReleaseNotes)) {
+    throw "Release notes not found: $currentReleaseNotes"
+}
+Copy-Item -LiteralPath $currentReleaseNotes -Destination $packageRoot
 
 $qaArtifacts = Join-Path $packageRoot "docs\qa"
 if (Test-Path -LiteralPath $qaArtifacts) {
