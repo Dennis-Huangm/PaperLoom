@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}研究方向 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading profile-heading">
+    <div><p class="section-kicker">RESEARCH PROFILES</p><h1>研究方向</h1><p>把一组关键词和参考论文整理成可随时切换的检索档案。</p></div>
+    <span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>当前：{{ config.profile_name }}</span>
+  </header>
+  {% if saved %}<div class="notice success">✓ 新方向已生成并保存；{% if saved == active_profile %}现在已启用。{% else %}可在下方手动启用。{% endif %}</div>{% endif %}
+  {% if switched %}<div class="notice success">✓ 已切换研究方向。后续手动检索、定时任务和推荐邮件均使用新档案。</div>{% endif %}
+
+  <div class="profile-layout">
+    <section class="profile-create-card">
+      <p class="section-kicker">CREATE WITH AI</p>
+      <h2>创建新检索档案</h2>
+      <p class="profile-intro">系统会读取参考论文的标题、摘要与 arXiv 类别，再结合关键词生成检索词、概念组和排序配置。</p>
+      <form method="post" action="/profiles/create" class="profile-form">
+        <label>方向名称<input name="name" placeholder="例如：具身智能中的世界模型" maxlength="80" required></label>
+        <label>一句话描述（可选）<textarea name="description" rows="3" placeholder="你具体想解决什么问题，关注哪些方法或场景"></textarea></label>
+        <label>重点关键词<textarea name="keywords" rows="5" placeholder="每行一个，或使用逗号分隔&#10;world model&#10;embodied agent&#10;video prediction"></textarea></label>
+        <label>参考论文 arXiv ID<textarea name="reference_ids" rows="5" placeholder="每行一个，例如：&#10;2407.05600"></textarea><small>最多分析前 12 篇；关键词和参考论文至少填写一项。</small></label>
+        <label>不感兴趣的方向（可选）<textarea name="negative_keywords" rows="3" placeholder="survey, medical imaging"></textarea></label>
+        <div class="profile-form-footer">
+          <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
+          <label class="check-row compact-check"><input type="checkbox" name="activate" value="true" checked><span><strong>创建后立即启用</strong><small>后续任务使用该方向</small></span></label>
+          <button class="button primary" type="submit"><i class="fas fa-magic" aria-hidden="true"></i>生成并保存</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="profile-library">
+      <header><div><p class="section-kicker">SAVED PROFILES</p><h2>已保存方向</h2></div><span>{{ profiles|length }} 个档案</span></header>
+      <div class="profile-list">
+        {% for profile in profiles %}
+        <article class="profile-card {% if profile.active %}active{% endif %}">
+          <div class="profile-card-top">
+            <div><span class="profile-id">{{ profile.id }}</span><h3>{{ profile.name }}</h3></div>
+            {% if profile.active %}<span class="profile-state"><i class="fas fa-check" aria-hidden="true"></i>当前方向</span>{% else %}
+            <form method="post" action="/profiles/{{ profile.id }}/activate"><button class="button subtle" type="submit">切换到此方向</button></form>{% endif %}
+          </div>
+          <p>{{ profile.description or '尚未填写方向描述。' }}</p>
+          <div class="profile-tags">{% for keyword in profile.keywords[:8] %}<span>{{ keyword }}</span>{% endfor %}</div>
+          {% if profile.references %}<div class="profile-references"><strong>参考论文</strong>{% for paper in profile.references[:4] %}<span>arXiv:{{ paper.arxiv_id }} · {{ paper.title }}</span>{% endfor %}</div>{% endif %}
+          <footer><span><i class="far fa-calendar" aria-hidden="true"></i>回溯 {{ profile.lookback_days }} 天</span><span><i class="far fa-file-alt" aria-hidden="true"></i>每日 {{ profile.recommendation_count }} 篇</span><code>{{ profile.path }}</code></footer>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}文献推荐 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <section class="literature-toolbar" aria-label="文献搜索与筛选">
+    <label class="global-search">
+      <i class="fas fa-search" aria-hidden="true"></i>
+      <input id="paper-search" type="search" placeholder="搜索标题、作者或 arXiv ID" autocomplete="off">
+      <kbd>Ctrl K</kbd>
+    </label>
+    <button class="search-submit" type="button" id="paper-search-button">搜索</button>
+  </section>
+
+  <section class="filter-bar" aria-label="文献筛选">
+    <div class="filter-label"><i class="fas fa-filter" aria-hidden="true"></i><span>筛选</span></div>
+    <button class="filter-chip active" type="button" data-paper-filter="all">全部 <b>{{ recommendations|length }}</b></button>
+    <button class="filter-chip" type="button" data-paper-filter="high">高相关</button>
+    <button class="filter-chip" type="button" data-paper-filter="verified">已核实</button>
+    <label class="filter-select">分类
+      <select id="category-filter">
+        <option value="all">全部分类</option>
+        {% set categories = [] %}
+        {% for item in recommendations %}
+          {% if item.paper.primary_category not in categories %}{% set _ = categories.append(item.paper.primary_category) %}<option value="{{ item.paper.primary_category }}">{{ item.paper.primary_category }}</option>{% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <div class="history-calendar-control">
+      <button id="recommendation-calendar-trigger" class="history-calendar-trigger" type="button" aria-haspopup="dialog" aria-controls="recommendation-calendar-dialog" {% if not recommendation_history %}disabled{% endif %}>
+        <i class="far fa-calendar-alt" aria-hidden="true"></i><span>每日记录</span><strong>{{ selected_date or '暂无记录' }}</strong>{% if recommendations %}<em>{{ recommendations|length }} 篇</em>{% endif %}<i class="fas fa-chevron-down" aria-hidden="true"></i>
+      </button>
+    </div>
+    <span class="filter-note">按相关性排序</span>
+    <form class="zotero-form batch-zotero-form" action="/api/zotero/save-today" method="post"><input type="hidden" name="date_label" value="{{ selected_date }}"><button class="filter-clear" type="submit"><i class="fas fa-book" aria-hidden="true"></i>{% if is_latest %}今日{% else %}当日{% endif %}推荐存入 Zotero</button></form>
+    <button class="filter-clear" type="button" id="clear-paper-filters"><i class="fas fa-undo-alt" aria-hidden="true"></i>清除</button>
+  </section>
+
+  <dialog id="recommendation-calendar-dialog" class="recommendation-calendar-dialog" aria-labelledby="recommendation-calendar-title" data-selected-date="{{ selected_date }}">
+    <header>
+      <div><p class="section-kicker">DAILY ARCHIVE</p><h2 id="recommendation-calendar-title">每日推荐记录</h2></div>
+      <button id="recommendation-calendar-close" type="button" aria-label="关闭日历"><i class="fas fa-times" aria-hidden="true"></i></button>
+    </header>
+    <section class="calendar-picker">
+      <div class="calendar-month-nav">
+        <button id="calendar-previous-month" type="button" aria-label="上个月"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+        <strong id="calendar-month-title"></strong>
+        <button id="calendar-next-month" type="button" aria-label="下个月"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+      </div>
+      <div class="calendar-weekdays" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+      <div id="recommendation-calendar-grid" class="recommendation-calendar-grid" role="grid" aria-label="有推荐结果的日期"></div>
+    </section>
+    <footer>
+      <span id="calendar-result-summary">有推荐结果的日期可点击</span>
+      <button id="calendar-latest-date" class="button secondary" type="button"><i class="fas fa-bolt" aria-hidden="true"></i>查看最新</button>
+    </footer>
+  </dialog>
+  <script id="recommendation-history-data" type="application/json">{{ recommendation_history|tojson }}</script>
+
+  {% if recommendations %}
+  {% set selected = recommendations[0] %}
+  <section class="literature-workspace">
+    <div class="paper-list-panel">
+      <header class="list-head">
+        <span>{{ selected_date }} 推荐</span><span>相关性</span><span>日期</span>
+      </header>
+      <div class="paper-list" id="paper-list">
+        {% for item in recommendations %}
+        <button
+          class="paper-row {% if loop.first %}selected{% endif %}"
+          type="button"
+          data-paper-index="{{ loop.index0 }}"
+          data-category="{{ item.paper.primary_category }}"
+          data-score="{{ item.paper.final_score }}"
+          data-verified="{% if item.verified.venue %}true{% else %}false{% endif %}"
+          aria-pressed="{% if loop.first %}true{% else %}false{% endif %}">
+          <span class="row-select"><i class="{% if loop.first %}fas fa-check-square{% else %}far fa-square{% endif %}" aria-hidden="true"></i></span>
+          <span class="row-rank">{{ loop.index }}</span>
+          <span class="row-main">
+            <strong>{{ item.paper.title }}</strong>
+            <small>{% for author in item.paper.authors[:4] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if item.paper.authors|length > 4 %} et al.{% endif %}</small>
+          </span>
+          <span class="row-category">{{ item.paper.primary_category }}</span>
+          <span class="row-score">{{ '%.1f'|format(item.paper.final_score) }}</span>
+          <span class="row-date">{{ item.paper.published[5:10] }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      <div class="list-empty" id="paper-list-empty" hidden><i class="far fa-folder-open" aria-hidden="true"></i><p>没有符合当前筛选条件的论文。</p></div>
+    </div>
+
+    <article class="paper-inspector" aria-live="polite">
+      <header class="inspector-head">
+        <div><span id="inspector-position">1 / {{ recommendations|length }}</span><strong id="inspector-title">{{ selected.paper.title }}</strong></div>
+        <a id="inspector-arxiv" href="{{ selected.paper.abs_url }}" target="_blank" rel="noreferrer" aria-label="在 arXiv 打开"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
+      </header>
+
+      <div class="inspector-scroll">
+      <section class="inspector-section evidence-section">
+        <h2><i class="far fa-clipboard" aria-hidden="true"></i>推荐依据</h2>
+        <p id="inspector-reason">{{ selected.paper.recommendation_detail or selected.paper.recommendation_reason }}</p>
+      </section>
+
+      <section class="inspector-section abstract-section">
+        <h2><i class="far fa-file-alt" aria-hidden="true"></i>摘要精要</h2>
+        <p id="inspector-abstract">{{ selected.paper.abstract_zh or selected.paper.abstract }}</p>
+      </section>
+
+      <section class="inspector-section publication-section">
+        <h2><i class="far fa-newspaper" aria-hidden="true"></i>出版信息</h2>
+        <dl class="publication-grid">
+          <div><dt>会议或期刊</dt><dd id="inspector-venue">{{ selected.verified.venue or '出版信息待核实' }}</dd></div>
+          <div><dt>核验状态</dt><dd id="inspector-venue-status" class="status-text {% if selected.verified.venue_status == 'verified_metadata' %}verified{% elif selected.verified.venue_status == 'declared_in_arxiv' %}declared{% endif %}">{% if selected.verified.venue_status == 'verified_metadata' %}外部元数据已核实{% elif selected.verified.venue_status == 'declared_in_arxiv' %}作者在 arXiv 声明{% else %}待核实{% endif %}</dd></div>
+        </dl>
+      </section>
+
+      <section class="inspector-section keywords-section">
+        <h2><i class="fas fa-tags" aria-hidden="true"></i>研究标签</h2>
+        <div class="tag-list" id="inspector-tags">
+          <span>{{ selected.paper.primary_category }}</span>
+          {% for keyword in config.discovery.positive_keywords[:7] %}<span>{{ keyword }}</span>{% endfor %}
+        </div>
+      </section>
+
+      <section class="inspector-section metadata-section">
+        <h2><i class="far fa-clock" aria-hidden="true"></i>快速信息</h2>
+        <dl class="metadata-grid">
+          <div><dt>arXiv ID</dt><dd id="inspector-id">{{ selected.paper.arxiv_id }}</dd></div>
+          <div><dt>提交日期</dt><dd id="inspector-published">{{ selected.paper.published[:10] }}</dd></div>
+          <div><dt>类别</dt><dd id="inspector-category">{{ selected.paper.primary_category }}</dd></div>
+          <div><dt>更新日期</dt><dd id="inspector-updated">{{ selected.paper.updated[:10] }}</dd></div>
+          <div><dt>开放获取</dt><dd>是</dd></div>
+          <div><dt>推荐分数</dt><dd id="inspector-score">{{ '%.1f'|format(selected.paper.final_score) }}</dd></div>
+        </dl>
+      </section>
+      </div>
+
+      <footer class="inspector-actions">
+        <button id="inspector-library-button" class="button secondary library-toggle {% if selected.in_library %}active{% endif %}" type="button" data-saved="{{ 'true' if selected.in_library else 'false' }}"><i class="far fa-bookmark" aria-hidden="true"></i><span id="inspector-library-label">{% if selected.in_library %}已加入文献库（相关）{% else %}加入文献库{% endif %}</span></button>
+        <button id="inspector-negative-button" class="button secondary {% if selected.feedback and selected.feedback.verdict == 'not_relevant' %}active{% endif %}" type="button" data-feedback="not_relevant"><i class="fas fa-ban" aria-hidden="true"></i>不相关</button>
+        <form id="inspector-report-form" class="job-form" action="/api/jobs/report" method="post">
+          <input id="inspector-report-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}">
+          <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span id="inspector-report-label">{% if selected.has_report %}重新生成报告{% else %}生成完整报告{% endif %}</span></button>
+        </form>
+        <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" target="_blank" rel="noreferrer" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
+        <form class="zotero-form" action="/api/zotero/save-paper" method="post">
+          <input id="inspector-zotero-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}">
+          <button class="button secondary" type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button>
+        </form>
+        <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
+      </footer>
+    </article>
+  </section>
+  <script id="recommendations-data" type="application/json">{{ recommendations|tojson }}</script>
+  {% else %}
+  <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>{% if selected_date %}{{ selected_date }} 没有推荐结果{% else %}还没有推荐结果{% endif %}</h1><p>{% if recommendation_history %}可从“每日记录”切换到已有结果的日期。{% else %}运行一次真实检索后，论文会出现在这里。{% endif %}</p><a class="button primary" href="/generate">前往运行任务</a></section>
+  {% endif %}
+{% endblock %}

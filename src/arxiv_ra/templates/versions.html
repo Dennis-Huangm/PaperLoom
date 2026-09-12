@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}版本追踪 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <div><p class="section-kicker">ARXIV VERSION WATCH</p><h1>版本追踪</h1><p>监控本地报告、阅读反馈与 Zotero 中论文的 arXiv 新版本。</p></div>
+    <form class="job-form" action="/api/jobs/versions" method="post"><button class="button primary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>立即检查</button></form>
+  </header>
+
+  {% if tracking['events'] %}
+  <section class="tracking-section"><header><p class="section-kicker">UPDATES</p><h2>发现的新版本</h2></header><div class="tracking-events">
+    {% for event in tracking['events'] %}<article><span>v{{ event.from_version }} → v{{ event.to_version }}</span><div><strong>{{ event.title }}</strong><p>arXiv:{{ event.arxiv_id }} · {{ event.detected_at[:16]|replace('T',' ') }}</p></div>{% if event.report_url %}<a class="button secondary" href="{{ event.report_url }}" target="_blank">查看差异</a>{% endif %}</article>{% endfor %}
+  </div></section>
+  {% endif %}
+
+  {% if tracking['items'] %}
+  <section class="tracked-table"><header><span>论文</span><span>来源</span><span>版本</span><span>最近检查</span></header>
+    {% for item in tracking['items'] %}<article><div><strong>{{ item.title }}</strong><small>arXiv:{{ item.arxiv_id }}</small></div><span>{{ item.sources|join(' · ') }}</span><b>v{{ item.latest_version }}</b><time>{{ item.checked_at[:16]|replace('T',' ') }}</time></article>{% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state"><i class="fas fa-code-branch" aria-hidden="true"></i><h1>尚未建立版本基线</h1><p>点击“立即检查”后，会从报告、反馈和 Zotero 汇总追踪论文。</p></section>
+  {% endif %}
+{% endblock %}

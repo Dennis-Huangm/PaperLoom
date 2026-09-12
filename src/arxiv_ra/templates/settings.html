@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}完整配置中心 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading compact-heading">
+    <div><p class="section-kicker">CONFIGURATION</p><h1>完整配置中心</h1><p>运行参数与本地凭据分开保存；现有密钥永不回显。</p></div>
+  </header>
+  {% if saved == 'config' %}<div class="notice success">✓ 全局设置已写入 config.yaml，检索与排序参数已写入当前研究方向档案。</div>{% endif %}
+  {% if saved == 'credentials' %}<div class="notice success">✓ API 与邮箱凭据已安全写入本地 .env，并已应用到当前进程。</div>{% endif %}
+
+  <div class="settings-shell">
+    <aside class="settings-section-nav" aria-label="配置分区">
+      <a href="#credentials" class="active"><i class="fas fa-key" aria-hidden="true"></i>API 与凭据</a>
+      <a href="#general"><i class="fas fa-cog" aria-hidden="true"></i>常规</a>
+      <a href="#discovery"><i class="fas fa-search" aria-hidden="true"></i>检索</a>
+      <a href="#ranking"><i class="fas fa-sort-amount-down" aria-hidden="true"></i>排序</a>
+      <a href="#llm"><i class="fas fa-microchip" aria-hidden="true"></i>模型</a>
+      <a href="#metadata"><i class="fas fa-database" aria-hidden="true"></i>元数据</a>
+      <a href="#pdf"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
+      <a href="#zotero"><i class="fas fa-book" aria-hidden="true"></i>Zotero</a>
+      <a href="#obsidian"><i class="fas fa-gem" aria-hidden="true"></i>Obsidian</a>
+      <a href="#delivery"><i class="far fa-envelope" aria-hidden="true"></i>邮件</a>
+      <a href="#weekly-config"><i class="fas fa-chart-line" aria-hidden="true"></i>周报</a>
+      <a href="#research-tracking"><i class="fas fa-code-branch" aria-hidden="true"></i>追踪</a>
+      <p><i class="fas fa-lock" aria-hidden="true"></i>仅限本机访问<br><small>凭据不会显示在页面中</small></p>
+    </aside>
+    <div class="settings-content">
+
+  <section class="form-section credential-section" id="credentials">
+    <p class="section-kicker">LOCAL SECRETS · .ENV</p><h2>API 与邮箱凭据</h2>
+    <div class="notice secret-notice"><strong>安全设计</strong><p>现有值永不回显。留空表示保持不变；只有勾选“清除”才会删除。凭据只写入本机 `.env`，不会进入脱敏压缩包。</p></div>
+    <form method="post" action="/settings/credentials" autocomplete="off">
+      <div class="credential-grid">
+        {% for item in credentials %}
+        <label class="credential-card">
+          <span class="credential-title"><strong>{{ item.label }}</strong><em class="{% if item.configured %}configured{% endif %}">{% if item.configured %}<i class="fas fa-check-circle" aria-hidden="true"></i>已配置{% else %}未配置{% endif %}</em></span>
+          <code>{{ item.env_name }}</code>
+          <input type="{% if item.secret %}password{% elif item.field == 'email_address' %}email{% elif item.field == 'llm_base_url' %}url{% else %}text{% endif %}" name="{{ item.field }}" value="" placeholder="留空则保持当前值" autocomplete="{% if item.secret %}new-password{% else %}off{% endif %}" spellcheck="false">
+          <small>{{ item.help }}</small>
+          <span class="clear-option"><input type="checkbox" name="clear_{{ item.field }}" value="true"> 清除此项</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="section-save"><span>保存后，新创建的推荐或报告任务立即使用新凭据。</span><button class="button primary" type="submit">保存 API 与凭据</button></div>
+    </form>
+  </section>
+
+  <form class="settings-form" method="post" action="/settings/config">
+    <section class="form-section" id="general">
+      <p class="section-kicker">APPLICATION</p><h2>常规设置</h2>
+      <div class="form-columns">
+        <label>时区<input name="timezone" value="{{ config.timezone }}" required><small>IANA 时区，例如 Asia/Shanghai。</small></label>
+        <label>输出目录<input name="output_dir" value="{{ config.output_dir }}" required><small>修改后需重启 GUI，才能重新挂载报告浏览目录。</small></label>
+        <label>后台并行任务数<input type="number" name="jobs_max_parallel" min="1" max="8" value="{{ config.jobs.max_parallel }}"><small>保存后立即生效。建议 2–4；过高会增加模型 API、网络和内存压力。</small></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="discovery">
+      <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
+      <label>研究主题描述<textarea name="interest_description" rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
+      <div class="form-columns">
+        <label>arXiv 类别<textarea name="arxiv_categories" rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
+        <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
+        <label>重点关键词<textarea name="positive_keywords" rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
+        <label>不感兴趣的方向<textarea name="negative_keywords" rows="12">{{ config.discovery.negative_keywords|join('\n') }}</textarea></label>
+        <label>种子论文 arXiv ID<textarea name="seed_papers" rows="7">{{ config.discovery.seed_papers|join('\n') }}</textarea></label>
+        <label>概念组<textarea name="concept_groups" rows="7">{% for group in config.discovery.concept_groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea><small>每行一组，组内用英文逗号分隔。</small></label>
+      </div>
+      <div class="config-grid six">
+        <label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ config.discovery.lookback_days }}"></label>
+        <label>最大候选数<input type="number" name="max_candidates" min="1" max="5000" value="{{ config.discovery.max_candidates }}"></label>
+        <label>LLM 预筛数量<input type="number" name="prefilter_count" min="1" max="5000" value="{{ config.discovery.prefilter_count }}"></label>
+        <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
+        <label>最低总分<input type="number" name="min_score" min="0" max="100" step="0.1" value="{{ config.discovery.min_score }}"></label>
+        <label>至少命中概念组<input type="number" name="minimum_concept_groups" min="0" max="20" value="{{ config.discovery.minimum_concept_groups }}"></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="ranking">
+      <p class="section-kicker">RANKING</p><h2>排序权重</h2>
+      <div class="config-grid six">
+        <label>类别权重<input type="number" name="category_weight" min="0" max="100" step="0.1" value="{{ config.ranking.category_weight }}"></label>
+        <label>关键词权重<input type="number" name="keyword_weight" min="0" max="100" step="0.1" value="{{ config.ranking.keyword_weight }}"></label>
+        <label>负向词权重<input type="number" name="negative_weight" min="0" max="100" step="0.1" value="{{ config.ranking.negative_weight }}"></label>
+        <label>时效权重<input type="number" name="recency_weight" min="0" max="100" step="0.1" value="{{ config.ranking.recency_weight }}"></label>
+        <label>LLM 最低分<input type="number" name="llm_min_score" min="0" max="10" step="0.1" value="{{ config.ranking.llm_min_score }}"></label>
+        <label class="toggle-field"><span>启用 LLM 精排</span><input type="checkbox" name="llm_rerank" value="true" {% if config.ranking.llm_rerank %}checked{% endif %}></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="llm">
+      <p class="section-kicker">LLM</p><h2>模型调用</h2>
+      <div class="form-columns">
+        <label>模型名称<input name="llm_model" value="{{ config.llm.model }}" required></label>
+        <label>Temperature<input type="number" name="llm_temperature" min="0" max="2" step="0.01" value="{{ config.llm.temperature }}"></label>
+        <label>API Key 环境变量名<input name="llm_api_key_env" value="{{ config.llm.api_key_env }}" required></label>
+        <label>Base URL 环境变量名<input name="llm_base_url_env" value="{{ config.llm.base_url_env }}" required></label>
+        <label>报告分片最大字符数<input type="number" name="max_chunk_chars" min="4000" max="100000" value="{{ config.llm.max_chunk_chars }}"></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="metadata">
+      <p class="section-kicker">METADATA</p><h2>学术元数据</h2>
+      <div class="form-columns">
+        <label>OpenAlex 联系邮箱<input type="email" name="openalex_email" value="{{ config.metadata.openalex_email }}"></label>
+        <label>OpenAlex Key 环境变量名<input name="openalex_api_key_env" value="{{ config.metadata.openalex_api_key_env }}" required></label>
+        <label>Semantic Scholar Key 环境变量名<input name="semantic_scholar_api_key_env" value="{{ config.metadata.semantic_scholar_api_key_env }}" required></label>
+        <label>Semantic Scholar 最小请求间隔（秒）<input type="number" name="semantic_scholar_min_interval" min="0" max="60" step="0.1" value="{{ config.metadata.semantic_scholar_min_interval }}"><small>免费 API 建议保持 1.1 秒。</small></label>
+        <label>Semantic Scholar 429 重试次数<input type="number" name="semantic_scholar_max_retries" min="0" max="10" value="{{ config.metadata.semantic_scholar_max_retries }}"></label>
+        <label class="toggle-field"><span>核验会议/期刊信息</span><input type="checkbox" name="verify_venue" value="true" {% if config.metadata.verify_venue %}checked{% endif %}></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="pdf">
+      <p class="section-kicker">PDF PIPELINE</p><h2>PDF 与主图</h2>
+      <div class="config-grid four">
+        <label>解析器<input name="pdf_parser" value="{{ config.pdf.parser }}" required></label>
+        <label>最大页数<input type="number" name="max_pages" min="1" max="500" value="{{ config.pdf.max_pages }}"></label>
+        <label>图片 DPI<input type="number" name="figure_dpi" min="72" max="600" value="{{ config.pdf.figure_dpi }}"></label>
+        <label class="toggle-field"><span>可用时优先 Docling</span><input type="checkbox" name="use_docling_if_available" value="true" {% if config.pdf.use_docling_if_available %}checked{% endif %}></label>
+      </div>
+    </section>
+
+    <section class="form-section" id="zotero">
+      <p class="section-kicker">ZOTERO LOCAL API</p><h2>Zotero 文献库联动</h2>
+      <div class="zotero-connect-panel">
+        <div><strong>{% if zotero_connection.ready %}已检测到 Zotero{% else %}尚未连接 Zotero{% endif %}</strong><p>{% if zotero_connection.ready %}本地 API 已响应；{% if zotero_connection.authorized %}写入授权已配置。{% else %}请点击右侧按钮并在 Zotero 中批准写入。{% endif %}{% else %}请启动 Zotero，并在“设置 → 高级”中允许本机应用通信。{% endif %}</p></div>
+        <button class="button secondary" id="zotero-connect" type="button" data-action="/api/zotero/authorize"><i class="fas fa-link" aria-hidden="true"></i>{% if zotero_connection.authorized %}重新授权{% else %}连接并授权{% endif %}</button>
+      </div>
+      <div class="form-columns">
+        <label>本地 API 地址<input name="zotero_base_url" value="{{ config.zotero.base_url }}" required></label>
+        <label>工作模式<select name="zotero_mode"><option value="local" selected>本地 API（推荐）</option></select></label>
+        <label>本地授权环境变量名<input name="zotero_api_key_env" value="{{ config.zotero.api_key_env }}" required></label>
+        <label>目标分类名称<input name="zotero_collection_name" value="{{ config.zotero.collection_name }}" placeholder="arXiv Research Assistant"></label>
+        <label>PDF 附件方式<select name="zotero_pdf_attachment_mode"><option value="imported_file" {% if config.zotero.pdf_attachment_mode == 'imported_file' %}selected{% endif %}>导入 Zotero 存储（可同步）</option><option value="linked_file" {% if config.zotero.pdf_attachment_mode == 'linked_file' %}selected{% endif %}>链接本地文件</option></select></label>
+      </div>
+      <div class="config-grid four">
+        <label class="toggle-field"><span>启用 Zotero 联动</span><input type="checkbox" name="zotero_enabled" value="true" {% if config.zotero.enabled %}checked{% endif %}></label>
+        <label class="toggle-field"><span>保存论文 PDF</span><input type="checkbox" name="zotero_attach_pdf" value="true" {% if config.zotero.attach_pdf %}checked{% endif %}></label>
+        <label class="toggle-field"><span>附加本地阅读报告</span><input type="checkbox" name="zotero_attach_report" value="true" {% if config.zotero.attach_report %}checked{% endif %}></label>
+        <label class="toggle-field"><span>添加研究方向标签</span><input type="checkbox" name="zotero_add_profile_tag" value="true" {% if config.zotero.add_profile_tag %}checked{% endif %}></label>
+      </div>
+      <small>单篇和批量保存都按 DOI、arXiv ID 去重。PDF 默认导入 Zotero 存储；阅读报告以本地链接附件保存。</small>
+    </section>
+
+    <section class="form-section" id="obsidian">
+      <p class="section-kicker">OBSIDIAN KNOWLEDGE BASE</p><h2>Obsidian 知识库联动</h2>
+      <div class="zotero-connect-panel">
+        <div><strong>{% if obsidian_connection.ready %}Obsidian vault 已就绪{% else %}尚未配置 Obsidian{% endif %}</strong><p>{% if obsidian_connection.ready %}同步目录：{{ obsidian_connection.detail }}{% else %}选择本机 vault 后，应用只写入独立的 arXiv Research Assistant 子目录。{% endif %}</p></div>
+        <div class="obsidian-actions"><a class="button secondary" href="/generate"><i class="fas fa-sync-alt" aria-hidden="true"></i>前往同步</a>{% if obsidian_open_url %}<a class="button primary" href="{{ obsidian_open_url }}"><i class="fas fa-external-link-alt" aria-hidden="true"></i>在 Obsidian 打开</a>{% endif %}</div>
+      </div>
+      <div class="form-columns">
+        <label>Vault 路径<input name="obsidian_vault_path" list="obsidian-vaults" value="{{ config.obsidian.vault_path }}" placeholder="例如 D:\ObsidianVault"><small>必须是已存在的 Obsidian vault 绝对路径。</small></label>
+        <datalist id="obsidian-vaults">{% for vault in obsidian_vaults %}{% if vault.exists %}<option value="{{ vault.path }}">{{ vault.name }}{% if vault.open %}（当前打开）{% endif %}</option>{% endif %}{% endfor %}</datalist>
+        <label>专用根目录<input name="obsidian_root_folder" value="{{ config.obsidian.root_folder }}" required></label>
+        <label>知识库首页目录<input name="obsidian_home_folder" value="{{ config.obsidian.home_folder }}" required></label>
+        <label>每日推荐目录<input name="obsidian_daily_folder" value="{{ config.obsidian.daily_folder }}" required></label>
+        <label>论文笔记目录<input name="obsidian_papers_folder" value="{{ config.obsidian.papers_folder }}" required></label>
+        <label>研究周报目录<input name="obsidian_weekly_folder" value="{{ config.obsidian.weekly_folder }}" required></label>
+        <label>研究方向目录<input name="obsidian_profiles_folder" value="{{ config.obsidian.profiles_folder }}" required></label>
+        <label>概念库目录<input name="obsidian_concepts_folder" value="{{ config.obsidian.concepts_folder }}" required></label>
+        <label>附件目录<input name="obsidian_attachments_folder" value="{{ config.obsidian.attachments_folder }}" required></label>
+        <label>系统索引目录<input name="obsidian_indexes_folder" value="{{ config.obsidian.indexes_folder }}" required></label>
+      </div>
+      <div class="config-grid four">
+        <label class="toggle-field"><span>启用 Obsidian 联动</span><input type="checkbox" name="obsidian_enabled" value="true" {% if config.obsidian.enabled %}checked{% endif %}></label>
+        <label class="toggle-field"><span>任务完成后自动同步</span><input type="checkbox" name="obsidian_auto_sync" value="true" {% if config.obsidian.auto_sync %}checked{% endif %}></label>
+        <label class="toggle-field"><span>同步每日推荐</span><input type="checkbox" name="obsidian_sync_daily" value="true" {% if config.obsidian.sync_daily %}checked{% endif %}></label>
+        <label class="toggle-field"><span>同步完整报告</span><input type="checkbox" name="obsidian_sync_reports" value="true" {% if config.obsidian.sync_reports %}checked{% endif %}></label>
+        <label class="toggle-field"><span>同步研究周报</span><input type="checkbox" name="obsidian_sync_weekly" value="true" {% if config.obsidian.sync_weekly %}checked{% endif %}></label>
+        <label class="toggle-field"><span>同步阅读反馈</span><input type="checkbox" name="obsidian_sync_feedback" value="true" {% if config.obsidian.sync_feedback %}checked{% endif %}></label>
+        <label class="toggle-field"><span>复制报告图片</span><input type="checkbox" name="obsidian_copy_figures" value="true" {% if config.obsidian.copy_figures %}checked{% endif %}></label>
+        <label class="toggle-field"><span>复制论文 PDF</span><input type="checkbox" name="obsidian_copy_pdf" value="true" {% if config.obsidian.copy_pdf %}checked{% endif %}></label>
+        <label class="toggle-field"><span>生成概念与 MOC 索引</span><input type="checkbox" name="obsidian_generate_concepts" value="true" {% if config.obsidian.generate_concepts %}checked{% endif %}></label>
+      </div>
+      <small>应用仅更新托管标记内的内容；“我的笔记/我的周总结”区域不会被覆盖，也不会自动执行 git commit 或 push。</small>
+    </section>
+
+    <section class="form-section" id="delivery">
+      <p class="section-kicker">EMAIL DELIVERY</p><h2>每日推荐邮件</h2>
+      <div class="config-grid four">
+        <label>SMTP 主机<input name="smtp_host" value="{{ config.delivery.smtp_host }}"></label>
+        <label>SMTP 端口<input type="number" name="smtp_port" min="1" max="65535" value="{{ config.delivery.smtp_port }}"></label>
+        <label>邮箱环境变量名<input name="email_address_env" value="{{ config.delivery.email_address_env }}" required></label>
+        <label>授权码环境变量名<input name="smtp_password_env" value="{{ config.delivery.password_env }}" required></label>
+        <label>显式 SMTP 用户名<input name="smtp_username" value="{{ config.delivery.username }}" placeholder="留空则使用 .env 邮箱"></label>
+        <label>显式发件地址<input name="from_address" value="{{ config.delivery.from_address }}" placeholder="留空则使用 .env 邮箱"></label>
+        <label>收件地址<textarea name="to_addresses" rows="4">{{ config.delivery.to_addresses|join('\n') }}</textarea><small>每行一个；留空则发送给自己。</small></label>
+        <div class="toggle-stack">
+          <label class="toggle-field"><span>启用邮件发送</span><input type="checkbox" name="email_enabled" value="true" {% if config.delivery.email_enabled %}checked{% endif %}></label>
+          <label class="toggle-field"><span>使用 SMTP SSL</span><input type="checkbox" name="smtp_ssl" value="true" {% if config.delivery.smtp_ssl %}checked{% endif %}></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section" id="weekly-config">
+      <p class="section-kicker">WEEKLY SYNTHESIS</p><h2>每周研究综述</h2>
+      <div class="config-grid four">
+        <label>汇总天数<input type="number" name="weekly_days" min="1" max="31" value="{{ config.weekly.days }}"></label>
+        <label>最多纳入论文<input type="number" name="weekly_max_papers" min="1" max="200" value="{{ config.weekly.max_papers }}"></label>
+        <label>自动生成日<select name="weekly_weekday"><option value="0" {% if config.weekly.weekday == 0 %}selected{% endif %}>周一</option><option value="1" {% if config.weekly.weekday == 1 %}selected{% endif %}>周二</option><option value="2" {% if config.weekly.weekday == 2 %}selected{% endif %}>周三</option><option value="3" {% if config.weekly.weekday == 3 %}selected{% endif %}>周四</option><option value="4" {% if config.weekly.weekday == 4 %}selected{% endif %}>周五</option><option value="5" {% if config.weekly.weekday == 5 %}selected{% endif %}>周六</option><option value="6" {% if config.weekly.weekday == 6 %}selected{% endif %}>周日</option></select></label>
+        <label class="toggle-field"><span>启用研究周报</span><input type="checkbox" name="weekly_enabled" value="true" {% if config.weekly.enabled %}checked{% endif %}></label>
+        <label class="toggle-field"><span>每周自动生成</span><input type="checkbox" name="weekly_auto_generate" value="true" {% if config.weekly.auto_generate %}checked{% endif %}></label>
+        <label class="toggle-field"><span>纳入完整阅读报告</span><input type="checkbox" name="weekly_include_deep_reports" value="true" {% if config.weekly.include_deep_reports %}checked{% endif %}></label>
+      </div>
+      <small>自动周报由每日定时任务在指定星期运行；也可以随时在“任务”或“周报”页面手动生成。</small>
+    </section>
+
+    <section class="form-section" id="research-tracking">
+      <p class="section-kicker">VERSION & CITATION GRAPH</p><h2>版本追踪与相关工作</h2>
+      <h3>arXiv 版本追踪</h3>
+      <div class="config-grid four">
+        <label>最多追踪论文<input type="number" name="version_tracking_max_tracked" min="1" max="500" value="{{ config.version_tracking.max_tracked }}"></label>
+        <label class="toggle-field"><span>启用版本追踪</span><input type="checkbox" name="version_tracking_enabled" value="true" {% if config.version_tracking.enabled %}checked{% endif %}></label>
+        <label class="toggle-field"><span>每日任务自动检查</span><input type="checkbox" name="version_tracking_auto_check" value="true" {% if config.version_tracking.auto_check %}checked{% endif %}></label>
+        <label class="toggle-field"><span>追踪本地报告</span><input type="checkbox" name="version_tracking_include_reports" value="true" {% if config.version_tracking.include_reports %}checked{% endif %}></label>
+        <label class="toggle-field"><span>追踪阅读反馈</span><input type="checkbox" name="version_tracking_include_feedback" value="true" {% if config.version_tracking.include_feedback %}checked{% endif %}></label>
+        <label class="toggle-field"><span>追踪 Zotero 文献</span><input type="checkbox" name="version_tracking_include_zotero" value="true" {% if config.version_tracking.include_zotero %}checked{% endif %}></label>
+        <label class="toggle-field"><span>生成 PDF 差异报告</span><input type="checkbox" name="version_tracking_analyze_pdf_diff" value="true" {% if config.version_tracking.analyze_pdf_diff %}checked{% endif %}></label>
+      </div>
+      <h3>Semantic Scholar 相关工作地图</h3>
+      <div class="config-grid four">
+        <label>参考文献数量<input type="number" name="citations_max_references" min="1" max="100" value="{{ config.citations.max_references }}"></label>
+        <label>后续引用数量<input type="number" name="citations_max_citations" min="1" max="100" value="{{ config.citations.max_citations }}"></label>
+        <label>语义相似数量<input type="number" name="citations_max_similar" min="1" max="100" value="{{ config.citations.max_similar }}"></label>
+        <label>请求间隔（秒）<input type="number" name="citations_min_interval" min="0" max="60" step="0.1" value="{{ config.citations.min_interval }}"></label>
+        <label>429 重试次数<input type="number" name="citations_max_retries" min="0" max="10" value="{{ config.citations.max_retries }}"></label>
+        <label class="toggle-field"><span>启用相关工作地图</span><input type="checkbox" name="citations_enabled" value="true" {% if config.citations.enabled %}checked{% endif %}></label>
+      </div>
+    </section>
+
+    <div class="save-bar"><p>全局设置保存在 config.yaml；检索与排序参数保存在当前方向“{{ config.profile_name }}”中。</p><button class="button primary" type="submit">保存全部运行配置</button></div>
+  </form>
+    </div>
+  </div>
+{% endblock %}

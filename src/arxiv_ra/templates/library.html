@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}我的文献库 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading library-heading">
+    <div><p class="section-kicker">SAVED PAPERS</p><h1>我的文献库</h1><p>保存当前研究方向中值得长期跟进的论文，不受每日推荐刷新影响。</p></div>
+    <span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>{{ config.profile_name }} · {{ entries|length }} 篇</span>
+  </header>
+
+  <form class="library-search" method="get">
+    <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
+    <input name="q" value="{{ query }}" placeholder="搜索已保存论文的标题、作者或 arXiv ID">
+    {% if query %}<a href="/library" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+    <button type="submit">搜索</button>
+  </form>
+
+  {% if entries %}
+  <section class="saved-library" aria-label="已保存论文">
+    {% for entry in entries %}
+    {% set paper = entry.paper %}
+    <article class="saved-paper-card">
+      <header>
+        <div><span>{{ paper.arxiv_id }}</span><em>{{ paper.primary_category }}</em></div>
+        <time>收藏于 {{ entry.saved_at[:10] }}</time>
+      </header>
+      <h2>{{ paper.title }}</h2>
+      <p class="saved-paper-authors">{% for author in paper.authors[:5] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if paper.authors|length > 5 %} et al.{% endif %}</p>
+      <section>
+        <strong>摘要精要</strong>
+        <p>{{ paper.abstract_zh or paper.abstract }}</p>
+      </section>
+      <section class="saved-paper-reason">
+        <strong>保存价值</strong>
+        <p>{{ paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。' }}</p>
+      </section>
+      <footer>
+        <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span>
+        {% if entry.report_url %}
+        <a href="{{ entry.report_url }}" target="_blank"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
+        {% else %}
+        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
+        {% endif %}
+        <a href="{{ paper.abs_url }}" target="_blank" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
+        <a href="{{ paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
+        <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>Zotero</button></form>
+        <form action="/library/remove" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
+      </footer>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state"><i class="far fa-bookmark" aria-hidden="true"></i><h1>{% if query %}没有匹配的已保存论文{% else %}文献库还是空的{% endif %}</h1><p>{% if query %}换一个标题、作者或 arXiv ID 试试。{% else %}在“文献推荐”页面选择论文，然后点击“加入文献库”。{% endif %}</p><a class="button primary" href="/">返回每日推荐</a></section>
+  {% endif %}
+{% endblock %}

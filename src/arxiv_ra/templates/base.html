@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}arXiv Research Assistant{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', path='/app-icon.ico') }}" sizes="any">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20260911-calendar">
+  <script defer src="{{ url_for('static', path='/app.js') }}?v=20260911-calendar"></script>
+</head>
+<body class="page-{{ active }}">
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="arXiv Research Assistant 首页">
+      <span class="brand-icon"><img src="{{ url_for('static', path='/app-icon.png') }}" alt=""></span>
+      <span class="brand-copy"><strong>arXiv Research Assistant</strong><small>{{ config.profile_name }} · 当前方向</small></span>
+    </a>
+
+    <nav class="primary-nav" aria-label="主导航">
+      <a href="/" class="{% if active == 'dashboard' %}active{% endif %}"><i class="far fa-file-alt" aria-hidden="true"></i><span>文献推荐</span></a>
+      <a href="/library" class="{% if active == 'library' %}active{% endif %}"><i class="far fa-bookmark" aria-hidden="true"></i><span>文献库</span></a>
+      <a href="/reports" class="{% if active == 'reports' %}active{% endif %}"><i class="far fa-folder-open" aria-hidden="true"></i><span>报告</span></a>
+      <a href="/weekly" class="{% if active == 'weekly' %}active{% endif %}"><i class="fas fa-chart-line" aria-hidden="true"></i><span>周报</span></a>
+      <a href="/versions" class="{% if active == 'versions' %}active{% endif %}"><i class="fas fa-code-branch" aria-hidden="true"></i><span>追踪</span></a>
+      <a href="/citations" class="{% if active == 'citations' %}active{% endif %}"><i class="fas fa-project-diagram" aria-hidden="true"></i><span>图谱</span></a>
+      <a href="/generate" class="{% if active == 'generate' %}active{% endif %}"><i class="far fa-calendar-check" aria-hidden="true"></i><span>任务</span></a>
+      <a href="/profiles" class="{% if active == 'profiles' %}active{% endif %}"><i class="fas fa-layer-group" aria-hidden="true"></i><span>方向</span></a>
+      <a href="/settings" class="{% if active == 'settings' %}active{% endif %}"><i class="fas fa-sliders-h" aria-hidden="true"></i><span>配置</span></a>
+      <a href="/status" class="{% if active == 'status' %}active{% endif %}"><i class="fas fa-heartbeat" aria-hidden="true"></i><span>状态</span></a>
+    </nav>
+
+    <div class="header-meta">
+      <strong>{{ date_label or '尚未运行' }}</strong>
+      <small>{{ recommendation_scope_label }} {{ recommendation_count }} 篇</small>
+    </div>
+    <button class="nav-toggle" type="button" aria-label="展开导航" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i></button>
+  </header>
+
+  <main class="app-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <dialog id="zotero-location-dialog" class="zotero-location-dialog" aria-labelledby="zotero-location-title">
+    <header><span class="dialog-icon"><i class="fas fa-folder-open" aria-hidden="true"></i></span><div><p class="section-kicker">ZOTERO COLLECTION</p><h2 id="zotero-location-title">选择保存位置</h2></div></header>
+    <p>论文会保存或加入所选 Zotero 分类；已有条目的其他分类不会被移除。</p>
+    <label for="zotero-location-select">Zotero 分类<select id="zotero-location-select"></select></label>
+    <footer><button class="button subtle" id="zotero-location-cancel" type="button">取消</button><button class="button primary" id="zotero-location-confirm" type="button"><i class="fas fa-book" aria-hidden="true"></i>保存到这里</button></footer>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

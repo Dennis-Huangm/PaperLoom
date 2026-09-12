@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}研究周报 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <div><p class="section-kicker">WEEKLY SYNTHESIS</p><h1>研究周报</h1><p>把分散的每日推荐整理为可追踪的研究趋势与问题线索。</p></div>
+    <form class="job-form" action="/api/jobs/weekly" method="post"><button class="button primary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>生成本周综述</button></form>
+  </header>
+
+  {% if weekly_reports %}
+  <section class="weekly-grid">
+    {% for report in weekly_reports %}
+    <article class="weekly-card">
+      <div class="weekly-card-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></div>
+      <div><span>{{ report.week_id }}</span><h2>{{ report.profile_name }}</h2><p>汇总 {{ report.paper_count }} 篇论文 · {{ report.generated_at[:16]|replace('T', ' ') }}</p></div>
+      <a class="button secondary" href="{{ report.report_url }}" target="_blank">打开周报</a>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state"><i class="fas fa-chart-line" aria-hidden="true"></i><h1>还没有研究周报</h1><p>生成后会在这里按周归档。</p><a class="button primary" href="/generate">前往运行任务</a></section>
+  {% endif %}
+{% endblock %}

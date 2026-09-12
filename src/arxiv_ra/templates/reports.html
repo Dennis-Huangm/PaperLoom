@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}本地报告 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <div><p class="section-kicker">LOCAL LIBRARY</p><h1>本地报告</h1><p>深度阅读结果、论文 PDF 与方法图均保存在本机。</p></div>
+    <a class="button primary" href="/generate"><i class="fas fa-plus" aria-hidden="true"></i>生成新报告</a>
+  </header>
+
+  <form class="library-search" method="get">
+    <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
+    <input name="q" value="{{ query }}" placeholder="搜索标题、作者或 arXiv ID">
+    {% if query %}<a href="/reports" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+    <button type="submit">搜索</button>
+  </form>
+
+  {% if reports %}
+  <section class="report-table" aria-label="本地报告列表">
+    <header><span>论文</span><span>出版信息</span><span>生成日期</span><span>操作</span></header>
+    {% for report in reports %}
+    <article class="report-row">
+      <div class="report-paper">
+        <span class="report-id">{{ report.arxiv_id }}</span>
+        <h2><a href="{{ report.report_url }}" target="_blank">{{ report.title }}</a></h2>
+        <p>{{ report.authors[:5]|join(', ') }}{% if report.authors|length > 5 %} et al.{% endif %}</p>
+      </div>
+      <div class="report-venue">
+        <strong>{{ report.venue }}</strong>
+        <span class="human-status {% if report.venue_status == 'verified_metadata' %}verified{% elif report.venue_status == 'declared_in_arxiv' %}declared{% endif %}">{% if report.venue_status == 'verified_metadata' %}<i class="fas fa-check-circle" aria-hidden="true"></i>外部元数据已核实{% elif report.venue_status == 'declared_in_arxiv' %}<i class="fas fa-info-circle" aria-hidden="true"></i>作者在 arXiv 声明{% else %}<i class="far fa-clock" aria-hidden="true"></i>出版信息待核实{% endif %}</span>
+      </div>
+      <time>{{ report.date }}</time>
+      <div class="report-actions">
+        <a href="{{ report.report_url }}" target="_blank"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
+        {% if report.in_library %}
+        <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
+        {% else %}
+        <form class="library-add-form" action="/api/library/add" method="post"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
+        {% endif %}
+        <form class="zotero-form" action="/api/zotero/save-report" method="post"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button></form>
+        {% if report.method_figure_count %}<span><i class="far fa-images" aria-hidden="true"></i>{{ report.method_figure_count }} 张方法图</span>{% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>没有匹配的报告</h1><p>输入 arXiv ID 后即可生成第一份完整报告。</p><a class="button primary" href="/generate">生成报告</a></section>
+  {% endif %}
+{% endblock %}

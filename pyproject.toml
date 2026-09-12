@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arxiv-research-assistant"
+version = "1.2.0"
+description = "Daily personalized arXiv discovery and source-grounded Chinese reading reports."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+  "httpx>=0.27,<1",
+  "PyYAML>=6,<7",
+  "PyMuPDF>=1.24,<2",
+  "openai>=1.54,<3",
+  "markdown>=3.7,<4",
+]
+
+[project.optional-dependencies]
+docling = ["docling>=2.70"]
+dev = ["pytest>=8,<10"]
+gui = [
+  "fastapi>=0.115,<1",
+  "jinja2>=3.1,<4",
+  "python-multipart>=0.0.9,<1",
+  "uvicorn>=0.30,<1",
+]
+
+[project.scripts]
+arxiv-ra = "arxiv_ra.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+arxiv_ra = [
+  "templates/*.html",
+  "static/*",
+  "static/vendor/fontawesome/LICENSE.txt",
+  "static/vendor/fontawesome/css/*.css",
+  "static/vendor/fontawesome/webfonts/*.woff2",
+  "static/vendor/katex/LICENSE.txt",
+  "static/vendor/katex/*.css",
+  "static/vendor/katex/*.js",
+  "static/vendor/katex/fonts/*.woff2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

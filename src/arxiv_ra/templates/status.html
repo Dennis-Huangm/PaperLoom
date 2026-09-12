@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}系统状态 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading compact-heading">
+    <div><p class="section-kicker">LOCAL SERVICE</p><h1>系统状态</h1><p>这里只显示可用性，不显示 API key、邮箱或授权码正文。</p></div>
+    <span class="local-state"><i class="fas fa-circle" aria-hidden="true"></i>仅限本机</span>
+  </header>
+
+  <section class="service-list">
+    <header><span>服务</span><span>当前配置</span><span>状态</span></header>
+    {% for service in services %}
+    <article>
+      <div><span class="service-icon"><i class="{% if service.name == 'LLM' %}fas fa-microchip{% elif service.name == 'OpenAlex' or service.name == 'Semantic Scholar' %}fas fa-database{% elif service.name == 'Zotero' %}fas fa-book{% elif service.name == 'Obsidian' %}fas fa-gem{% elif service.name == 'QQ SMTP' %}far fa-envelope{% elif service.name == 'PDF 解析' %}far fa-file-pdf{% else %}fas fa-cog{% endif %}" aria-hidden="true"></i></span><strong>{{ service.name }}</strong></div>
+      <p>{{ service.detail }}</p>
+      <span class="service-state {% if service.ready %}ready{% endif %}">{% if service.ready %}<i class="fas fa-check-circle" aria-hidden="true"></i>可用{% else %}<i class="far fa-circle" aria-hidden="true"></i>未配置 / 可选{% endif %}</span>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="path-note"><i class="far fa-folder-open" aria-hidden="true"></i><div><strong>本地输出目录</strong><code>{{ output_root }}</code></div></section>
+{% endblock %}

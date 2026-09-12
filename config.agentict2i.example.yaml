@@ -1,0 +1,155 @@
+timezone: Asia/Shanghai
+output_dir: run
+
+discovery:
+  interest_description: >-
+    AgenticT2I：研究由 LLM/VLM/多模态 Agent 驱动的图像生成与编辑，重点关注任务分解、
+    规划、工具选择与调用、代码或 SVG 等可执行视觉中间表示、生成结果验证、自我修正、
+    迭代反馈，以及 reinforcement learning 对 agentic image generation 的优化。
+  # AgenticT2I 较窄且 arXiv 周末无更新，使用 45 天滚动池；按方向隔离的状态文件防止重复推荐。
+  lookback_days: 45
+  max_candidates: 500
+  prefilter_count: 50
+  recommendation_count: 10
+  min_score: 0.5
+  arxiv_categories:
+    - cs.CV
+    - cs.GR
+    - cs.AI
+    - cs.LG
+    - cs.CL
+  arxiv_query_terms:
+    - text-to-image
+    - image generation
+    - image editing
+    - image synthesis
+    - visual generation
+    - SVG
+    - generative image
+  positive_keywords:
+    - agentic image generation
+    - agentic t2i
+    - text-to-image
+    - image generation
+    - image editing
+    - multimodal agent
+    - visual agent
+    - tool use
+    - tool-augmented
+    - self-correction
+    - verification
+    - code-driven
+    - svg
+    - diffusion
+    - large language model
+    - agent
+    - llm
+    - reinforcement learning
+    - rl
+  negative_keywords: []
+  seed_papers:
+    - "2605.30248"
+    - "2407.05600"
+    - "2511.02778"
+    - "2502.13372"
+  concept_groups:
+    - [agent, agentic, llm, large language model, vlm, vision-language model,
+       tool use, tool-augmented, self-correction, planning]
+    - [text-to-image, t2i, image generation, image editing, image synthesis,
+       visual generation, svg, generative image, image model]
+  minimum_concept_groups: 2
+
+ranking:
+  category_weight: 1.0
+  keyword_weight: 3.0
+  negative_weight: 4.0
+  recency_weight: 1.0
+  llm_rerank: true
+  llm_min_score: 6.5
+
+llm:
+  model: gpt-5.6-terra
+  api_key_env: LLM_API_KEY
+  base_url_env: LLM_BASE_URL
+  temperature: 0.1
+  max_chunk_chars: 18000
+
+metadata:
+  openalex_email: ""
+  openalex_api_key_env: OPENALEX_API_KEY
+  semantic_scholar_api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  semantic_scholar_min_interval: 1.1
+  semantic_scholar_max_retries: 3
+  verify_venue: true
+
+pdf:
+  parser: pymupdf
+  use_docling_if_available: true
+  max_pages: 60
+  figure_dpi: 160
+
+delivery:
+  email_enabled: true
+  smtp_host: smtp.qq.com
+  smtp_port: 465
+  smtp_ssl: true
+  email_address_env: QQ_EMAIL
+  username: ""
+  password_env: SMTP_PASSWORD
+  from_address: ""
+  to_addresses: []
+
+zotero:
+  enabled: true
+  mode: local
+  base_url: http://127.0.0.1:23119/api
+  api_key_env: ZOTERO_LOCAL_API_KEY
+  collection_name: arXiv Research Assistant
+  attach_pdf: true
+  pdf_attachment_mode: imported_file
+  attach_report: true
+  add_profile_tag: true
+
+obsidian:
+  enabled: false
+  vault_path: ''
+  root_folder: arXiv Research Assistant
+  daily_folder: Daily
+  papers_folder: Papers
+  weekly_folder: Weekly
+  profiles_folder: Profiles
+  concepts_folder: Concepts
+  attachments_folder: Attachments
+  auto_sync: true
+  sync_daily: true
+  sync_reports: true
+  sync_weekly: true
+  sync_feedback: true
+  copy_figures: true
+  copy_pdf: false
+  generate_concepts: true
+
+weekly:
+  enabled: true
+  days: 7
+  max_papers: 50
+  include_deep_reports: true
+  auto_generate: true
+  weekday: 6
+
+version_tracking:
+  enabled: true
+  auto_check: true
+  max_tracked: 50
+  include_reports: true
+  include_feedback: true
+  include_zotero: true
+  analyze_pdf_diff: true
+
+citations:
+  enabled: true
+  max_references: 15
+  max_citations: 15
+  max_similar: 15
+  min_interval: 1.1
+  max_retries: 3

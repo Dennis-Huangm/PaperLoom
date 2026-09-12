@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}运行任务 · arXiv Research Assistant{% endblock %}
+{% block content %}
+  <header class="page-heading compact-heading">
+    <div><p class="section-kicker">BACKGROUND TASKS</p><h1>运行任务</h1><p>任务在后台并行执行，离开页面不会中断。</p></div>
+  </header>
+
+  <section class="task-layout">
+    <article class="task-pane primary-task">
+      <header><span class="task-icon"><i class="far fa-file-alt" aria-hidden="true"></i></span><div><h2>生成完整阅读报告</h2><p>下载全文、核验元数据、提取实验前方法图并阅读全文。</p></div></header>
+      <form class="job-form task-form" action="/api/jobs/report" method="post">
+        <label for="arxiv-id">arXiv ID</label>
+        <div class="joined-control"><input id="arxiv-id" name="arxiv_id" placeholder="例如：2407.05600" required><button class="button primary" type="submit">开始生成</button></div>
+        <small>生成结果只保存在本地，不会作为附件发送到邮箱。</small>
+      </form>
+    </article>
+
+    <article class="task-pane">
+      <header><span class="task-icon"><i class="fas fa-sync-alt" aria-hidden="true"></i></span><div><h2>刷新每日推荐</h2><p>重新执行 arXiv 检索、相关性排序和出版信息核验。</p></div></header>
+      <form class="job-form task-form" action="/api/jobs/digest" method="post">
+        <label class="check-row"><input type="checkbox" name="force" value="true"><span><strong>忽略已处理状态</strong><small>允许重新推荐同一时间窗内的论文</small></span></label>
+        <label class="check-row"><input type="checkbox" name="send_email" value="true"><span><strong>完成后发送 QQ 日报</strong><small>只发送推荐摘要，不发送完整报告</small></span></label>
+        <button class="button secondary full-width" type="submit">执行检索</button>
+      </form>
+    </article>
+
+    <article class="task-pane weekly-task-pane">
+      <header><span class="task-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></span><div><h2>生成本周研究综述</h2><p>汇总近 {{ config.weekly.days }} 天推荐、阅读反馈和已有深读报告。</p></div></header>
+      <form class="job-form task-form" action="/api/jobs/weekly" method="post">
+        <small>输出趋势、方法簇、结论分歧、开放问题和本周必读，报告保存在本地。</small>
+        <button class="button secondary full-width" type="submit">生成研究周报</button>
+      </form>
+    </article>
+
+    <article class="task-pane weekly-task-pane obsidian-task-pane">
+      <header><span class="task-icon"><i class="fas fa-gem" aria-hidden="true"></i></span><div><h2>同步 Obsidian 知识库</h2><p>同步每日推荐、论文笔记、图片、周报、研究方向、概念页和 MOC 索引。</p></div></header>
+      <form class="job-form task-form" action="/api/jobs/obsidian" method="post">
+        <small>{% if config.obsidian.enabled %}目标：{{ config.obsidian.vault_path }}\{{ config.obsidian.root_folder }}{% else %}请先在配置中心启用并选择 Obsidian vault。{% endif %}</small>
+        <button class="button secondary full-width" type="submit" {% if not config.obsidian.enabled %}disabled{% endif %}>立即同步</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="queue-section">
+    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><span>最多并行 {{ config.jobs.max_parallel }} 个任务</span></header>
+    <div id="job-list" class="job-list">
+      {% for job in jobs %}
+      <article class="job job-{{ job.status }}" data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
+        <span class="job-indicator"><i class="{% if job.status == 'succeeded' %}fas fa-check{% elif job.status == 'failed' %}fas fa-times{% else %}fas fa-circle-notch{% endif %}" aria-hidden="true"></i></span>
+        <div><strong>{{ job.label }}</strong><p>{{ job.detail }}</p></div>
+        <time>{{ job.updated_at[11:19] }}</time>
+        {% if job.result_url %}<a href="{{ job.result_url }}" target="_blank">打开结果</a>{% endif %}
+      </article>
+      {% else %}<div class="queue-empty"><i class="far fa-clock" aria-hidden="true"></i><p>当前没有后台任务。</p></div>{% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,129 @@
+timezone: Asia/Shanghai
+output_dir: run
+
+discovery:
+  lookback_days: 2
+  max_candidates: 300
+  prefilter_count: 30
+  recommendation_count: 5
+  min_score: 0.5
+  arxiv_categories:
+    - cs.AI
+    - cs.LG
+    - cs.CL
+    - cs.CV
+    - cs.RO
+  arxiv_query_terms: []
+  positive_keywords:
+    - large language model
+    - multimodal
+    - agent
+    - reasoning
+    - reinforcement learning
+    - embodied ai
+  negative_keywords:
+    - survey
+  seed_papers: []
+
+ranking:
+  category_weight: 1.0
+  keyword_weight: 3.0
+  negative_weight: 4.0
+  recency_weight: 1.0
+  llm_rerank: true
+  llm_min_score: 6.5
+
+llm:
+  # Examples:
+  # OpenAI: base_url omitted, model set to an available model.
+  # Ollama: base_url=http://localhost:11434/v1, api_key=ollama
+  model: gpt-5-mini
+  api_key_env: LLM_API_KEY
+  base_url_env: LLM_BASE_URL
+  temperature: 0.1
+  max_chunk_chars: 18000
+
+metadata:
+  openalex_email: your-email@example.com
+  openalex_api_key_env: OPENALEX_API_KEY
+  semantic_scholar_api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  semantic_scholar_min_interval: 1.1
+  semantic_scholar_max_retries: 3
+  verify_venue: true
+
+pdf:
+  parser: pymupdf
+  use_docling_if_available: true
+  max_pages: 60
+  figure_dpi: 160
+
+delivery:
+  email_enabled: true
+  smtp_host: smtp.qq.com
+  smtp_port: 465
+  smtp_ssl: true
+  email_address_env: QQ_EMAIL
+  username: ""
+  password_env: SMTP_PASSWORD
+  from_address: ""
+  to_addresses: []
+
+zotero:
+  enabled: true
+  mode: local
+  base_url: http://127.0.0.1:23119/api
+  api_key_env: ZOTERO_LOCAL_API_KEY
+  collection_name: arXiv Research Assistant
+  attach_pdf: true
+  pdf_attachment_mode: imported_file
+  attach_report: true
+  add_profile_tag: true
+
+obsidian:
+  enabled: false
+  vault_path: ''
+  root_folder: arXiv Research Assistant
+  home_folder: Home
+  daily_folder: Daily
+  papers_folder: Papers
+  concepts_folder: Topics
+  weekly_folder: Reviews/Weekly
+  attachments_folder: Attachments
+  profiles_folder: System/Profiles
+  indexes_folder: System/Indexes
+  auto_sync: true
+  sync_daily: true
+  sync_reports: true
+  sync_weekly: true
+  sync_feedback: true
+  copy_figures: true
+  copy_pdf: false
+  generate_concepts: true
+
+jobs:
+  max_parallel: 3
+
+weekly:
+  enabled: true
+  days: 7
+  max_papers: 50
+  include_deep_reports: true
+  auto_generate: true
+  weekday: 6
+
+version_tracking:
+  enabled: true
+  auto_check: true
+  max_tracked: 50
+  include_reports: true
+  include_feedback: true
+  include_zotero: true
+  analyze_pdf_diff: true
+
+citations:
+  enabled: true
+  max_references: 15
+  max_citations: 15
+  max_similar: 15
+  min_interval: 1.1
+  max_retries: 3
