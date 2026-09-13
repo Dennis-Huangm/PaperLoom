@@ -65,3 +65,23 @@ def test_discover_requires_api_key() -> None:
             question="agent research",
             published_after="2026-01-01",
         )
+
+
+def test_numbered_markdown_results_are_normalized() -> None:
+    payload = {
+        "text": (
+            "1. [ID=2609.05171] **WeAgent-MMGenEdit: A Full-Stack Recipe** "
+            "(https://www.alphaxiv.org/abs/2609.05171). Published 2026-09-04 "
+            "by Tencent · 14 votes · 59 views: A multimodal agent for image generation.\n"
+            "2. [ID=2608.04436] **ToolArtist: Tool-Using Unified Multimodal Models** "
+            "(https://www.alphaxiv.org/abs/2608.04436). Published 2026-08-05 "
+            "· 37 votes · 350 views: A unified tool-use policy."
+        )
+    }
+
+    papers = AlphaXivClient._normalize_papers(payload)
+
+    assert [paper.arxiv_id for paper in papers] == ["2609.05171", "2608.04436"]
+    assert papers[0].title.startswith("WeAgent-MMGenEdit")
+    assert papers[0].abstract == "A multimodal agent for image generation."
+    assert papers[0].published.date().isoformat() == "2026-09-04"

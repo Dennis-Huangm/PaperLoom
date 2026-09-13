@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -197,7 +197,10 @@ class AlphaXivClient:
 
     @classmethod
     def _normalize_papers(cls, payload: Any) -> list[Paper]:
-        records = payload.get("papers", []) if isinstance(payload, dict) else payload
+        if isinstance(payload, dict) and payload.get("text"):
+            records = cls._records_from_text(str(payload["text"]))
+        else:
+            records = payload.get("papers", []) if isinstance(payload, dict) else payload
         if not isinstance(records, list):
             return []
         papers: list[Paper] = []
@@ -239,6 +242,31 @@ class AlphaXivClient:
             )
             seen.add(arxiv_id)
         return papers
+
+    @classmethod
+    def _records_from_text(cls, text: str) -> list[dict[str, Any]]:
+        """Parse alphaXiv's numbered Markdown search result format."""
+        records: list[dict[str, Any]] = []
+        for line in text.splitlines():
+            id_match = re.search(r"\[ID=([^\]]+)\]", line, re.IGNORECASE)
+            title_match = re.search(r"\*\*(.+?)\*\*", line)
+            if not id_match or not title_match:
+                continue
+            date_match = re.search(r"\bPublished\s+(\d{4}-\d{2}-\d{2})\b", line)
+            abstract_match = re.search(r"\bviews:\s*(.+)$", line, re.IGNORECASE)
+            url_match = re.search(r"\((https?://[^)]+)\)", line)
+            records.append(
+                {
+                    "arxiv_id": id_match.group(1).strip(),
+                    "title": title_match.group(1).strip(),
+                    "published": date_match.group(1) if date_match else "",
+                    "abstract_preview": abstract_match.group(1).strip()
+                    if abstract_match
+                    else "",
+                    "url": url_match.group(1) if url_match else "",
+                }
+            )
+        return records
 
     @staticmethod
     def _extract_id(record: dict[str, Any]) -> str:

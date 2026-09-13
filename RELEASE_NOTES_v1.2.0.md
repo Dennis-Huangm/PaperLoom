@@ -58,8 +58,10 @@ Obsidian 同步会自动把网页报告使用的 KaTeX 分隔符转换为 Obsidi
 
 当 arXiv API 长时间返回 429 或连接失败时，可在配置中心启用 alphaXiv 备用检索并在 `.env` 配置 `ALPHAXIV_API_KEY`。alphaXiv 只负责发现候选论文，正式出版信息仍由 OpenAlex、Semantic Scholar、arXiv 页面等来源核验。
 
+alphaXiv 的真实 `discover_papers` 响应可能使用编号 Markdown，而不是 JSON；本版本已同时兼容两种格式。
+
 ## 验证
 
-- 自动化测试：95 passed。
+- 自动化测试：96 passed。
 - Obsidian：16 篇论文笔记，39 个受管笔记，0 个断链，0 个 arXiv ID 文件名。
 - ToolArtist HTML：1 个方法图解析区、3 个 Figure 子项、无重复 Figure H3、无横向溢出。
