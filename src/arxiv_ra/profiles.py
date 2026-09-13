@@ -46,8 +46,8 @@ class ProfileManager:
             return self.active_id()
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         description = str((raw.get("discovery") or {}).get("interest_description") or "")
-        name = "AgenticT2I" if "agentict2i" in description.casefold() else "默认研究方向"
-        profile_id = "agentict2i" if name == "AgenticT2I" else "default"
+        name = description.strip() or "默认研究方向"
+        profile_id = _slug(name)
         payload = {
             "id": profile_id,
             "name": name,
