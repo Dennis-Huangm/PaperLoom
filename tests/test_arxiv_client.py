@@ -32,7 +32,7 @@ def test_parse_feed() -> None:
 
 
 def test_arxiv_client_retries_transient_connection_reset(monkeypatch) -> None:
-    client = ArxivClient(max_retries=3, retry_base_delay=1.0)
+    client = ArxivClient(max_retries=3, retry_base_delay=1.0, min_interval=0)
     request = httpx.Request("GET", "https://export.arxiv.org/api/query")
     responses = [
         httpx.ConnectError("connection reset", request=request),
@@ -57,7 +57,7 @@ def test_arxiv_client_retries_transient_connection_reset(monkeypatch) -> None:
 
 
 def test_arxiv_client_reports_clear_error_after_retries(monkeypatch) -> None:
-    client = ArxivClient(max_retries=2, retry_base_delay=0)
+    client = ArxivClient(max_retries=2, retry_base_delay=0, min_interval=0)
     request = httpx.Request("GET", "https://export.arxiv.org/api/query")
 
     def always_reset(_url: str):
@@ -68,6 +68,32 @@ def test_arxiv_client_reports_clear_error_after_retries(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="已自动重试 2 次"):
         client.get("2608.01234")
+
+
+def test_arxiv_client_backoffs_and_reports_rate_limit(monkeypatch) -> None:
+    client = ArxivClient(
+        max_retries=1,
+        retry_base_delay=0,
+        min_interval=0,
+        rate_limit_key="test-arxiv-429",
+    )
+    request = httpx.Request("GET", "https://export.arxiv.org/api/query")
+    responses = [
+        httpx.Response(429, text="Rate exceeded", request=request),
+        httpx.Response(429, text="Rate exceeded", request=request),
+    ]
+    delays: list[float] = []
+
+    monkeypatch.setattr(client.client, "get", lambda _url: responses.pop(0))
+    # Both the request backoff and the shared API cooldown use the same
+    # process-wide time module, so the spy observes both waits.
+    monkeypatch.setattr("time.sleep", delays.append)
+
+    with pytest.raises(RuntimeError, match="当前限流（HTTP 429）"):
+        client.get("2608.01234")
+
+    assert delays[0] == 10.0
+    assert 9.9 <= delays[1] <= 10.0
 
 
 def test_pdf_download_replaces_only_after_complete_response(tmp_path) -> None:

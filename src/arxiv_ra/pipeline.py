@@ -33,7 +33,7 @@ class DailyPipeline:
         self.project_root = project_root
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else project_root / output
-        self.arxiv = ArxivClient()
+        self.arxiv = ArxivClient(min_interval=3.0)
         self.arxiv_html = ArxivHtmlFigureClient()
         self.llm = LLMClient(config.llm)
         self.verifier = MetadataVerifier(config.metadata)

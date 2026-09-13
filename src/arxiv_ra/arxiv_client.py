@@ -12,6 +12,7 @@ import httpx
 
 from . import __version__
 from .models import Author, Paper
+from .rate_limit import defer_rate_limit, shared_rate_limit
 from .utils import normalize_space
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -77,9 +78,13 @@ class ArxivClient:
         timeout: float = 45.0,
         max_retries: int = 3,
         retry_base_delay: float = 1.0,
+        min_interval: float = 3.0,
+        rate_limit_key: str = "arxiv-api",
     ) -> None:
         self.max_retries = max(0, max_retries)
         self.retry_base_delay = max(0.0, retry_base_delay)
+        self.min_interval = max(0.0, min_interval)
+        self.rate_limit_key = rate_limit_key
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
@@ -87,11 +92,23 @@ class ArxivClient:
         )
 
     def _get(self, url: str) -> httpx.Response:
-        """Retry transient arXiv API resets and temporary server failures."""
+        """Retry transient failures while respecting arXiv's API rate limits."""
         attempts = self.max_retries + 1
         for attempt in range(attempts):
             try:
-                response = self.client.get(url)
+                with shared_rate_limit(self.rate_limit_key, self.min_interval):
+                    response = self.client.get(url)
+                    if response.status_code == 429:
+                        retry_after = response.headers.get("Retry-After", "")
+                        try:
+                            requested_delay = float(retry_after)
+                        except (TypeError, ValueError):
+                            requested_delay = 0.0
+                        delay = max(
+                            requested_delay,
+                            10.0 * (2**attempt),
+                        )
+                        defer_rate_limit(self.rate_limit_key, min(delay, 60.0))
             except httpx.TransportError as exc:
                 if attempt == attempts - 1:
                     raise RuntimeError(
@@ -102,13 +119,16 @@ class ArxivClient:
                 if response.status_code not in {429, 500, 502, 503, 504}:
                     return response
                 if attempt == attempts - 1:
+                    if response.status_code == 429:
+                        raise RuntimeError(
+                            f"arXiv API 当前限流（HTTP 429），已按 API 规则自动退避重试 {self.max_retries} 次；请稍后再刷新每日推荐"
+                        )
                     raise RuntimeError(
                         f"arXiv API 暂时不可用（HTTP {response.status_code}），已自动重试 {self.max_retries} 次"
                     )
-                retry_after = response.headers.get("Retry-After", "")
-                try:
-                    delay = float(retry_after)
-                except (TypeError, ValueError):
+                if response.status_code == 429:
+                    delay = max(10.0 * (2**attempt), self.retry_base_delay)
+                else:
                     delay = self.retry_base_delay * (2**attempt)
             time.sleep(max(0.0, min(delay, 30.0)))
         raise RuntimeError("arXiv API 请求失败")

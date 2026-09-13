@@ -58,6 +58,6 @@ Obsidian 同步会自动把网页报告使用的 KaTeX 分隔符转换为 Obsidi
 
 ## 验证
 
-- 自动化测试：91 passed。
+- 自动化测试：92 passed。
 - Obsidian：16 篇论文笔记，39 个受管笔记，0 个断链，0 个 arXiv ID 文件名。
 - ToolArtist HTML：1 个方法图解析区、3 个 Figure 子项、无重复 Figure H3、无横向溢出。
