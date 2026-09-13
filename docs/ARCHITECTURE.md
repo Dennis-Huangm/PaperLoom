@@ -31,6 +31,9 @@ DailyPipeline and feature orchestrators
   JSON replacement.
 - Integration modules (`zotero.py`, `obsidian.py`, `emailer.py`) are adapters.
   They do not decide which papers are recommended.
+- `alphaxiv.py` is an optional discovery fallback only. It returns candidate arXiv
+  IDs after an arXiv API failure; existing metadata verification remains the
+  source of truth for publication fields.
 
 ## Persistent data contract
 

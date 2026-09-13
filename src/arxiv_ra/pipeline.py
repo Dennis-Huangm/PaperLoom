@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import shutil
 import re
-from datetime import datetime
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .abstracts import localize_abstracts
+from .alphaxiv import AlphaXivClient, AlphaXivError
 from .arxiv_client import ArxivClient, offline_demo_papers
 from .arxiv_html import ArxivHtmlFigureClient
 from .config import AppConfig
@@ -34,6 +36,10 @@ class DailyPipeline:
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else project_root / output
         self.arxiv = ArxivClient(min_interval=3.0)
+        self.alphaxiv = AlphaXivClient(
+            api_key=os.getenv(config.discovery.alphaxiv_api_key_env, ""),
+            endpoint=config.discovery.alphaxiv_endpoint,
+        )
         self.arxiv_html = ArxivHtmlFigureClient()
         self.llm = LLMClient(config.llm)
         self.verifier = MetadataVerifier(config.metadata)
@@ -69,16 +75,7 @@ class DailyPipeline:
         return digest_path
 
     def _rank_candidates(self, run_dir: Path, demo: bool):
-        papers = (
-            offline_demo_papers()
-            if demo
-            else self.arxiv.search(
-                self.config.discovery.arxiv_categories,
-                self.config.discovery.lookback_days,
-                self.config.discovery.max_candidates,
-                self.config.discovery.arxiv_query_terms,
-            )
-        )
+        papers = offline_demo_papers() if demo else self._discover_papers(run_dir)
         ranked = rank_papers(papers, self.config.discovery, self.config.ranking)
         library_entries = PaperLibraryStore(
             self.output_root, self.config.profile_id
@@ -108,6 +105,48 @@ class DailyPipeline:
         self._annotate_feedback_reasons(candidates)
         write_json(run_dir / "candidates.json", [paper.to_dict() for paper in candidates])
         return candidates
+
+    def _discover_papers(self, run_dir: Path):
+        discovery = self.config.discovery
+        try:
+            return self.arxiv.search(
+                discovery.arxiv_categories,
+                discovery.lookback_days,
+                discovery.max_candidates,
+                discovery.arxiv_query_terms,
+            )
+        except Exception as arxiv_error:
+            if discovery.provider != "auto" or not discovery.alphaxiv_fallback_enabled:
+                raise
+            try:
+                today = datetime.now(timezone.utc).date()
+                published_after = (today - timedelta(days=discovery.lookback_days)).isoformat()
+                keywords = discovery.positive_keywords + discovery.arxiv_query_terms
+                question = self._interest_description()
+                papers = self.alphaxiv.discover(
+                    keywords=keywords,
+                    question=question,
+                    published_after=published_after,
+                    limit=discovery.max_candidates,
+                    difficulty=discovery.alphaxiv_difficulty,
+                )
+            except Exception as alphaxiv_error:
+                if isinstance(alphaxiv_error, AlphaXivError):
+                    detail = str(alphaxiv_error)
+                else:
+                    detail = f"{type(alphaxiv_error).__name__}: {alphaxiv_error}"
+                raise RuntimeError(
+                    f"arXiv API 不可用（{type(arxiv_error).__name__}），alphaXiv 备用检索也失败：{detail}"
+                ) from arxiv_error
+            if not papers:
+                raise RuntimeError(
+                    f"arXiv API 不可用（{type(arxiv_error).__name__}），alphaXiv 未返回可用论文"
+                ) from arxiv_error
+            (run_dir / "discovery-source.txt").write_text(
+                "本次推荐使用 alphaXiv 备用检索；元数据仍由本地核验链补充。\n",
+                encoding="utf-8",
+            )
+            return papers
 
     @staticmethod
     def _annotate_feedback_reasons(candidates) -> None:

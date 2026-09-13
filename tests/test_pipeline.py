@@ -142,3 +142,50 @@ def test_delivery_failure_does_not_commit_processed_state(
         raise AssertionError("delivery failure should propagate")
 
     assert not (tmp_path / "run" / "state-test.json").exists()
+
+
+def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    paper = Paper(
+        arxiv_id="2609.00003",
+        title="Fallback Paper",
+        authors=[Author("Researcher")],
+        abstract="Agentic image generation.",
+        categories=["cs.CV"],
+        primary_category="cs.CV",
+        published=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        abs_url="https://arxiv.org/abs/2609.00003",
+        pdf_url="https://arxiv.org/pdf/2609.00003",
+    )
+    config = AppConfig(output_dir=str(tmp_path / "run"), profile_id="test")
+    config.discovery.min_score = -1
+    config.discovery.minimum_concept_groups = 0
+    config.discovery.recommendation_count = 1
+    config.discovery.alphaxiv_fallback_enabled = True
+    config.ranking.llm_rerank = False
+    config.weekly.enabled = False
+    config.version_tracking.enabled = False
+    pipeline = DailyPipeline(config, tmp_path)
+    pipeline.arxiv = SimpleNamespace(
+        search=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("arXiv API 当前限流")
+        )
+    )
+    pipeline.alphaxiv = SimpleNamespace(
+        discover=lambda **_kwargs: [paper]
+    )
+    pipeline.verifier = SimpleNamespace(
+        verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
+    )
+    monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("arxiv_ra.pipeline.matched_concept_groups", lambda *_args: 0)
+    monkeypatch.setattr("arxiv_ra.pipeline.localize_abstracts", lambda *_args: None)
+
+    pipeline.run(force=True, demo=False, deliver=False)
+
+    date_label = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
+    assert (tmp_path / "run" / date_label / "discovery-source.txt").read_text(
+        encoding="utf-8"
+    ).startswith("本次推荐使用 alphaXiv")

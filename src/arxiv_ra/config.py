@@ -10,6 +10,13 @@ import yaml
 
 @dataclass(slots=True)
 class DiscoveryConfig:
+    # `auto` keeps arXiv as the source of truth and uses alphaXiv only after
+    # arXiv API retries are exhausted. `arxiv` disables the fallback.
+    provider: str = "auto"
+    alphaxiv_fallback_enabled: bool = True
+    alphaxiv_endpoint: str = "https://api.alphaxiv.org/mcp/v1"
+    alphaxiv_api_key_env: str = "ALPHAXIV_API_KEY"
+    alphaxiv_difficulty: int = 5
     interest_description: str = ""
     lookback_days: int = 2
     max_candidates: int = 300

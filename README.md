@@ -73,7 +73,7 @@ Docling 较大，CPU 环境也可以先使用默认的 PyMuPDF 回退链路。
 ```text
 profiles/
 ├── active.txt
-├── agentict2i.yaml
+├── <profile-id>.yaml
 └── another-topic.yaml
 ```
 
@@ -83,7 +83,7 @@ profiles/
 
 ```powershell
 arxiv-ra --config config.yaml profiles
-arxiv-ra --config config.yaml activate agentict2i
+arxiv-ra --config config.yaml activate <profile-id>
 ```
 
 配置中心里的“检索”和“排序”字段只修改当前方向，其余字段仍修改全局 `config.yaml`。旧版本首次启动 GUI 或 CLI 时，会自动把 `config.yaml` 中现有的检索和排序参数迁移为默认档案。
@@ -109,6 +109,21 @@ discovery:
 建议将 `positive_keywords` 写得比“AI”更具体，例如方法名称、任务、数据模态和你关注的问题。负向关键词表示降低优先级，不是绝对排除；最终分数低于 `min_score` 的论文不会进入每日推荐。
 
 同时把 `metadata.openalex_email` 改成自己的联系邮箱。OpenAlex 公共 API 可以不填写 key，但填写免费 key 后限额更稳定。
+
+### alphaXiv 备用检索（可选）
+
+每日检索默认优先使用 arXiv API。若连续重试后仍遇到限流或连接失败，且
+`discovery.provider` 为 `auto`、`alphaxiv_fallback_enabled` 为 `true`，系统会使用
+alphaXiv 的 `discover_papers` 作为备用发现源。请在 alphaXiv 的 Settings → API Keys
+创建密钥，并只把密钥写入本机 `.env`：
+
+```dotenv
+ALPHAXIV_API_KEY=your-key
+```
+
+备用结果仍会经过本项目的方向排序、去重和 OpenAlex/Semantic Scholar 元数据核验；
+alphaXiv 不会替代正式出版信息的核验来源。若不希望启用备用源，可在配置中心选择
+“仅使用 arXiv API”。
 
 ## 3. 配置模型
 
@@ -156,7 +171,7 @@ python -m pip install -e ".[gui,dev]"
 arxiv-ra --config config.yaml gui
 ```
 
-浏览器会打开 `http://127.0.0.1:8000`。GUI 提供今日推荐、后台生成完整报告、本地报告库、完整运行配置与服务状态。配置中心可以修改所有 `config.yaml` 字段，也可以更新 `.env` 中的 LLM/OpenAlex/Semantic Scholar API、QQ 邮箱和 SMTP 授权码。
+浏览器会打开 `http://127.0.0.1:8000`。GUI 提供今日推荐、后台生成完整报告、本地报告库、完整运行配置与服务状态。配置中心可以修改所有 `config.yaml` 字段，也可以更新 `.env` 中的 LLM/OpenAlex/Semantic Scholar/alphaXiv API、QQ 邮箱和 SMTP 授权码。
 
 后台并行数可在“配置 → 常规设置”中修改，保存后立即生效：
 
@@ -205,7 +220,7 @@ arxiv-ra --config config.yaml report 2409.13740
 
 ```text
 run/
-├── state-agentict2i.json
+├── state-<profile-id>.json
 └── YYYY-MM-DD/
     ├── candidates.json
     ├── recommendations.json
@@ -360,7 +375,7 @@ arxiv-ra --config config.yaml weekly
 
 ```text
 run/
-├── version-state-agentict2i.json
+├── version-state-<profile-id>.json
 └── versions/
     ├── index.html
     └── ARXIV-ID/v1-to-v2/

@@ -81,6 +81,20 @@ def service_status(config: AppConfig, config_path: Path) -> list[dict[str, Any]]
             "detail": "可选增强源",
         },
         {
+            "name": "alphaXiv 备用检索",
+            "ready": bool(
+                config.discovery.provider == "auto"
+                and config.discovery.alphaxiv_fallback_enabled
+                and os.getenv(config.discovery.alphaxiv_api_key_env)
+            ),
+            "detail": (
+                "仅在 arXiv API 重试耗尽后启用"
+                if config.discovery.provider == "auto"
+                and config.discovery.alphaxiv_fallback_enabled
+                else "备用检索未启用"
+            ),
+        },
+        {
             "name": "QQ SMTP",
             "ready": bool(
                 config.delivery.email_enabled

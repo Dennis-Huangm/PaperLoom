@@ -2,6 +2,12 @@ timezone: Asia/Shanghai
 output_dir: run
 
 discovery:
+  # Keep arXiv as the source of truth; alphaXiv is used only after arXiv API retries fail.
+  provider: auto
+  alphaxiv_fallback_enabled: true
+  alphaxiv_endpoint: https://api.alphaxiv.org/mcp/v1
+  alphaxiv_api_key_env: ALPHAXIV_API_KEY
+  alphaxiv_difficulty: 5
   lookback_days: 2
   max_candidates: 300
   prefilter_count: 30

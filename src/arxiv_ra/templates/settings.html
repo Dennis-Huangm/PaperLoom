@@ -58,6 +58,11 @@
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
       <label>研究主题描述<textarea name="interest_description" rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
       <div class="form-columns">
+        <label>检索来源模式<select name="discovery_provider"><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>自动：arXiv 优先，alphaXiv 备用</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>推荐保持自动模式；备用源需要配置 alphaXiv API Key。</small></label>
+        <label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label>
+        <label>alphaXiv API Key 环境变量名<input name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}" required></label>
+        <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，备用检索会投入更多检索轮次。</small></label>
+        <label class="toggle-field"><span>启用 alphaXiv 备用检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
         <label>arXiv 类别<textarea name="arxiv_categories" rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
         <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
         <label>重点关键词<textarea name="positive_keywords" rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>

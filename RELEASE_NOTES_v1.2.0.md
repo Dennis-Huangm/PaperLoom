@@ -56,8 +56,10 @@ Obsidian 同步会自动把网页报告使用的 KaTeX 分隔符转换为 Obsidi
 
 发布冻结审查进一步拆分了 Web 数据读取、配置校验和后台任务队列，并把每日流水线整理为排名、选择、核验、发布和集成五个阶段。同一天的推荐现在按研究方向独立保存；所有关键 JSON/配置/Obsidian 托管笔记使用原子替换，SMTP 发送失败时不会提前提交去重状态。源码包改由 `scripts/build_release.ps1` 生成并自动拦截 `.env`、`config.yaml`、`profiles/`、`run/`、缓存与字节码。
 
+当 arXiv API 长时间返回 429 或连接失败时，可在配置中心启用 alphaXiv 备用检索并在 `.env` 配置 `ALPHAXIV_API_KEY`。alphaXiv 只负责发现候选论文，正式出版信息仍由 OpenAlex、Semantic Scholar、arXiv 页面等来源核验。
+
 ## 验证
 
-- 自动化测试：92 passed。
+- 自动化测试：95 passed。
 - Obsidian：16 篇论文笔记，39 个受管笔记，0 个断链，0 个 arXiv ID 文件名。
 - ToolArtist HTML：1 个方法图解析区、3 个 Figure 子项、无重复 Figure H3、无横向溢出。
