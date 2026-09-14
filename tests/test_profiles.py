@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from arxiv_ra.config import load_config
+from arxiv_ra.config import AppConfig, load_config
 from arxiv_ra.models import Author, Paper
 from arxiv_ra.profiles import ProfileGenerator, ProfileManager
 
@@ -105,3 +105,59 @@ def test_profile_generator_uses_reference_metadata_without_llm(tmp_path: Path, m
     assert profile["discovery"]["seed_papers"] == ["2401.00001"]
     assert profile["source"]["reference_papers"][0]["title"] == "World Models for Robots"
     assert profile["discovery"]["recommendation_count"] == 7
+
+
+def test_profile_generator_falls_back_to_alphaxiv_for_reference(monkeypatch) -> None:
+    config = AppConfig()
+    config.discovery.alphaxiv_fallback_enabled = True
+    generator = ProfileGenerator(config)
+    generator.llm.enabled = False
+    paper = Paper(
+        arxiv_id="2609.00006",
+        title="Fallback Reference",
+        authors=[Author("Researcher")],
+        abstract="A visual agent reference.",
+        categories=["cs.CV"],
+        primary_category="cs.CV",
+        published=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        abs_url="https://arxiv.org/abs/2609.00006",
+        pdf_url="https://arxiv.org/pdf/2609.00006",
+    )
+    generator.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
+    generator.alphaxiv = type(
+        "AlphaXiv",
+        (),
+        {"enabled": True, "lookup": lambda *_args, **_kwargs: paper},
+    )()
+
+    profile = generator.generate(
+        "fallback",
+        "Fallback",
+        ["visual agent"],
+        [],
+        [paper.arxiv_id],
+    )
+
+    assert profile["source"]["reference_papers"] == [
+        {"arxiv_id": paper.arxiv_id, "title": paper.title}
+    ]
+
+
+def test_profile_generator_preserves_reference_id_when_all_sources_fail() -> None:
+    config = AppConfig()
+    generator = ProfileGenerator(config)
+    generator.llm.enabled = False
+    generator.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
+    generator.alphaxiv = type("AlphaXiv", (), {"enabled": False})()
+
+    profile = generator.generate(
+        "offline-reference",
+        "Offline Reference",
+        ["visual agent"],
+        [],
+        ["2609.00007"],
+    )
+
+    assert profile["discovery"]["seed_papers"] == ["2609.00007"]
+    assert profile["source"]["reference_papers"][0]["title"] == ""

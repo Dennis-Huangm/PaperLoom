@@ -63,7 +63,11 @@ def test_report_generation_uses_local_snapshot_when_arxiv_api_fails(tmp_path: Pa
     pipeline = DailyPipeline.__new__(DailyPipeline)
     pipeline.config = SimpleNamespace(timezone="Asia/Shanghai", profile_id="test")
     pipeline.output_root = tmp_path / "run"
-    pipeline.arxiv = SimpleNamespace(get=lambda _arxiv_id: (_ for _ in ()).throw(RuntimeError("429")))
+    pipeline.arxiv = SimpleNamespace(
+        get=lambda _arxiv_id: (_ for _ in ()).throw(
+            AssertionError("local snapshot should avoid the arXiv API")
+        )
+    )
     pipeline._process_paper = lambda received, *_args, **_kwargs: (assert_same(received, paper), artifact)[1]
 
     assert pipeline.report_arxiv_id(paper.arxiv_id) == artifact.report_path
@@ -71,6 +75,36 @@ def test_report_generation_uses_local_snapshot_when_arxiv_api_fails(tmp_path: Pa
 
 def assert_same(left: Paper, right: Paper) -> None:
     assert left.arxiv_id == right.arxiv_id
+
+
+def test_report_generation_uses_alphaxiv_for_unknown_local_id(tmp_path: Path) -> None:
+    paper = Paper(
+        arxiv_id="2609.00008",
+        title="Resolved by alphaXiv",
+        authors=[],
+        abstract="Resolved paper.",
+        categories=[],
+        primary_category="",
+        published=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        abs_url="https://arxiv.org/abs/2609.00008",
+        pdf_url="https://arxiv.org/pdf/2609.00008",
+    )
+    artifact = ReportArtifact(paper, tmp_path / "report.md", None, VerifiedMetadata(), "report")
+    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline.config = SimpleNamespace(
+        timezone="Asia/Shanghai",
+        profile_id="test",
+        discovery=SimpleNamespace(provider="auto", alphaxiv_fallback_enabled=True),
+    )
+    pipeline.output_root = tmp_path / "run"
+    pipeline.arxiv = SimpleNamespace(
+        get=lambda _arxiv_id: (_ for _ in ()).throw(RuntimeError("429"))
+    )
+    pipeline.alphaxiv = SimpleNamespace(enabled=True, lookup=lambda _arxiv_id: paper)
+    pipeline._process_paper = lambda *_args, **_kwargs: artifact
+
+    assert pipeline.report_arxiv_id(paper.arxiv_id) == artifact.report_path
 
 
 def test_daily_pipeline_publishes_only_after_localization(

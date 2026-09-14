@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
+import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from .alphaxiv import AlphaXivClient
 from .arxiv_client import ArxivClient
 from .config import AppConfig
 from .llm import LLMClient
@@ -150,6 +152,10 @@ class ProfileGenerator:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.arxiv = ArxivClient()
+        self.alphaxiv = AlphaXivClient(
+            api_key=os.getenv(config.discovery.alphaxiv_api_key_env, ""),
+            endpoint=config.discovery.alphaxiv_endpoint,
+        )
         self.llm = LLMClient(config.llm)
 
     def generate(
@@ -164,13 +170,13 @@ class ProfileGenerator:
     ) -> dict[str, Any]:
         references = []
         for arxiv_id in reference_ids[:12]:
-            paper = self.arxiv.get(arxiv_id)
+            paper = self._reference_paper(arxiv_id)
             references.append(
                 {
-                    "arxiv_id": paper.arxiv_id,
-                    "title": paper.title,
-                    "abstract": paper.abstract,
-                    "categories": paper.categories,
+                    "arxiv_id": paper.arxiv_id if paper else arxiv_id,
+                    "title": paper.title if paper else "",
+                    "abstract": paper.abstract if paper else "",
+                    "categories": paper.categories if paper else [],
                 }
             )
         generated = self._llm_profile(name, description, keywords, negative_keywords, references)
@@ -217,6 +223,21 @@ class ProfileGenerator:
             "discovery": discovery,
             "ranking": asdict(self.config.ranking),
         }
+
+    def _reference_paper(self, arxiv_id: str):
+        try:
+            return self.arxiv.get(arxiv_id)
+        except Exception:
+            if (
+                self.config.discovery.provider != "auto"
+                or not self.config.discovery.alphaxiv_fallback_enabled
+                or not self.alphaxiv.enabled
+            ):
+                return None
+        try:
+            return self.alphaxiv.lookup(arxiv_id)
+        except Exception:
+            return None
 
     def _llm_profile(
         self,

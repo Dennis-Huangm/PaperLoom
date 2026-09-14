@@ -92,6 +92,20 @@ class AlphaXivClient:
         ]
         return papers[: max(1, min(15, int(limit)))]
 
+    def lookup(self, arxiv_id: str) -> Paper | None:
+        """Resolve one exact arXiv ID through alphaXiv without substitutions."""
+        papers = self.discover(
+            keywords=[arxiv_id, "arXiv paper", "research paper"],
+            question=(
+                f"Find the exact paper with arXiv ID {arxiv_id}. "
+                "Do not substitute a different paper."
+            ),
+            published_after="1991-01-01",
+            limit=10,
+            difficulty=1,
+        )
+        return next((paper for paper in papers if paper.arxiv_id == arxiv_id), None)
+
     def _headers(self, session_id: str = "") -> dict[str, str]:
         headers = {
             "Accept": "application/json, text/event-stream",

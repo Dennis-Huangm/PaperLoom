@@ -26,7 +26,7 @@ from .report import ReportGenerator, finalize_report_structure
 from .utils import read_json, slugify, write_json
 from .weekly import WeeklySynthesizer
 from .version_tracker import VersionTracker
-from .storage import recommendation_data_path
+from .storage import recommendation_data_path, read_recommendations
 
 
 class DailyPipeline:
@@ -330,35 +330,40 @@ class DailyPipeline:
         now = datetime.now(ZoneInfo(self.config.timezone))
         run_dir = self.output_root / now.date().isoformat()
         run_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            paper = self.arxiv.get(arxiv_id)
-        except Exception as arxiv_error:
-            paper = self._paper_snapshot(arxiv_id)
-            if paper is None:
-                raise RuntimeError(
-                    f"arXiv API 无法获取 {arxiv_id}，且本地没有这篇论文的推荐/文献库快照；请稍后重试"
-                ) from arxiv_error
+        paper = self._paper_snapshot(arxiv_id)
+        if paper is None:
+            try:
+                paper = self.arxiv.get(arxiv_id)
+            except Exception as arxiv_error:
+                paper = None
+                if (
+                    self.config.discovery.provider == "auto"
+                    and self.config.discovery.alphaxiv_fallback_enabled
+                    and self.alphaxiv.enabled
+                ):
+                    try:
+                        paper = self.alphaxiv.lookup(arxiv_id)
+                    except Exception:
+                        paper = None
+                if paper is None:
+                    raise RuntimeError(
+                        f"arXiv API 无法获取 {arxiv_id}，本地没有论文快照，alphaXiv 也未能精确解析该 ID；请稍后重试"
+                    ) from arxiv_error
         paper.lexical_score = 0
         artifact = self._process_paper(paper, run_dir, demo=False)
         return artifact.report_path
 
     def _paper_snapshot(self, arxiv_id: str):
         """Find a locally saved paper before requiring another arXiv API call."""
-        filenames = (
-            [f"recommendations-{self.config.profile_id}.json", "recommendations.json"]
-            if self.config.profile_id
-            else ["recommendations.json"]
-        )
+        profile_id = getattr(self.config, "profile_id", "")
         for date_dir in sorted(self.output_root.glob("????-??-??"), reverse=True):
-            for filename in filenames:
-                payload = read_json(date_dir / filename, []) or []
-                if not isinstance(payload, list):
-                    continue
-                for item in payload:
-                    paper = item.get("paper") or {}
-                    if str(paper.get("arxiv_id") or "") == arxiv_id:
-                        return Paper.from_dict(paper)
-        saved = PaperLibraryStore(self.output_root, self.config.profile_id).all().get(arxiv_id)
+            for item in read_recommendations(
+                self.output_root, date_dir.name, profile_id
+            ):
+                paper = item.get("paper") or {}
+                if str(paper.get("arxiv_id") or "") == arxiv_id:
+                    return Paper.from_dict(paper)
+        saved = PaperLibraryStore(self.output_root, profile_id).all().get(arxiv_id)
         if saved and saved.get("paper"):
             return Paper.from_dict(saved["paper"])
         for metadata_path in self.output_root.glob(

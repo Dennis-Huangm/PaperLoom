@@ -51,7 +51,10 @@ class Paper:
     def from_dict(cls, value: dict[str, Any]) -> "Paper":
         """Rehydrate a paper snapshot saved by recommendations or the library."""
         def parse_date(raw: Any) -> datetime:
-            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            try:
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                parsed = datetime.now(timezone.utc)
             return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
         authors = [
