@@ -66,8 +66,10 @@ alphaXiv 的真实 `discover_papers` 响应可能使用编号 Markdown，而不�
 
 手工输入本地未知的 arXiv ID 时，报告任务会继续尝试通过 alphaXiv 精确解析；研究方向创建中的参考论文 ID 也使用同一备用链路。
 
+历史推荐日期上的收藏、反馈和 Zotero 操作现在可以正确找到对应论文并保留原始推荐日期；周报严格读取当前研究方向的独立每日文件。
+
 ## 验证
 
-- 自动化测试：102 passed。
+- 自动化测试：104 passed。
 - Obsidian：16 篇论文笔记，39 个受管笔记，0 个断链，0 个 arXiv ID 文件名。
 - ToolArtist HTML：1 个方法图解析区、3 个 Figure 子项、无重复 Figure H3、无横向溢出。

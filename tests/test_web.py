@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from arxiv_ra.abstracts import localize_abstracts
 from arxiv_ra.config import AppConfig
 from arxiv_ra.library import PaperLibraryStore
-from arxiv_ra.utils import read_json
+from arxiv_ra.utils import read_json, write_json
 from arxiv_ra.web import (
     JobManager,
     create_app,
@@ -303,6 +303,50 @@ def test_dashboard_can_switch_to_historical_recommendation_date(
     assert '"date": "2026-08-20"' in historical.text
     assert "当日推荐 1 篇" in historical.text
     assert invalid.status_code == 400
+
+
+def test_historical_recommendation_actions_find_paper_and_keep_source_date(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+
+    def item(arxiv_id: str, title: str) -> dict:
+        return {
+            "profile_id": "agentict2i",
+            "paper": {
+                "arxiv_id": arxiv_id,
+                "title": title,
+                "authors": [],
+                "abstract": "Saved abstract.",
+                "recommendation_reason": "Saved reason.",
+                "primary_category": "cs.CV",
+                "categories": ["cs.CV"],
+                "published": "2026-08-01T00:00:00+00:00",
+                "updated": "2026-08-01T00:00:00+00:00",
+                "abs_url": f"https://arxiv.org/abs/{arxiv_id}",
+                "pdf_url": f"https://arxiv.org/pdf/{arxiv_id}",
+            },
+            "verified": {},
+        }
+
+    write_json(
+        tmp_path / "run" / "2026-08-20" / "recommendations-agentict2i.json",
+        [item("2608.00001", "Historical Paper")],
+    )
+    write_json(
+        tmp_path / "run" / "2026-08-22" / "recommendations-agentict2i.json",
+        [item("2608.00002", "Latest Paper")],
+    )
+    app = create_app(config_path)
+
+    with TestClient(app) as client:
+        response = client.post("/api/library/add", data={"arxiv_id": "2608.00001"})
+
+    assert response.status_code == 200
+    saved = PaperLibraryStore(tmp_path / "run", "agentict2i").all()["2608.00001"]
+    assert saved["source_date"] == "2026-08-20"
 
 
 def test_job_result_prefers_rendered_html_over_markdown(tmp_path: Path) -> None:

@@ -205,11 +205,15 @@ def create_app(config_path: Path | str) -> FastAPI:
 
     def recommendation_item(arxiv_id: str) -> dict[str, Any]:
         current = load_config(config_path)
-        _, recommendations = latest_recommendations(output_root, current.profile_id)
-        localize_abstracts(current, output_root, recommendations)
-        for item in recommendations:
-            if str((item.get("paper") or {}).get("arxiv_id") or "") == arxiv_id:
-                return item
+        for history_item in recommendation_history(output_root, current.profile_id):
+            recommendations = recommendations_for_date(
+                output_root, history_item["date"], current.profile_id
+            )
+            for item in recommendations:
+                if str((item.get("paper") or {}).get("arxiv_id") or "") == arxiv_id:
+                    localize_abstracts(current, output_root, [item])
+                    item["_source_date"] = history_item["date"]
+                    return item
         saved = PaperLibraryStore(output_root, current.profile_id).all().get(arxiv_id)
         if saved:
             item = {
@@ -234,15 +238,12 @@ def create_app(config_path: Path | str) -> FastAPI:
 
     def add_to_paper_library(arxiv_id: str) -> dict[str, Any]:
         current = load_config(config_path)
-        date_label, _recommendations = latest_recommendations(
-            output_root, current.profile_id
-        )
         item = recommendation_item(arxiv_id)
         localize_abstracts(current, output_root, [item])
         entry = PaperLibraryStore(output_root, current.profile_id).add(
             item,
             current.profile_name,
-            source_date=date_label or "",
+            source_date=str(item.get("_source_date") or ""),
         )
         # Positive and negative signals are mutually exclusive.
         FeedbackStore(output_root, current.profile_id).remove(arxiv_id)

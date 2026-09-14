@@ -11,6 +11,7 @@ from .library import PaperLibraryStore
 from .llm import LLMClient
 from .obsidian import ObsidianExporter
 from .render import render_report
+from .storage import read_recommendations
 from .utils import read_json, write_json
 
 
@@ -82,10 +83,9 @@ class WeeklySynthesizer:
                 continue
             if not start <= date_value <= now.date():
                 continue
-            for item in read_json(date_dir / "recommendations.json", []) or []:
-                item_profile = str(item.get("profile_id") or "")
-                if item_profile and item_profile != self.config.profile_id:
-                    continue
+            for item in read_recommendations(
+                self.output_root, date_dir.name, self.config.profile_id
+            ):
                 paper = item.get("paper") or {}
                 arxiv_id = str(paper.get("arxiv_id") or "")
                 if arxiv_id:
