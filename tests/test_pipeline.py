@@ -189,3 +189,39 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     assert (tmp_path / "run" / date_label / "discovery-source.txt").read_text(
         encoding="utf-8"
     ).startswith("本次推荐使用 alphaXiv")
+
+
+def test_fallback_does_not_publish_empty_success_when_all_candidates_are_processed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    paper = Paper(
+        arxiv_id="2609.00004",
+        title="Already Recommended",
+        authors=[Author("Researcher")],
+        abstract="Agentic image generation.",
+        categories=["cs.CV"],
+        primary_category="cs.CV",
+        published=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        abs_url="https://arxiv.org/abs/2609.00004",
+        pdf_url="https://arxiv.org/pdf/2609.00004",
+    )
+    config = AppConfig(output_dir=str(tmp_path / "run"), profile_id="test")
+    config.discovery.minimum_concept_groups = 0
+    config.ranking.llm_rerank = False
+    config.weekly.enabled = False
+    config.version_tracking.enabled = False
+    pipeline = DailyPipeline(config, tmp_path)
+    pipeline.arxiv = SimpleNamespace(
+        search=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("429"))
+    )
+    pipeline.alphaxiv = SimpleNamespace(discover=lambda **_kwargs: [paper])
+    monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("arxiv_ra.pipeline.matched_concept_groups", lambda *_args: 0)
+    write_json(tmp_path / "run" / "state-test.json", {"processed": [paper.arxiv_id]})
+
+    with __import__("pytest").raises(RuntimeError, match="已阻止发布重复的空日报"):
+        pipeline.run(force=False, demo=False, deliver=False)
+
+    date_label = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
+    assert not (tmp_path / "run" / date_label / "recommendations-test.json").exists()

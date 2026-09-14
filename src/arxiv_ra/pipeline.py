@@ -54,6 +54,10 @@ class DailyPipeline:
 
         candidates = self._rank_candidates(run_dir, demo)
         selected, processed, state_path = self._select_candidates(candidates, force)
+        if not selected and (run_dir / "discovery-source.txt").exists():
+            raise RuntimeError(
+                "alphaXiv 备用检索返回的候选均已在历史推荐中，已阻止发布重复的空日报；请稍后刷新或扩大研究方向关键词"
+            )
         verified_metadata = self._verify_selected(selected, demo)
         recommendations = self._recommendation_payload(selected, verified_metadata)
         if not demo:
@@ -75,6 +79,8 @@ class DailyPipeline:
         return digest_path
 
     def _rank_candidates(self, run_dir: Path, demo: bool):
+        if not demo:
+            (run_dir / "discovery-source.txt").unlink(missing_ok=True)
         papers = offline_demo_papers() if demo else self._discover_papers(run_dir)
         ranked = rank_papers(papers, self.config.discovery, self.config.ranking)
         library_entries = PaperLibraryStore(
@@ -129,6 +135,7 @@ class DailyPipeline:
                     published_after=published_after,
                     limit=discovery.max_candidates,
                     difficulty=discovery.alphaxiv_difficulty,
+                    excluded_ids=self._processed_ids(),
                 )
             except Exception as alphaxiv_error:
                 if isinstance(alphaxiv_error, AlphaXivError):
@@ -164,8 +171,7 @@ class DailyPipeline:
             )
 
     def _select_candidates(self, candidates, force: bool):
-        state_suffix = f"-{self.config.profile_id}" if self.config.profile_id else ""
-        state_path = self.output_root / f"state{state_suffix}.json"
+        state_path = self._state_path()
         state = read_json(state_path, {"processed": []}) or {"processed": []}
         processed = set(state.get("processed", []))
         selected = [
@@ -180,6 +186,14 @@ class DailyPipeline:
         ][: self.config.discovery.recommendation_count]
         processed.update(paper.arxiv_id for paper in selected)
         return selected, processed, state_path
+
+    def _state_path(self) -> Path:
+        suffix = f"-{self.config.profile_id}" if self.config.profile_id else ""
+        return self.output_root / f"state{suffix}.json"
+
+    def _processed_ids(self) -> set[str]:
+        state = read_json(self._state_path(), {"processed": []}) or {"processed": []}
+        return {str(item) for item in state.get("processed", []) if item}
 
     def _verify_selected(self, selected, demo: bool) -> dict[str, VerifiedMetadata]:
         verified: dict[str, VerifiedMetadata] = {}

@@ -64,10 +64,18 @@ class AlphaXivClient:
         published_after: str,
         limit: int = 15,
         difficulty: int = 5,
+        excluded_ids: set[str] | None = None,
     ) -> list[Paper]:
         if not self.enabled:
             raise AlphaXivUnavailable(
                 "alphaXiv 备用检索未配置 API Key；请在配置中心填写 ALPHAXIV_API_KEY"
+            )
+        excluded_ids = {item.strip() for item in (excluded_ids or set()) if item.strip()}
+        if excluded_ids:
+            exclusions = ", ".join(sorted(excluded_ids)[:50])
+            question = (
+                f"{question.strip()}\nDo not return papers with these arXiv IDs because they were already recommended: {exclusions}. "
+                "Return different relevant papers instead."
             )
         arguments = {
             "keywords": self._keywords(keywords),
@@ -77,7 +85,12 @@ class AlphaXivClient:
             "prioritize": "default",
         }
         payload = self._call_tool("discover_papers", arguments)
-        return self._normalize_papers(payload)[: max(1, min(15, int(limit)))]
+        papers = [
+            paper
+            for paper in self._normalize_papers(payload)
+            if paper.arxiv_id not in excluded_ids
+        ]
+        return papers[: max(1, min(15, int(limit)))]
 
     def _headers(self, session_id: str = "") -> dict[str, str]:
         headers = {

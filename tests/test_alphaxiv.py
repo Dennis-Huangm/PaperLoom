@@ -85,3 +85,43 @@ def test_numbered_markdown_results_are_normalized() -> None:
     assert papers[0].title.startswith("WeAgent-MMGenEdit")
     assert papers[0].abstract == "A multimodal agent for image generation."
     assert papers[0].published.date().isoformat() == "2026-09-04"
+
+
+def test_discover_excludes_already_recommended_ids() -> None:
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body)
+        if body.get("method") == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}})
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "1. [ID=2608.04436] **Old Paper** (https://www.alphaxiv.org/abs/2608.04436). Published 2026-08-05 · 1 views: Old.\n2. [ID=2609.09999] **New Paper** (https://www.alphaxiv.org/abs/2609.09999). Published 2026-09-09 · 1 views: New.",
+                        }
+                    ]
+                },
+            },
+        )
+
+    client = AlphaXivClient(
+        api_key="test-key",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    papers = client.discover(
+        keywords=["agent", "image generation"],
+        question="New agent papers",
+        published_after="2026-08-01",
+        excluded_ids={"2608.04436"},
+    )
+
+    assert [paper.arxiv_id for paper in papers] == ["2609.09999"]
+    arguments = calls[1]["params"]["arguments"]
+    assert "2608.04436" in arguments["question"]
