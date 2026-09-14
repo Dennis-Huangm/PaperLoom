@@ -17,7 +17,7 @@ from .feedback import FeedbackStore
 from .library import PaperLibraryStore
 from .llm import LLMClient
 from .metadata import MetadataVerifier
-from .models import ReportArtifact, VerifiedMetadata
+from .models import Paper, ReportArtifact, VerifiedMetadata
 from .obsidian import ObsidianExporter
 from .pdf_pipeline import PDFParser
 from .ranker import matched_concept_groups, rank_papers
@@ -89,12 +89,19 @@ class DailyPipeline:
         feedback_store = FeedbackStore(self.output_root, self.config.profile_id)
         feedback_store.apply(ranked, library_entries)
         ranked.sort(key=lambda item: (item.final_score, item.published), reverse=True)
+        used_alphaxiv = (run_dir / "discovery-source.txt").exists()
+        minimum_groups = self.config.discovery.minimum_concept_groups
+        if used_alphaxiv and minimum_groups > 0:
+            # alphaXiv already performs semantic retrieval and returns truncated
+            # abstract previews, so requiring every exact concept group would
+            # incorrectly discard the whole fallback set.
+            minimum_groups = max(1, minimum_groups - 1)
         eligible = [
             paper
             for paper in ranked
             if not feedback_store.blocks(paper)
             and matched_concept_groups(paper, self.config.discovery)
-            >= self.config.discovery.minimum_concept_groups
+            >= minimum_groups
         ]
         candidates = eligible[: self.config.discovery.prefilter_count]
         if self.config.ranking.llm_rerank and self.llm.enabled:
@@ -109,6 +116,14 @@ class DailyPipeline:
                     encoding="utf-8",
                 )
         self._annotate_feedback_reasons(candidates)
+        if used_alphaxiv:
+            for paper in candidates:
+                suffix = "由 alphaXiv 语义检索在 arXiv API 不可用时召回。"
+                paper.recommendation_reason = (
+                    f"{paper.recommendation_reason}；{suffix}"
+                    if paper.recommendation_reason
+                    else suffix
+                )
         write_json(run_dir / "candidates.json", [paper.to_dict() for paper in candidates])
         return candidates
 
@@ -315,10 +330,44 @@ class DailyPipeline:
         now = datetime.now(ZoneInfo(self.config.timezone))
         run_dir = self.output_root / now.date().isoformat()
         run_dir.mkdir(parents=True, exist_ok=True)
-        paper = self.arxiv.get(arxiv_id)
+        try:
+            paper = self.arxiv.get(arxiv_id)
+        except Exception as arxiv_error:
+            paper = self._paper_snapshot(arxiv_id)
+            if paper is None:
+                raise RuntimeError(
+                    f"arXiv API 无法获取 {arxiv_id}，且本地没有这篇论文的推荐/文献库快照；请稍后重试"
+                ) from arxiv_error
         paper.lexical_score = 0
         artifact = self._process_paper(paper, run_dir, demo=False)
         return artifact.report_path
+
+    def _paper_snapshot(self, arxiv_id: str):
+        """Find a locally saved paper before requiring another arXiv API call."""
+        filenames = (
+            [f"recommendations-{self.config.profile_id}.json", "recommendations.json"]
+            if self.config.profile_id
+            else ["recommendations.json"]
+        )
+        for date_dir in sorted(self.output_root.glob("????-??-??"), reverse=True):
+            for filename in filenames:
+                payload = read_json(date_dir / filename, []) or []
+                if not isinstance(payload, list):
+                    continue
+                for item in payload:
+                    paper = item.get("paper") or {}
+                    if str(paper.get("arxiv_id") or "") == arxiv_id:
+                        return Paper.from_dict(paper)
+        saved = PaperLibraryStore(self.output_root, self.config.profile_id).all().get(arxiv_id)
+        if saved and saved.get("paper"):
+            return Paper.from_dict(saved["paper"])
+        for metadata_path in self.output_root.glob(
+            f"????-??-??/reports/{arxiv_id.replace('/', '-')}-*/metadata.json"
+        ):
+            payload = read_json(metadata_path, {}) or {}
+            if payload.get("paper"):
+                return Paper.from_dict(payload["paper"])
+        return None
 
     def _process_paper(self, paper, run_dir: Path, demo: bool) -> ReportArtifact:
         paper_dir = run_dir / "reports" / f"{paper.arxiv_id.replace('/', '-')}-{slugify(paper.title, 42)}"

@@ -40,6 +40,39 @@ def test_report_generation_does_not_overwrite_daily_digest(tmp_path: Path) -> No
     assert digest.read_text(encoding="utf-8") == "daily recommendations"
 
 
+def test_report_generation_uses_local_snapshot_when_arxiv_api_fails(tmp_path: Path) -> None:
+    paper = Paper(
+        arxiv_id="2609.00005",
+        title="Snapshot Report",
+        authors=[Author("Researcher")],
+        abstract="A saved recommendation.",
+        categories=["cs.CV"],
+        primary_category="cs.CV",
+        published=datetime.now(timezone.utc),
+        updated=datetime.now(timezone.utc),
+        abs_url="https://arxiv.org/abs/2609.00005",
+        pdf_url="https://arxiv.org/pdf/2609.00005",
+    )
+    output = tmp_path / "run" / "2026-09-14"
+    output.mkdir(parents=True)
+    write_json(
+        output / "recommendations-test.json",
+        [{"profile_id": "test", "paper": paper.to_dict(), "verified": {}}],
+    )
+    artifact = ReportArtifact(paper, output / "reports" / "snapshot" / "report.md", None, VerifiedMetadata(), "report")
+    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline.config = SimpleNamespace(timezone="Asia/Shanghai", profile_id="test")
+    pipeline.output_root = tmp_path / "run"
+    pipeline.arxiv = SimpleNamespace(get=lambda _arxiv_id: (_ for _ in ()).throw(RuntimeError("429")))
+    pipeline._process_paper = lambda received, *_args, **_kwargs: (assert_same(received, paper), artifact)[1]
+
+    assert pipeline.report_arxiv_id(paper.arxiv_id) == artifact.report_path
+
+
+def assert_same(left: Paper, right: Paper) -> None:
+    assert left.arxiv_id == right.arxiv_id
+
+
 def test_daily_pipeline_publishes_only_after_localization(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -161,7 +194,7 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     )
     config = AppConfig(output_dir=str(tmp_path / "run"), profile_id="test")
     config.discovery.min_score = -1
-    config.discovery.minimum_concept_groups = 0
+    config.discovery.minimum_concept_groups = 2
     config.discovery.recommendation_count = 1
     config.discovery.alphaxiv_fallback_enabled = True
     config.ranking.llm_rerank = False
@@ -180,7 +213,7 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
         verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
     )
     monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
-    monkeypatch.setattr("arxiv_ra.pipeline.matched_concept_groups", lambda *_args: 0)
+    monkeypatch.setattr("arxiv_ra.pipeline.matched_concept_groups", lambda *_args: 1)
     monkeypatch.setattr("arxiv_ra.pipeline.localize_abstracts", lambda *_args: None)
 
     pipeline.run(force=True, demo=False, deliver=False)

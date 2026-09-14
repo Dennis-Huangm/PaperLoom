@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,42 @@ class Paper:
         value["updated"] = self.updated.isoformat()
         value["final_score"] = self.final_score
         return value
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "Paper":
+        """Rehydrate a paper snapshot saved by recommendations or the library."""
+        def parse_date(raw: Any) -> datetime:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+        authors = [
+            Author(
+                name=str(item.get("name") or ""),
+                affiliations=[str(aff) for aff in (item.get("affiliations") or [])],
+            )
+            for item in (value.get("authors") or [])
+            if isinstance(item, dict) and item.get("name")
+        ]
+        return cls(
+            arxiv_id=str(value.get("arxiv_id") or ""),
+            title=str(value.get("title") or ""),
+            authors=authors,
+            abstract=str(value.get("abstract") or ""),
+            categories=[str(item) for item in (value.get("categories") or [])],
+            primary_category=str(value.get("primary_category") or ""),
+            published=parse_date(value.get("published")),
+            updated=parse_date(value.get("updated") or value.get("published")),
+            abs_url=str(value.get("abs_url") or ""),
+            pdf_url=str(value.get("pdf_url") or ""),
+            version=int(value.get("version") or 1),
+            doi=value.get("doi"),
+            journal_ref=value.get("journal_ref"),
+            comment=value.get("comment"),
+            lexical_score=float(value.get("lexical_score") or 0),
+            llm_score=value.get("llm_score"),
+            feedback_score=float(value.get("feedback_score") or 0),
+            recommendation_reason=str(value.get("recommendation_reason") or ""),
+        )
 
 
 @dataclass(slots=True)
