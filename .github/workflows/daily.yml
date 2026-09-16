@@ -1,10 +1,13 @@
-name: PaperLoom daily research digest
+name: PaperLoom research digest
 
 on:
-  schedule:
-    # 07:30 Asia/Shanghai, Monday-Friday. GitHub Actions cron uses UTC.
-    - cron: "30 23 * * 0-4"
+  # Manual by default: cloud runs require personal configuration and API secrets.
   workflow_dispatch:
+    inputs:
+      upload_reports:
+        description: Upload generated reports as a repository artifact
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,26 +24,48 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e .
-      - name: Require personal configuration
-        run: test -f config.yaml || (echo "Commit a personalized config.yaml first." && exit 1)
+      - name: Prepare personal configuration
+        shell: python
+        env:
+          PAPERLOOM_CONFIG_YAML: ${{ secrets.PAPERLOOM_CONFIG_YAML }}
+        run: |
+          import os
+          from pathlib import Path
+          import yaml
+
+          config = os.environ.get("PAPERLOOM_CONFIG_YAML", "")
+          if not config.strip():
+              raise SystemExit("Set the PAPERLOOM_CONFIG_YAML repository secret before running this workflow.")
+          try:
+              settings = yaml.safe_load(config)
+          except yaml.YAMLError:
+              raise SystemExit("PAPERLOOM_CONFIG_YAML must contain valid YAML.") from None
+          if not isinstance(settings, dict) or settings.get("output_dir", "run") != "run":
+              raise SystemExit("Cloud configuration must be a YAML mapping with output_dir: run.")
+          Path("config.yaml").write_text(config, encoding="utf-8")
       - name: Restore recommendation and tracking state
         uses: actions/cache/restore@v4
         with:
           path: |
             run/state*.json
             run/feedback-*.json
+            run/reading-state-*.json
+            run/library-*.json
             run/version-state-*.json
+            run/metadata-cache/
+            run/abstract-translations.json
             run/weekly/
-            run/????-??-??/recommendations.json
-          key: arxiv-ra-run-${{ runner.os }}-${{ github.run_id }}
+            run/????-??-??/recommendations*.json
+          key: paperloom-v1-run-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            arxiv-ra-run-${{ runner.os }}-
+            paperloom-v1-run-${{ runner.os }}-
       - name: Generate digest
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+          ALPHAXIV_API_KEY: ${{ secrets.ALPHAXIV_API_KEY }}
           QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: paperloom --config config.yaml run
@@ -50,14 +75,19 @@ jobs:
           path: |
             run/state*.json
             run/feedback-*.json
+            run/reading-state-*.json
+            run/library-*.json
             run/version-state-*.json
+            run/metadata-cache/
+            run/abstract-translations.json
             run/weekly/
-            run/????-??-??/recommendations.json
-          key: arxiv-ra-run-${{ runner.os }}-${{ github.run_id }}
-      - name: Upload private report artifact
+            run/????-??-??/recommendations*.json
+          key: paperloom-v1-run-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload report artifact
+        if: ${{ inputs.upload_reports }}
         uses: actions/upload-artifact@v4
         with:
-          name: arxiv-digest-${{ github.run_id }}
+          name: paperloom-digest-${{ github.run_id }}
           path: run/
           if-no-files-found: error
           retention-days: 30

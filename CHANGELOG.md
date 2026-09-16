@@ -2,7 +2,14 @@
 
 所有重要变更记录在此文件中。
 
-## Unreleased
+## 1.3.0 - 2026-09-16
+
+### Added
+
+- 新增 `hybrid` 协作检索：arXiv 与 alphaXiv 共同提供候选，合并去重后使用 arXiv 补全元数据，并保留发现来源和补全状态。
+- 统一论文数据解析与本地完整元数据缓存；历史推荐使用所选快照，直接输入无版本 ID 获取最新版本，显式版本号严格匹配。
+- 按研究方向统一收藏与负反馈状态，使用跨进程锁和原子写入，并兼容读取旧状态文件。
+- 后台任务在提交时捕获研究方向和配置；研究服务客户端统一管理延迟创建与资源释放。
 
 ### Changed
 
@@ -10,6 +17,20 @@
 - 新增 `paperloom` CLI 入口，保留 `arxiv-ra`、`arxiv_ra` 模块名及 `arxiv-research-assistant` 发行包名，兼容已有安装与脚本。
 - 新配置模板使用 PaperLoom 作为 Zotero 分类和 Obsidian 根目录名称；已有配置、旧默认目录、Obsidian 托管标记及 Windows 计划任务标识不自动迁移。
 - 新源码归档使用 `paperloom-<version>-source.zip`，历史版本说明与已有生成文件保留原有名称。
+- GitHub 仓库更名为 `Dennis-Huangm/PaperLoom`，README 增加新仓库的克隆与 Release 下载入口。
+- GitHub Actions 日报改为仅手动触发，通过 `PAPERLOOM_CONFIG_YAML` Secret 准备配置；报告 artifact 默认不上传。
+
+### Fixed
+
+- 修复并发收藏、负反馈和页面修复之间的状态竞争，避免已删除论文被重新加入文献库。
+- 报告、周报、引用关系与版本追踪按研究方向隔离；论文元数据、PDF 和方法图使用一致版本。
+- 完善 Actions 中的 alphaXiv 密钥映射与方向数据缓存，移除要求提交个人配置的错误提示，停止未配置仓库的周期性失败通知。
+- 源码发布包排除生成的 `*.egg-info` 与个人专用配置示例，避免携带旧构建元数据或本地配置。
+- 修复 PowerShell 打包时字节码筛选误删暂存源码的问题；使用 .NET 检查 ZIP，并验证关键文件存在，防止发布空源码包。
+
+### Validation
+
+- 发布前完整离线测试通过：153 项；保留 1 项已有 Starlette/httpx 弃用提示。
 
 ## 1.2.0 - 2026-08-22
 

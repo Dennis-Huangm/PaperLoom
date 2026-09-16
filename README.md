@@ -29,7 +29,7 @@
 
 PaperLoom 把论文发现、筛选、阅读和归档放在同一个工作流中：**arXiv 提供类别与关键词检索，alphaXiv 补充语义发现；你决定深读哪些论文，系统再生成报告并连接到 Zotero 或 Obsidian。**
 
-项目提供本地 Web 界面与 CLI，研究方向、阅读偏好和生成文件保存在你控制的目录中。可以只使用基础检索，也可以逐步接入模型、语义发现与知识库。当前包版本为 **1.2.0**；参见 [变更记录](CHANGELOG.md)、[版本说明](RELEASE_NOTES_v1.2.0.md) 与 [近期架构改进](docs/ARCHITECTURE_IMPROVEMENTS_2026-09-16.md)。
+项目提供本地 Web 界面与 CLI，研究方向、阅读偏好和生成文件保存在你控制的目录中。可以只使用基础检索，也可以逐步接入模型、语义发现与知识库。当前包版本为 **1.3.0**；参见 [变更记录](CHANGELOG.md)、[版本说明](RELEASE_NOTES_v1.3.0.md) 与 [近期架构改进](docs/ARCHITECTURE_IMPROVEMENTS_2026-09-16.md)。
 
 PaperLoom 原名 arXiv Research Assistant。推荐使用新命令 `paperloom`，旧命令 `arxiv-ra` 继续可用；Python 发行包名 `arxiv-research-assistant` 与模块名 `arxiv_ra` 保留用于兼容升级。已有安装重新执行 `python -m pip install -e ".[gui]"` 后即可获得新命令，原有配置、研究方向和产物目录无需改名。
 
@@ -51,7 +51,14 @@ PaperLoom 原名 arXiv Research Assistant。推荐使用新命令 `paperloom`，
 
 ### 1. 安装
 
-需要 **Python 3.11+**。下载或克隆源码后，在包含 `pyproject.toml` 的项目根目录执行。
+需要 **Python 3.11+**。从 [Releases](https://github.com/Dennis-Huangm/PaperLoom/releases/latest) 下载源码包，或克隆仓库：
+
+```bash
+git clone https://github.com/Dennis-Huangm/PaperLoom.git
+cd PaperLoom
+```
+
+然后在包含 `pyproject.toml` 的项目根目录执行以下安装命令。
 
 **Windows / PowerShell**
 
@@ -299,11 +306,15 @@ powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -Proje
 
 **GitHub Actions**
 
-仓库附带 [定时工作流模板](.github/workflows/daily.yml)，配置的触发时间为北京时间工作日 07:30，也支持手动触发。使用前需要准备个人运行配置与对应的 Secrets。
+仓库附带 [手动日报工作流](.github/workflows/daily.yml)，**默认不定时运行**。在 GitHub 的 **Actions → PaperLoom research digest → Run workflow** 中手动启动，避免尚未配置的源码仓库每天运行失败并产生通知邮件。本地 Windows 计划任务不受影响。
 
-当前模板仍需按实际使用方式调整：启用协作检索时补充 `ALPHAXIV_API_KEY` 的环境变量映射；缓存中补充 `reading-state-*.json`、方向专属推荐文件及需要保留的元数据缓存。`config.yaml` 和 `profiles/` 默认被 Git 忽略，需要在专用运行环境中显式准备。
+使用前在仓库 **Settings → Secrets and variables → Actions** 中设置 `PAPERLOOM_CONFIG_YAML`，内容为个人运行配置的完整 YAML，并保留 `output_dir: run`。工作流会在临时运行器中生成 `config.yaml`，无需把个人配置提交到 Git。云端按这份配置中的研究主题运行，不会自动读取本机的 `profiles/`。
 
-云端任务不会直接访问你电脑上的 Zotero 或 Obsidian vault。工作流会上传 `run/`，请根据仓库可见性与内容决定是否启用；artifact 名称中的 “private” 不会赋予它额外的访问保护。
+按启用功能添加对应 Secrets：`LLM_API_KEY`、`LLM_BASE_URL`、`ALPHAXIV_API_KEY`、`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`，以及用于邮件投递的 `QQ_EMAIL`、`SMTP_PASSWORD`。配置中的 Zotero 和 Obsidian 应关闭；云端运行器无法直接访问你电脑上的应用或 vault。
+
+工作流会缓存去重历史、阅读状态、按方向保存的推荐和元数据。**公开仓库的缓存不能视为私有存储**；个人研究数据建议在私有仓库或本地运行。报告 artifact 默认不上传，只有手动勾选上传选项时才保存 `run/`，访问权限由仓库及 GitHub Actions 规则决定。
+
+旧版工作流曾默认在北京时间工作日 07:30 触发，却要求仓库内存在被 `.gitignore` 排除的 `config.yaml`，因此会反复失败。GitHub Actions 通知与 PaperLoom 的 SMTP 日报是两种独立邮件；可在 [GitHub 通知设置](https://github.com/settings/notifications) 中调整 Actions 邮件偏好。
 
 ## 数据与隐私
 

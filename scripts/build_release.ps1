@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.0"
+    [string]$Version = "1.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,7 +36,6 @@ $files = @(
     ".gitignore",
     "CHANGELOG.md",
     "CONTEXT.md",
-    "config.agentict2i.example.yaml",
     "config.example.yaml",
     "LICENSE",
     "pyproject.toml",
@@ -56,15 +55,23 @@ Copy-Item -LiteralPath $currentReleaseNotes -Destination $packageRoot
 
 $qaArtifacts = Join-Path $packageRoot "docs\qa"
 if (Test-Path -LiteralPath $qaArtifacts) {
+    Assert-InProject $qaArtifacts
     Remove-Item -LiteralPath $qaArtifacts -Recurse -Force
 }
 
 Get-ChildItem -LiteralPath $packageRoot -Directory -Recurse -Force |
-    Where-Object { $_.Name -in @("__pycache__", ".pytest_cache") } |
+    Where-Object { $_.Name -in @("__pycache__", ".pytest_cache") -or $_.Name -like "*.egg-info" } |
     Sort-Object FullName -Descending |
-    Remove-Item -Recurse -Force
-Get-ChildItem -LiteralPath $packageRoot -File -Recurse -Force -Include "*.pyc", "*.pyo" |
-    Remove-Item -Force
+    ForEach-Object {
+        Assert-InProject $_.FullName
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+Get-ChildItem -LiteralPath $packageRoot -File -Recurse -Force |
+    Where-Object { $_.Extension -in @(".pyc", ".pyo") } |
+    ForEach-Object {
+        Assert-InProject $_.FullName
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
 
 $sourceArchive = Join-Path $workRoot "paperloom-$Version-source.zip"
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $sourceArchive -CompressionLevel Optimal
@@ -81,10 +88,35 @@ finally {
 $wheel = Get-ChildItem -LiteralPath $wheelRoot -Filter "*.whl" | Select-Object -First 1
 if (-not $wheel) { throw "Wheel build produced no artifact" }
 
-$entries = tar -tf $sourceArchive
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($sourceArchive)
+try {
+    $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+}
+finally {
+    $archive.Dispose()
+}
+$packageName = Split-Path $packageRoot -Leaf
+$requiredFiles = @(
+    ".github/workflows/daily.yml",
+    ".env.example",
+    ".gitignore",
+    "README.md",
+    "pyproject.toml",
+    "config.example.yaml",
+    "src/arxiv_ra/__init__.py",
+    "src/arxiv_ra/cli.py",
+    "RELEASE_NOTES_v$Version.md"
+)
+foreach ($requiredFile in $requiredFiles) {
+    if ($entries -notcontains "$packageName/$requiredFile") {
+        throw "Source archive is missing required file: $requiredFile"
+    }
+}
 $forbidden = $entries | Where-Object {
     $_ -match '(^|/)(\.env|config\.yaml)(/|$)' -or
-    $_ -match '(^|/)(profiles|run|work|build|release)(/|$)' -or
+    $_ -match '(^|/)(profiles|run|work|build|release|backups|\.git)(/|$)' -or
+    $_ -match '(^|/)[^/]+\.egg-info(/|$)' -or
     $_ -match '(^|/)(__pycache__|\.pytest_cache)(/|$)' -or
     $_ -match '\.(pyc|pyo)$'
 }
