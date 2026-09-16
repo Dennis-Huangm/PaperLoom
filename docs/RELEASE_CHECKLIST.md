@@ -23,6 +23,7 @@
 - [ ] Run `scripts\build_release.ps1`; do not hand-copy the source tree.
 - [ ] Build wheel without network-dependent build isolation when necessary.
 - [ ] Install the wheel into a clean or disposable environment.
-- [ ] Run `arxiv-ra --version` and `arxiv-ra doctor`.
+- [ ] Run `paperloom --version` and `paperloom doctor`; verify the legacy
+      `arxiv-ra --version` entry point still works.
 - [ ] Record SHA-256 hashes in `release/<version>/SHA256SUMS.txt`.
 - [ ] Copy release notes and changelog into the release directory.

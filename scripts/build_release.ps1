@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workRoot = Join-Path $projectRoot "work\release-build-$Version"
-$packageRoot = Join-Path $workRoot "arxiv-research-assistant-$Version"
+$packageRoot = Join-Path $workRoot "paperloom-$Version"
 $wheelRoot = Join-Path $workRoot "wheel"
 $releaseRoot = Join-Path $projectRoot "release\v$Version"
 
@@ -35,6 +35,8 @@ $files = @(
     ".env.example",
     ".gitignore",
     "CHANGELOG.md",
+    "CONTEXT.md",
+    "config.agentict2i.example.yaml",
     "config.example.yaml",
     "LICENSE",
     "pyproject.toml",
@@ -64,7 +66,7 @@ Get-ChildItem -LiteralPath $packageRoot -Directory -Recurse -Force |
 Get-ChildItem -LiteralPath $packageRoot -File -Recurse -Force -Include "*.pyc", "*.pyo" |
     Remove-Item -Force
 
-$sourceArchive = Join-Path $workRoot "arxiv-research-assistant-$Version-source.zip"
+$sourceArchive = Join-Path $workRoot "paperloom-$Version-source.zip"
 Compress-Archive -LiteralPath $packageRoot -DestinationPath $sourceArchive -CompressionLevel Optimal
 
 Push-Location $projectRoot

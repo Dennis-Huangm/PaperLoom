@@ -22,6 +22,8 @@ from .config import AppConfig, load_config
 from .citation_graph import CitationExplorer
 from .feedback import FeedbackStore, VERDICTS
 from .library import PaperLibraryStore
+from .models import Paper
+from .paper_data import local_paper_item
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .pipeline import DailyPipeline
 from .profiles import ProfileGenerator, ProfileManager
@@ -47,7 +49,7 @@ from .web_catalog import (
     version_tracking_data,
     weekly_library,
 )
-from .web_jobs import BackgroundJob, JobManager
+from .web_jobs import BackgroundJob, JobContext, JobManager
 from .web_settings import (
     _int_value,
     _list_field,
@@ -81,17 +83,17 @@ def service_status(config: AppConfig, config_path: Path) -> list[dict[str, Any]]
             "detail": "可选增强源",
         },
         {
-            "name": "alphaXiv 备用检索",
+            "name": "alphaXiv 语义检索",
             "ready": bool(
-                config.discovery.provider == "auto"
+                config.discovery.provider in {"auto", "hybrid"}
                 and config.discovery.alphaxiv_fallback_enabled
                 and os.getenv(config.discovery.alphaxiv_api_key_env)
             ),
             "detail": (
-                "仅在 arXiv API 重试耗尽后启用"
-                if config.discovery.provider == "auto"
-                and config.discovery.alphaxiv_fallback_enabled
-                else "备用检索未启用"
+                ("与 arXiv 共同召回，arXiv 补全正式数据" if config.discovery.provider == "hybrid"
+                 else "仅在 arXiv API 重试耗尽后启用")
+                if config.discovery.provider in {"auto", "hybrid"} and config.discovery.alphaxiv_fallback_enabled
+                else "语义检索未启用"
             ),
         },
         {
@@ -147,7 +149,7 @@ def create_app(config_path: Path | str) -> FastAPI:
             jobs.close()
 
     app = FastAPI(
-        title="arXiv Research Assistant",
+        title="PaperLoom",
         version=__version__,
         docs_url=None,
         redoc_url=None,
@@ -203,50 +205,22 @@ def create_app(config_path: Path | str) -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    def recommendation_item(arxiv_id: str) -> dict[str, Any]:
-        current = load_config(config_path)
-        for history_item in recommendation_history(output_root, current.profile_id):
-            recommendations = recommendations_for_date(
-                output_root, history_item["date"], current.profile_id
-            )
-            for item in recommendations:
-                if str((item.get("paper") or {}).get("arxiv_id") or "") == arxiv_id:
-                    localize_abstracts(current, output_root, [item])
-                    item["_source_date"] = history_item["date"]
-                    return item
-        saved = PaperLibraryStore(output_root, current.profile_id).all().get(arxiv_id)
-        if saved:
-            item = {
-                "paper": saved.get("paper") or {},
-                "verified": saved.get("verified") or {},
-            }
-            localize_abstracts(current, output_root, [item])
-            return item
-        report = next(
-            (item for item in report_library(output_root) if item["arxiv_id"] == arxiv_id),
-            None,
-        )
-        if report:
-            payload = read_json(report["metadata_path"], {}) or {}
-            item = {
-                "paper": payload.get("paper") or {},
-                "verified": payload.get("verified") or {},
-            }
+    def recommendation_item(arxiv_id: str, current: AppConfig | None = None) -> dict[str, Any]:
+        current = current or load_config(config_path)
+        item = local_paper_item(output_root, current.profile_id, arxiv_id)
+        if item:
             localize_abstracts(current, output_root, [item])
             return item
         raise HTTPException(status_code=404, detail="当前推荐中没有这篇论文")
 
-    def add_to_paper_library(arxiv_id: str) -> dict[str, Any]:
-        current = load_config(config_path)
-        item = recommendation_item(arxiv_id)
+    def add_to_paper_library(arxiv_id: str, current: AppConfig) -> dict[str, Any]:
+        item = recommendation_item(arxiv_id, current)
         localize_abstracts(current, output_root, [item])
         entry = PaperLibraryStore(output_root, current.profile_id).add(
             item,
             current.profile_name,
             source_date=str(item.get("_source_date") or ""),
         )
-        # Positive and negative signals are mutually exclusive.
-        FeedbackStore(output_root, current.profile_id).remove(arxiv_id)
         return entry
 
     def cached_zotero_pdf(paper: dict[str, Any], enabled: bool) -> Path | None:
@@ -268,7 +242,7 @@ def create_app(config_path: Path | str) -> FastAPI:
             pdf_url,
             timeout=60.0,
             follow_redirects=True,
-            headers={"User-Agent": f"arxiv-research-assistant/{__version__} (personal research use)"},
+            headers={"User-Agent": f"PaperLoom/{__version__} (personal research use)"},
         ) as response:
             response.raise_for_status()
             with temporary.open("wb") as handle:
@@ -323,14 +297,15 @@ def create_app(config_path: Path | str) -> FastAPI:
         )
         feedback = FeedbackStore(output_root, current.profile_id).all()
         saved_papers = PaperLibraryStore(output_root, current.profile_id).all()
-        reports_by_id: dict[str, dict[str, Any]] = {}
+        reports_by_id: dict[tuple, dict[str, Any]] = {}
         for report in report_library(output_root):
-            reports_by_id.setdefault(str(report.get("arxiv_id") or ""), report)
+            if report.get("profile_id") in ("", current.profile_id):
+                reports_by_id.setdefault((str(report.get("arxiv_id") or ""), report.get("version")), report)
         for item in recommendations:
             arxiv_id = str((item.get("paper") or {}).get("arxiv_id") or "")
             item["feedback"] = feedback.get(arxiv_id)
             item["in_library"] = arxiv_id in saved_papers
-            report = reports_by_id.get(arxiv_id)
+            report = reports_by_id.get((arxiv_id, (item.get("paper") or {}).get("version")))
             item["report_url"] = report.get("report_url") if report else None
             item["has_report"] = bool(report)
         return templates.TemplateResponse(
@@ -356,9 +331,10 @@ def create_app(config_path: Path | str) -> FastAPI:
         current = load_config(config_path)
         store = PaperLibraryStore(output_root, current.profile_id)
         feedback = FeedbackStore(output_root, current.profile_id).all()
-        reports_by_id: dict[str, dict[str, Any]] = {}
+        reports_by_id: dict[tuple, dict[str, Any]] = {}
         for report in report_library(output_root):
-            reports_by_id.setdefault(str(report.get("arxiv_id") or ""), report)
+            if report.get("profile_id") in ("", current.profile_id):
+                reports_by_id.setdefault((str(report.get("arxiv_id") or ""), report.get("version")), report)
         entries = list(store.all().values())
         incomplete = [
             entry
@@ -369,7 +345,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         if incomplete:
             localization_items = [
                 {
-                    "paper": entry.get("paper") or {},
+                    "paper": dict(entry.get("paper") or {}),
                     "verified": entry.get("verified") or {},
                 }
                 for entry in incomplete
@@ -380,16 +356,12 @@ def create_app(config_path: Path | str) -> FastAPI:
                 current, output_root, localization_items, generate=False
             )
             for entry, item in zip(incomplete, localization_items):
-                store.add(
-                    item,
-                    str(entry.get("profile_name") or current.profile_name),
-                    source_date=str(entry.get("source_date") or ""),
-                )
+                store.refresh(entry, item)
             entries = list(store.all().values())
         for entry in entries:
             arxiv_id = str(entry.get("arxiv_id") or "")
             entry["feedback"] = feedback.get(arxiv_id)
-            report = reports_by_id.get(arxiv_id)
+            report = reports_by_id.get((arxiv_id, (entry.get("paper") or {}).get("version")))
             entry["report_url"] = report.get("report_url") if report else None
             entry["has_report"] = bool(report)
         if q.strip():
@@ -428,21 +400,15 @@ def create_app(config_path: Path | str) -> FastAPI:
             raise HTTPException(status_code=400, detail="请输入有效的 arXiv ID")
         current = load_config(config_path)
         store = PaperLibraryStore(output_root, current.profile_id)
-        if store.contains(arxiv_id):
-            store.remove(arxiv_id)
-            return JSONResponse(
-                {
-                    "saved": False,
-                    "feedback": None,
-                    "message": "已从当前方向的文献库移除",
-                }
-            )
-        add_to_paper_library(arxiv_id)
+        previous = store.all().get(arxiv_id)
+        item = previous or recommendation_item(arxiv_id, current)
+        saved = store.toggle(item, current.profile_name,
+                             source_date=str(item.get("_source_date") or item.get("source_date") or ""))
         return JSONResponse(
             {
-                "saved": True,
+                "saved": saved,
                 "feedback": None,
-                "message": "已加入文献库，并作为后续推荐的相关样本",
+                "message": "已加入文献库，并作为后续推荐的相关样本" if saved else "已从当前方向的文献库移除",
             }
         )
 
@@ -463,16 +429,15 @@ def create_app(config_path: Path | str) -> FastAPI:
         store = PaperLibraryStore(output_root, current.profile_id)
         already_saved = store.contains(arxiv_id)
         if not already_saved:
-            add_to_paper_library(arxiv_id)
+            add_to_paper_library(arxiv_id, current)
         else:
-            item = recommendation_item(arxiv_id)
+            item = recommendation_item(arxiv_id, current)
             localize_abstracts(current, output_root, [item])
             store.add(
                 item,
                 current.profile_name,
                 source_date=str((store.all().get(arxiv_id) or {}).get("source_date") or ""),
             )
-            FeedbackStore(output_root, current.profile_id).remove(arxiv_id)
         return JSONResponse(
             {
                 "saved": True,
@@ -578,17 +543,17 @@ def create_app(config_path: Path | str) -> FastAPI:
         try:
             recommendation_count = _int_value(form, "recommendation_count", 1, 50)
             profile_id = profiles.unique_id(name)
-            generator = ProfileGenerator(load_config(config_path))
-            payload = await run_in_threadpool(
-                generator.generate,
-                profile_id,
-                name,
-                keywords,
-                negative_keywords,
-                reference_ids,
-                description,
-                recommendation_count,
-            )
+            with ProfileGenerator(load_config(config_path)) as generator:
+                payload = await run_in_threadpool(
+                    generator.generate,
+                    profile_id,
+                    name,
+                    keywords,
+                    negative_keywords,
+                    reference_ids,
+                    description,
+                    recommendation_count,
+                )
             profiles.save(payload)
             if "activate" in form:
                 profiles.activate(profile_id)
@@ -817,14 +782,13 @@ def create_app(config_path: Path | str) -> FastAPI:
         arxiv_id = arxiv_id.strip()
         if verdict not in VERDICTS:
             raise HTTPException(status_code=400, detail="无效的阅读反馈")
-        item = recommendation_item(arxiv_id)
         current = load_config(config_path)
+        item = recommendation_item(arxiv_id, current)
         store = FeedbackStore(output_root, current.profile_id)
         try:
             entry = store.set(item.get("paper") or {}, verdict)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        PaperLibraryStore(output_root, current.profile_id).remove(arxiv_id)
         obsidian_synced = False
         obsidian_warning = ""
         if (
@@ -833,12 +797,13 @@ def create_app(config_path: Path | str) -> FastAPI:
             and current.obsidian.sync_feedback
         ):
             try:
-                await run_in_threadpool(
-                    ObsidianExporter(current, project_root).sync_feedback,
-                    item.get("paper") or {},
-                    entry,
-                    item.get("verified") or {},
-                )
+                with ObsidianExporter(current, project_root) as exporter:
+                    await run_in_threadpool(
+                        exporter.sync_feedback,
+                        item.get("paper") or {},
+                        entry,
+                        item.get("verified") or {},
+                    )
                 obsidian_synced = True
             except ObsidianError as exc:
                 obsidian_warning = str(exc)
@@ -858,16 +823,36 @@ def create_app(config_path: Path | str) -> FastAPI:
         )
 
     @app.post("/api/jobs/report", response_class=JSONResponse)
-    def create_report_job(arxiv_id: str = Form(...)) -> JSONResponse:
+    def create_report_job(arxiv_id: str = Form(...), origin: str = Form(""),
+                          source_date: str = Form("")) -> JSONResponse:
         arxiv_id = arxiv_id.strip()
         if not ARXIV_ID_RE.match(arxiv_id):
             raise HTTPException(status_code=400, detail="请输入有效的 arXiv ID，例如 2407.05600")
 
-        def run_report() -> Path:
-            current = load_config(config_path)
-            return DailyPipeline(current, project_root).report_arxiv_id(arxiv_id)
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
+        if origin not in {"", "recommendation", "library"}:
+            raise HTTPException(status_code=400, detail="无效的论文来源")
+        snapshot = None
+        if origin:
+            if origin == "recommendation" and not DATE_DIR_RE.fullmatch(source_date):
+                raise HTTPException(status_code=400, detail="历史推荐需要有效的推荐日期")
+            item = local_paper_item(output_root, current.profile_id, arxiv_id,
+                                    source_date=source_date, origin=origin)
+            if not item:
+                raise HTTPException(status_code=404, detail="没有找到对应的论文快照")
+            snapshot = Paper.from_dict(item["paper"])
+            if not snapshot.version:
+                raise HTTPException(status_code=409, detail="这条历史记录没有可靠版本号；请在生成页面输入 ID 获取最新版本，或输入指定版本号")
 
-        job = jobs.submit("report", f"arXiv:{arxiv_id}", run_report)
+        def run_report() -> Path:
+            with DailyPipeline(current, project_root) as pipeline:
+                return pipeline.report_arxiv_id(arxiv_id, snapshot=snapshot)
+
+        job = jobs.submit("report", f"{current.profile_name} · arXiv:{arxiv_id}", run_report,
+                          identity=task.identity("report", arxiv_id=arxiv_id, origin=origin,
+                                                 source_date=source_date, snapshot=snapshot.to_dict() if snapshot else None),
+                          profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/digest", response_class=JSONResponse)
@@ -875,34 +860,39 @@ def create_app(config_path: Path | str) -> FastAPI:
         force: bool = Form(False),
         send_email: bool = Form(False),
     ) -> JSONResponse:
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
         def run_digest() -> Path:
-            current = load_config(config_path)
-            return DailyPipeline(current, project_root).run(
-                force=force,
-                demo=False,
-                deliver=send_email,
-            )
+            with DailyPipeline(current, project_root) as pipeline:
+                return pipeline.run(force=force, demo=False, deliver=send_email)
 
-        detail = "刷新并发送邮件" if send_email else "仅刷新本地推荐"
-        job = jobs.submit("digest", detail, run_digest)
+        detail = f"{current.profile_id or 'default'} · {'刷新并发送邮件' if send_email else '仅刷新本地推荐'} · {'强制' if force else '仅新论文'}"
+        job = jobs.submit("digest", detail, run_digest,
+                          identity=task.identity("digest", force=force, send_email=send_email), profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/weekly", response_class=JSONResponse)
     def create_weekly_job() -> JSONResponse:
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
         def run_weekly() -> Path:
-            current = load_config(config_path)
-            return WeeklySynthesizer(current, project_root).generate()
+            with WeeklySynthesizer(current, project_root) as synthesizer:
+                return synthesizer.generate()
 
-        job = jobs.submit("weekly", load_config(config_path).profile_name, run_weekly)
+        job = jobs.submit("weekly", current.profile_name, run_weekly,
+                          identity=task.identity("weekly"), profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/versions", response_class=JSONResponse)
     def create_versions_job() -> JSONResponse:
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
         def run_versions() -> Path:
-            current = load_config(config_path)
-            return VersionTracker(current, project_root).check()
+            with VersionTracker(current, project_root) as tracker:
+                return tracker.check()
 
-        job = jobs.submit("versions", load_config(config_path).profile_name, run_versions)
+        job = jobs.submit("versions", current.profile_name, run_versions,
+                          identity=task.identity("versions"), profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/citation", response_class=JSONResponse)
@@ -911,21 +901,28 @@ def create_app(config_path: Path | str) -> FastAPI:
         if not ARXIV_ID_RE.match(arxiv_id):
             raise HTTPException(status_code=400, detail="请输入有效的 arXiv ID")
 
-        def run_citation() -> Path:
-            current = load_config(config_path)
-            return CitationExplorer(current, project_root).generate(arxiv_id)
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
 
-        job = jobs.submit("citation", f"arXiv:{arxiv_id}", run_citation)
+        def run_citation() -> Path:
+            with CitationExplorer(current, project_root) as explorer:
+                return explorer.generate(arxiv_id)
+
+        job = jobs.submit("citation", f"{current.profile_name} · arXiv:{arxiv_id}", run_citation,
+                          identity=task.identity("citation", arxiv_id=arxiv_id), profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/obsidian", response_class=JSONResponse)
     def create_obsidian_job() -> JSONResponse:
+        task = JobContext.capture(load_config(config_path), project_root)
+        current = task.config
         def run_obsidian() -> Path:
-            current = load_config(config_path)
-            return ObsidianExporter(current, project_root).sync_all()
+            with ObsidianExporter(current, project_root) as exporter:
+                return exporter.sync_all()
 
         job = jobs.submit(
-            "obsidian", load_config(config_path).profile_name, run_obsidian
+            "obsidian", current.profile_name, run_obsidian,
+            identity=task.identity("obsidian"), profile_id=current.profile_id
         )
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}相关工作地图 · arXiv Research Assistant{% endblock %}
+{% block title %}相关工作地图 · PaperLoom{% endblock %}
 {% block content %}
   <header class="page-heading compact-heading"><div><p class="section-kicker">LITERATURE GRAPH</p><h1>相关工作地图</h1><p>从一篇种子论文展开关键参考、后续引用与语义相似工作。</p></div></header>
   <section class="citation-create"><div><span class="task-icon"><i class="fas fa-project-diagram" aria-hidden="true"></i></span><div><h2>生成论文关系地图</h2><p>数据来自 Semantic Scholar；引用关系可能存在同步延迟。</p></div></div><form class="job-form" action="/api/jobs/citation" method="post"><input name="arxiv_id" placeholder="例如：2407.05600" required><button class="button primary" type="submit">生成地图</button></form></section>

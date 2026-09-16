@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import Paper
-from .utils import read_json, write_json
+from .reading_state import ReadingStateStore
 
 
 VERDICTS = {
@@ -46,13 +46,11 @@ def _paper_terms(title: str) -> list[str]:
 
 class FeedbackStore:
     def __init__(self, output_root: Path, profile_id: str) -> None:
-        suffix = profile_id or "default"
-        self.path = output_root / f"feedback-{suffix}.json"
+        self.state = ReadingStateStore(output_root, profile_id)
+        self.path = self.state.path
 
     def all(self) -> dict[str, dict[str, Any]]:
-        payload = read_json(self.path, {}) or {}
-        items = payload.get("items", payload)
-        return items if isinstance(items, dict) else {}
+        return self.state.snapshot()["feedback"]
 
     def set(self, paper: dict[str, Any], verdict: str) -> dict[str, Any]:
         if verdict not in VERDICTS:
@@ -60,7 +58,6 @@ class FeedbackStore:
         arxiv_id = str(paper.get("arxiv_id") or "").strip()
         if not arxiv_id:
             raise ValueError("反馈缺少 arXiv ID")
-        items = self.all()
         entry = {
             "arxiv_id": arxiv_id,
             "verdict": verdict,
@@ -74,16 +71,10 @@ class FeedbackStore:
             },
             "terms": _paper_terms(str(paper.get("title") or "")),
         }
-        items[arxiv_id] = entry
-        write_json(self.path, {"version": 2, "items": items})
-        return entry
+        return self.state.dismiss(entry)
 
     def remove(self, arxiv_id: str) -> bool:
-        items = self.all()
-        removed = items.pop(arxiv_id, None) is not None
-        if removed:
-            write_json(self.path, {"version": 2, "items": items})
-        return removed
+        return self.state.remove("feedback", arxiv_id)
 
     def learned_terms(
         self,

@@ -3,9 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
+# Keep the installed distribution identity stable during the PaperLoom rebrand.
 name = "arxiv-research-assistant"
 version = "1.2.0"
-description = "Daily personalized arXiv discovery and source-grounded Chinese reading reports."
+description = "PaperLoom: local-first paper discovery, source-grounded reading, and research knowledge management."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -29,6 +30,7 @@ gui = [
 ]
 
 [project.scripts]
+paperloom = "arxiv_ra.cli:main"
 arxiv-ra = "arxiv_ra.cli:main"
 
 [tool.setuptools]

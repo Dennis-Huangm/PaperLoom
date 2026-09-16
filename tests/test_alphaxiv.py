@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from arxiv_ra.alphaxiv import AlphaXivClient, AlphaXivUnavailable
+from arxiv_ra.alphaxiv import AlphaXivClient, AlphaXivUnavailable, AlphaXivError
 
 
 def test_discover_papers_uses_mcp_and_normalizes_results() -> None:
@@ -16,9 +16,11 @@ def test_discover_papers_uses_mcp_and_normalizes_results() -> None:
         if body.get("method") == "initialize":
             return httpx.Response(
                 200,
-                json={"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}},
+                json={"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}, "protocolVersion": "2025-03-26"}},
                 headers={"Mcp-Session-Id": "session-1"},
             )
+        if body.get("method") == "notifications/initialized":
+            return httpx.Response(202)
         return httpx.Response(
             200,
             json={
@@ -51,7 +53,10 @@ def test_discover_papers_uses_mcp_and_normalizes_results() -> None:
     assert papers[0].arxiv_id == "2608.04436"
     assert papers[0].authors[0].name == "Researcher"
     assert papers[0].published.tzinfo == timezone.utc
-    assert len(requests) == 2
+    assert papers[0].version == 2
+    assert papers[0].metadata_status == "partial"
+    assert len(requests) == 3
+    assert json.loads(requests[1].content)["method"] == "notifications/initialized"
     assert requests[1].headers["Mcp-Session-Id"] == "session-1"
     assert requests[1].headers["Authorization"] == "Bearer test-key"
 
@@ -94,7 +99,9 @@ def test_discover_excludes_already_recommended_ids() -> None:
         body = json.loads(request.content)
         calls.append(body)
         if body.get("method") == "initialize":
-            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {}})
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2025-03-26"}})
+        if body.get("method") == "notifications/initialized":
+            return httpx.Response(202)
         return httpx.Response(
             200,
             json={
@@ -123,5 +130,48 @@ def test_discover_excludes_already_recommended_ids() -> None:
     )
 
     assert [paper.arxiv_id for paper in papers] == ["2609.09999"]
-    arguments = calls[1]["params"]["arguments"]
+    arguments = calls[2]["params"]["arguments"]
     assert "2608.04436" in arguments["question"]
+
+
+def test_unknown_dates_are_partial_and_old_results_are_filtered(monkeypatch):
+    client = AlphaXivClient(api_key="test")
+    monkeypatch.setattr(client, "_call_tool", lambda *_args: {"papers": [
+        {"arxiv_id": "1706.03762v7", "title": "Unknown date"},
+        {"arxiv_id": "1706.03763", "title": "Old", "published": "2017-06-12"},
+    ]})
+    papers = client.discover(keywords=["agent"], question="test", published_after="2026-09-01")
+    assert len(papers) == 1
+    assert papers[0].published is None and papers[0].updated is None
+    assert papers[0].version == 7 and papers[0].abstract_kind == "preview"
+    assert papers[0].to_dict()["published"] == ""
+
+
+def test_mcp_sse_matches_response_id_and_joins_multiline_data():
+    response = httpx.Response(200, headers={"content-type": "text/event-stream"}, text=(
+        'data: {"jsonrpc":"2.0", "id":2,\n'
+        'data: "result":{"content":[]}}\n\n'
+        'data: {"jsonrpc":"2.0","method":"notifications/progress"}\n\n'
+    ))
+    assert AlphaXivClient._response_json(response, 2)["result"] == {"content": []}
+    with pytest.raises(AlphaXivError):
+        AlphaXivClient._response_json(response, 3)
+
+
+def test_mcp_rejects_unsupported_protocol_before_tool_call():
+    methods = []
+    def handler(request):
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(200, json={"id": 1, "result": {"protocolVersion": "unknown"}})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client = AlphaXivClient(api_key="test", client=transport)
+        with pytest.raises(AlphaXivError, match="协议版本"):
+            client._call_tool("discover_papers", {})
+    assert methods == ["initialize"]
+
+
+def test_unrecognized_result_is_an_error_not_an_empty_search(monkeypatch):
+    client = AlphaXivClient(api_key="test")
+    monkeypatch.setattr(client, "_call_tool", lambda *_args: {"text": "unexpected server output"})
+    with pytest.raises(AlphaXivError, match="格式无法识别"):
+        client.discover(keywords=["agent"], question="test", published_after="2026-09-01")

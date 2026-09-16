@@ -42,7 +42,7 @@ class MetadataVerifier:
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": f"arxiv-research-assistant/{__version__} mailto:{config.openalex_email}"},
+            headers={"User-Agent": f"PaperLoom/{__version__} mailto:{config.openalex_email}"},
         )
 
     def verify(self, paper: Paper) -> VerifiedMetadata:
@@ -72,7 +72,7 @@ class MetadataVerifier:
                 result.venue_status = "declared_in_arxiv"
                 result.sources.append("arXiv comment")
         if not result.sources:
-            result.sources.append("arXiv only")
+            result.sources.append(paper.metadata_label)
         return result
 
     def _openalex(self, paper: Paper) -> dict[str, Any] | None:

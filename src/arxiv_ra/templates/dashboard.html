@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}文献推荐 · arXiv Research Assistant{% endblock %}
+{% block title %}文献推荐 · PaperLoom{% endblock %}
 {% block content %}
   <section class="literature-toolbar" aria-label="文献搜索与筛选">
     <label class="global-search">
@@ -80,7 +80,7 @@
           </span>
           <span class="row-category">{{ item.paper.primary_category }}</span>
           <span class="row-score">{{ '%.1f'|format(item.paper.final_score) }}</span>
-          <span class="row-date">{{ item.paper.published[5:10] }}</span>
+          <span class="row-date">{{ (item.paper.published or '')[5:10] or '待核实' }}</span>
         </button>
         {% endfor %}
       </div>
@@ -96,6 +96,7 @@
       <div class="inspector-scroll">
       <section class="inspector-section evidence-section">
         <h2><i class="far fa-clipboard" aria-hidden="true"></i>推荐依据</h2>
+        <p id="inspector-source">{{ selected.paper.source_label or '历史记录，来源待核实' }}</p>
         <p id="inspector-reason">{{ selected.paper.recommendation_detail or selected.paper.recommendation_reason }}</p>
       </section>
 
@@ -124,9 +125,9 @@
         <h2><i class="far fa-clock" aria-hidden="true"></i>快速信息</h2>
         <dl class="metadata-grid">
           <div><dt>arXiv ID</dt><dd id="inspector-id">{{ selected.paper.arxiv_id }}</dd></div>
-          <div><dt>提交日期</dt><dd id="inspector-published">{{ selected.paper.published[:10] }}</dd></div>
+          <div><dt>提交日期</dt><dd id="inspector-published">{{ (selected.paper.published or '')[:10] or '待核实' }}</dd></div>
           <div><dt>类别</dt><dd id="inspector-category">{{ selected.paper.primary_category }}</dd></div>
-          <div><dt>更新日期</dt><dd id="inspector-updated">{{ selected.paper.updated[:10] }}</dd></div>
+          <div><dt>更新日期</dt><dd id="inspector-updated">{{ (selected.paper.updated or '')[:10] or '待核实' }}</dd></div>
           <div><dt>开放获取</dt><dd>是</dd></div>
           <div><dt>推荐分数</dt><dd id="inspector-score">{{ '%.1f'|format(selected.paper.final_score) }}</dd></div>
         </dl>
@@ -137,7 +138,9 @@
         <button id="inspector-library-button" class="button secondary library-toggle {% if selected.in_library %}active{% endif %}" type="button" data-saved="{{ 'true' if selected.in_library else 'false' }}"><i class="far fa-bookmark" aria-hidden="true"></i><span id="inspector-library-label">{% if selected.in_library %}已加入文献库（相关）{% else %}加入文献库{% endif %}</span></button>
         <button id="inspector-negative-button" class="button secondary {% if selected.feedback and selected.feedback.verdict == 'not_relevant' %}active{% endif %}" type="button" data-feedback="not_relevant"><i class="fas fa-ban" aria-hidden="true"></i>不相关</button>
         <form id="inspector-report-form" class="job-form" action="/api/jobs/report" method="post">
-          <input id="inspector-report-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}">
+          <input id="inspector-report-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}{% if selected.paper.version %}v{{ selected.paper.version }}{% endif %}">
+          <input type="hidden" name="origin" value="recommendation">
+          <input type="hidden" name="source_date" value="{{ selected_date }}">
           <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span id="inspector-report-label">{% if selected.has_report %}重新生成报告{% else %}生成完整报告{% endif %}</span></button>
         </form>
         <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" target="_blank" rel="noreferrer" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>

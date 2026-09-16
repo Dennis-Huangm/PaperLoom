@@ -1,4 +1,4 @@
-name: Daily arXiv research digest
+name: PaperLoom daily research digest
 
 on:
   schedule:
@@ -43,7 +43,7 @@ jobs:
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           QQ_EMAIL: ${{ secrets.QQ_EMAIL }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-        run: arxiv-ra --config config.yaml run
+        run: paperloom --config config.yaml run
       - name: Save recommendation and tracking state
         uses: actions/cache/save@v4
         with:

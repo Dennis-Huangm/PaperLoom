@@ -36,7 +36,7 @@ def test_feedback_is_profile_scoped_and_overwritable(tmp_path: Path) -> None:
 
     assert first.all()["2401.00001"]["verdict"] == "not_relevant"
     assert second.all() == {}
-    assert (tmp_path / "feedback-agentict2i.json").exists()
+    assert (tmp_path / "reading-state-agentict2i.json").exists()
     assert first.remove("2401.00001") is True
     assert first.all() == {}
 

@@ -106,7 +106,7 @@ def render_report(
 <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
 <style>{REPORT_STYLE}</style></head><body>
-<header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>arXiv Research Assistant</span></a>
+<header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>PaperLoom</span></a>
 <div class="report-actions"><a href="/reports"><i class="fas fa-arrow-left" aria-hidden="true"></i>返回报告库</a>{library_action}<button type="button" onclick="window.print()"><i class="fas fa-print" aria-hidden="true"></i>打印</button><button class="toc-toggle" type="button" aria-label="展开目录" aria-expanded="false"><i class="fas fa-list" aria-hidden="true"></i>目录</button></div></header>
 <div class="report-shell"><aside class="report-sidebar"><p class="toc-title">CONTENTS</p><p class="toc-doc-title">{escaped_title}</p><nav class="report-toc" aria-label="报告目录">{toc}</nav></aside><article class="report-article">{body}</article></div>
 <script src="/static/vendor/katex/katex.min.js"></script><script>
@@ -156,7 +156,7 @@ def render_recommendations(
             f"""<main class='paper'><div><h2><a href='{html.escape(paper.abs_url)}'>{html.escape(paper.title)}</a></h2>
 <div class='meta'>{html.escape(authors)} · {html.escape(venue)} · arXiv:{html.escape(paper.arxiv_id)}</div>
 <p><strong>推荐理由：</strong>{html.escape(reason)}</p>
-<p><strong>摘要：</strong>{html.escape(paper.abstract[:900])}</p>
+<p><strong>{"摘要" if paper.abstract_kind == "full" else "摘要预览（待补全）"}：</strong>{html.escape(paper.abstract[:900])}</p>
 <a href='{html.escape(paper.abs_url)}'>摘要页</a> · <a href='{html.escape(paper.pdf_url)}'>PDF</a></div>
 <div class='score'>{paper.final_score:.1f}</div></main>"""
         )

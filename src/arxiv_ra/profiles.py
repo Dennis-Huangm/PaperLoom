@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
-import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -11,10 +10,9 @@ from typing import Any
 
 import yaml
 
-from .alphaxiv import AlphaXivClient
-from .arxiv_client import ArxivClient
+from .discovery import PaperResolver
 from .config import AppConfig
-from .llm import LLMClient
+from .research_clients import ResearchClients
 from .utils import atomic_write_text, extract_json_object
 
 
@@ -149,14 +147,17 @@ class ProfileManager:
 
 
 class ProfileGenerator:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, *, clients: ResearchClients | None = None) -> None:
         self.config = config
-        self.arxiv = ArxivClient()
-        self.alphaxiv = AlphaXivClient(
-            api_key=os.getenv(config.discovery.alphaxiv_api_key_env, ""),
-            endpoint=config.discovery.alphaxiv_endpoint,
-        )
-        self.llm = LLMClient(config.llm)
+        self.clients = clients if clients is not None else ResearchClients(config)
+        self._owns_clients = clients is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if self._owns_clients:
+            self.clients.close()
 
     def generate(
         self,
@@ -226,16 +227,7 @@ class ProfileGenerator:
 
     def _reference_paper(self, arxiv_id: str):
         try:
-            return self.arxiv.get(arxiv_id)
-        except Exception:
-            if (
-                self.config.discovery.provider != "auto"
-                or not self.config.discovery.alphaxiv_fallback_enabled
-                or not self.alphaxiv.enabled
-            ):
-                return None
-        try:
-            return self.alphaxiv.lookup(arxiv_id)
+            return PaperResolver(self.config.discovery, self.clients.arxiv, self.clients.alphaxiv).resolve(arxiv_id)
         except Exception:
             return None
 
@@ -247,13 +239,13 @@ class ProfileGenerator:
         negative_keywords: list[str],
         references: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        if not self.llm.enabled:
+        if not self.clients.llm.enabled:
             return {}
         reference_text = "\n\n".join(
             f"arXiv:{item['arxiv_id']}\n标题：{item['title']}\n类别：{', '.join(item['categories'])}\n摘要：{item['abstract'][:1800]}"
             for item in references
         ) or "未提供参考论文"
-        raw = self.llm.chat(
+        raw = self.clients.llm.chat(
             "你是严谨的 AI 研究文献检索配置专家。只根据用户关键词和参考论文归纳研究方向，不得扩展成泛化的 AI 主题。",
             f"""方向名称：{name}
 用户描述：{description or '未提供'}

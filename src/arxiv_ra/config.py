@@ -10,13 +10,15 @@ import yaml
 
 @dataclass(slots=True)
 class DiscoveryConfig:
-    # `auto` keeps arXiv as the source of truth and uses alphaXiv only after
-    # arXiv API retries are exhausted. `arxiv` disables the fallback.
+    # auto preserves legacy fallback behavior; hybrid actively queries both sources.
     provider: str = "auto"
+    # Historical field name retained for config compatibility; enables alphaXiv in both modes.
     alphaxiv_fallback_enabled: bool = True
     alphaxiv_endpoint: str = "https://api.alphaxiv.org/mcp/v1"
     alphaxiv_api_key_env: str = "ALPHAXIV_API_KEY"
     alphaxiv_difficulty: int = 5
+    alphaxiv_max_candidates: int = 15
+    alphaxiv_minimum_concept_groups: int = 1
     interest_description: str = ""
     lookback_days: int = 2
     max_candidates: int = 300
@@ -30,6 +32,14 @@ class DiscoveryConfig:
     seed_papers: list[str] = field(default_factory=list)
     concept_groups: list[list[str]] = field(default_factory=list)
     minimum_concept_groups: int = 0
+
+    def __post_init__(self) -> None:
+        if self.provider not in {"auto", "arxiv", "hybrid"}:
+            raise ValueError("无效的检索来源模式")
+        if not 1 <= self.alphaxiv_max_candidates <= 15:
+            raise ValueError("alphaXiv 候选上限必须在 1 到 15 之间")
+        if not 0 <= self.alphaxiv_minimum_concept_groups <= 100:
+            raise ValueError("alphaXiv 最低概念组数必须在 0 到 100 之间")
 
 
 @dataclass(slots=True)
@@ -88,6 +98,7 @@ class ZoteroConfig:
     mode: str = "local"
     base_url: str = "http://127.0.0.1:23119/api"
     api_key_env: str = "ZOTERO_LOCAL_API_KEY"
+    # Preserve the destination of older configs that omitted this field.
     collection_name: str = "arXiv Research Assistant"
     attach_pdf: bool = True
     pdf_attachment_mode: str = "imported_file"
@@ -99,6 +110,7 @@ class ZoteroConfig:
 class ObsidianConfig:
     enabled: bool = False
     vault_path: str = ""
+    # New templates use PaperLoom; old configs must not create a second vault tree.
     root_folder: str = "arXiv Research Assistant"
     home_folder: str = "Home"
     daily_folder: str = "Daily"

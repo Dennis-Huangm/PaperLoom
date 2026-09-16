@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 import time
 import uuid
+import math
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -29,7 +31,7 @@ def _parse_time(value: str) -> datetime:
 
 
 def _arxiv_id(abs_url: str) -> str:
-    value = abs_url.rstrip("/").rsplit("/", 1)[-1]
+    value = abs_url.rstrip("/").split("/abs/", 1)[-1]
     return re.sub(r"v\d+$", "", value)
 
 
@@ -88,7 +90,7 @@ class ArxivClient:
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": f"arxiv-research-assistant/{__version__} (personal research use)"},
+            headers={"User-Agent": f"PaperLoom/{__version__} (personal research use)"},
         )
 
     def _get(self, url: str) -> httpx.Response:
@@ -103,12 +105,20 @@ class ArxivClient:
                         try:
                             requested_delay = float(retry_after)
                         except (TypeError, ValueError):
+                            try:
+                                deadline = parsedate_to_datetime(retry_after)
+                                if deadline.tzinfo is None:
+                                    deadline = deadline.replace(tzinfo=timezone.utc)
+                                requested_delay = (deadline - datetime.now(timezone.utc)).total_seconds()
+                            except (TypeError, ValueError, OverflowError):
+                                requested_delay = 0.0
+                        if not math.isfinite(requested_delay):
                             requested_delay = 0.0
                         delay = max(
                             requested_delay,
                             10.0 * (2**attempt),
                         )
-                        defer_rate_limit(self.rate_limit_key, min(delay, 60.0))
+                        defer_rate_limit(self.rate_limit_key, delay)
             except httpx.TransportError as exc:
                 if attempt == attempts - 1:
                     raise RuntimeError(
@@ -171,13 +181,15 @@ class ArxivClient:
         return papers[0]
 
     def get_many(self, arxiv_ids: list[str]) -> list[Paper]:
-        unique = list(dict.fromkeys(item.strip() for item in arxiv_ids if item.strip()))[:50]
-        if not unique:
-            return []
-        params = {"id_list": ",".join(unique), "max_results": len(unique)}
-        response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")
-        response.raise_for_status()
-        return parse_feed(response.text)
+        unique = list(dict.fromkeys(item.strip() for item in arxiv_ids if item.strip()))
+        papers: list[Paper] = []
+        for start in range(0, len(unique), 50):
+            batch = unique[start:start + 50]
+            params = {"id_list": ",".join(batch), "max_results": len(batch)}
+            response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")
+            response.raise_for_status()
+            papers.extend(parse_feed(response.text))
+        return papers
 
     def download_pdf(self, paper: Paper, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)

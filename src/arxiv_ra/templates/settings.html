@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}完整配置中心 · arXiv Research Assistant{% endblock %}
+{% block title %}完整配置中心 · PaperLoom{% endblock %}
 {% block content %}
   <header class="page-heading compact-heading">
     <div><p class="section-kicker">CONFIGURATION</p><h1>完整配置中心</h1><p>运行参数与本地凭据分开保存；现有密钥永不回显。</p></div>
@@ -58,11 +58,13 @@
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
       <label>研究主题描述<textarea name="interest_description" rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
       <div class="form-columns">
-        <label>检索来源模式<select name="discovery_provider"><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>自动：arXiv 优先，alphaXiv 备用</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>推荐保持自动模式；备用源需要配置 alphaXiv API Key。</small></label>
+        <label>检索来源模式<select name="discovery_provider"><option value="hybrid" {% if config.discovery.provider == 'hybrid' %}selected{% endif %}>协作：arXiv + alphaXiv</option><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>备用：arXiv 失败后使用 alphaXiv</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>协作模式每次主动进行 alphaXiv 语义发现，使用其助手额度；arXiv 补全正式论文数据。</small></label>
         <label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label>
         <label>alphaXiv API Key 环境变量名<input name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}" required></label>
-        <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，备用检索会投入更多检索轮次。</small></label>
-        <label class="toggle-field"><span>启用 alphaXiv 备用检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
+        <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，检索投入更多轮次，耗时也可能增加。</small></label>
+        <label>alphaXiv 候选上限<input type="number" name="alphaxiv_max_candidates" min="1" max="15" value="{{ config.discovery.alphaxiv_max_candidates }}"><small>单次最多保留 15 篇，独立于 arXiv 候选预算。</small></label>
+        <label>语义候选最低概念组数<input type="number" name="alphaxiv_minimum_concept_groups" min="0" max="100" value="{{ config.discovery.alphaxiv_minimum_concept_groups }}"><small>仅用于 alphaXiv 召回的论文，不超过下方通用门槛；0 表示不要求精确词匹配。</small></label>
+        <label class="toggle-field"><span>启用 alphaXiv 检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
         <label>arXiv 类别<textarea name="arxiv_categories" rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
         <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
         <label>重点关键词<textarea name="positive_keywords" rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
@@ -135,7 +137,7 @@
         <label>本地 API 地址<input name="zotero_base_url" value="{{ config.zotero.base_url }}" required></label>
         <label>工作模式<select name="zotero_mode"><option value="local" selected>本地 API（推荐）</option></select></label>
         <label>本地授权环境变量名<input name="zotero_api_key_env" value="{{ config.zotero.api_key_env }}" required></label>
-        <label>目标分类名称<input name="zotero_collection_name" value="{{ config.zotero.collection_name }}" placeholder="arXiv Research Assistant"></label>
+        <label>目标分类名称<input name="zotero_collection_name" value="{{ config.zotero.collection_name }}" placeholder="PaperLoom"></label>
         <label>PDF 附件方式<select name="zotero_pdf_attachment_mode"><option value="imported_file" {% if config.zotero.pdf_attachment_mode == 'imported_file' %}selected{% endif %}>导入 Zotero 存储（可同步）</option><option value="linked_file" {% if config.zotero.pdf_attachment_mode == 'linked_file' %}selected{% endif %}>链接本地文件</option></select></label>
       </div>
       <div class="config-grid four">
@@ -150,7 +152,7 @@
     <section class="form-section" id="obsidian">
       <p class="section-kicker">OBSIDIAN KNOWLEDGE BASE</p><h2>Obsidian 知识库联动</h2>
       <div class="zotero-connect-panel">
-        <div><strong>{% if obsidian_connection.ready %}Obsidian vault 已就绪{% else %}尚未配置 Obsidian{% endif %}</strong><p>{% if obsidian_connection.ready %}同步目录：{{ obsidian_connection.detail }}{% else %}选择本机 vault 后，应用只写入独立的 arXiv Research Assistant 子目录。{% endif %}</p></div>
+        <div><strong>{% if obsidian_connection.ready %}Obsidian vault 已就绪{% else %}尚未配置 Obsidian{% endif %}</strong><p>{% if obsidian_connection.ready %}同步目录：{{ obsidian_connection.detail }}{% else %}选择本机 vault 后，应用会按配置的资料目录同步研究成果。{% endif %}</p></div>
         <div class="obsidian-actions"><a class="button secondary" href="/generate"><i class="fas fa-sync-alt" aria-hidden="true"></i>前往同步</a>{% if obsidian_open_url %}<a class="button primary" href="{{ obsidian_open_url }}"><i class="fas fa-external-link-alt" aria-hidden="true"></i>在 Obsidian 打开</a>{% endif %}</div>
       </div>
       <div class="form-columns">

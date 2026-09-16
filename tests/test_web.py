@@ -606,7 +606,7 @@ def test_report_only_save_localizes_library_card_from_report_sections(
         library = client.get("/library")
 
     assert added.status_code == 200
-    saved = read_json(tmp_path / "run" / "paper-library-agentict2i.json", {})["items"]["2607.19056"]
+    saved = PaperLibraryStore(tmp_path / "run", "agentict2i").all()["2607.19056"]
     assert "该论文构建 SVG 精细编辑基准" in library.text
     assert "它能帮助分析智能体绘图系统" in library.text
     assert "Long English abstract" not in library.text
@@ -666,6 +666,24 @@ def test_save_discovery_settings_preserves_delivery_secrets_mapping(tmp_path: Pa
     assert payload["discovery"]["recommendation_count"] == 7
     assert payload["delivery"]["password_env"] == "SMTP_PASSWORD"
     assert "password" not in payload["delivery"]
+
+
+def test_hybrid_settings_save_and_roundtrip_through_active_profile(tmp_path: Path) -> None:
+    from arxiv_ra.config import load_config
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    app = create_app(config_path)
+    form = _full_settings_form()
+    form.update(discovery_provider="hybrid", alphaxiv_max_candidates="12", alphaxiv_minimum_concept_groups="0")
+    with TestClient(app) as client:
+        response = client.post("/settings/config", data=form, follow_redirects=False)
+        assert response.status_code == 303
+        config = load_config(config_path)
+        assert config.discovery.provider == "hybrid"
+        assert config.discovery.alphaxiv_max_candidates == 12
+        assert config.discovery.alphaxiv_minimum_concept_groups == 0
+        settings = client.get("/settings").text
+        assert 'value="hybrid" selected' in settings
 
 
 def test_gui_pages_render_and_secrets_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
@@ -789,6 +807,126 @@ def test_job_manager_runs_in_parallel_and_merges_duplicate_targets(tmp_path: Pat
             break
         time.sleep(0.02)
     assert all(manager.get(job.id).status == "succeeded" for job in (first, second, third))
+    manager.executor.shutdown(wait=True)
+
+
+def test_all_queued_jobs_keep_submission_profile_and_distinct_identity(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    app = create_app(config_path)
+    app.state.jobs.set_max_parallel(1)
+    release = threading.Event()
+    started = threading.Event()
+    received = []
+
+    class Runner:
+        def __init__(self, config, root):
+            self.config = config
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def finish(self, *args, **kwargs):
+            received.append(self.config.profile_id)
+            return tmp_path / "run" / "result.html"
+
+        report_arxiv_id = run = generate = check = sync_all = finish
+
+    for name in ("DailyPipeline", "WeeklySynthesizer", "VersionTracker", "CitationExplorer", "ObsidianExporter"):
+        monkeypatch.setattr(f"arxiv_ra.web.{name}", Runner)
+
+    def block():
+        started.set()
+        assert release.wait(10)
+        return tmp_path / "run" / "block.html"
+
+    (tmp_path / "profiles" / "beta.yaml").write_text(
+        yaml.safe_dump({"id": "beta", "name": "Beta", "discovery": {}, "ranking": {}}), encoding="utf-8")
+    with TestClient(app) as client:
+        app.state.jobs.submit("report", "block", block)
+        assert started.wait(2)
+        try:
+            original = []
+            other = []
+            for kind in ("report", "digest", "weekly", "versions", "citation", "obsidian"):
+                response = client.post(f"/api/jobs/{kind}", data={"arxiv_id": "2609.00001"})
+                assert response.status_code == 202
+                original.append(response.json()["id"])
+            client.post("/profiles/beta/activate", follow_redirects=False)
+            for kind in ("report", "digest", "weekly", "versions", "citation", "obsidian"):
+                response = client.post(f"/api/jobs/{kind}", data={"arxiv_id": "2609.00001"})
+                other.append(response.json()["id"])
+            assert not set(original) & set(other)
+        finally:
+            release.set()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and len(received) < 12:
+            time.sleep(0.01)
+        assert received == ["agentict2i"] * 6 + ["beta"] * 6
+
+
+def test_history_report_captures_selected_day_before_queue_execution(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    app = create_app(config_path)
+    app.state.jobs.set_max_parallel(1)
+    release, completed = threading.Event(), threading.Event()
+    received = []
+
+    class Pipeline:
+        def __init__(self, *args):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def report_arxiv_id(self, aid, *, snapshot):
+            received.append((aid, snapshot.version if snapshot else None))
+            completed.set()
+            return tmp_path / "run" / "report.md"
+
+    monkeypatch.setattr("arxiv_ra.web.DailyPipeline", Pipeline)
+    raw = {"arxiv_id": "2609.00001", "title": "Historical paper", "metadata_status": "complete", "version": 2,
+           "authors": [{"name": "A"}], "abstract": "Full abstract", "abstract_zh": "摘要", "recommendation_detail": "推荐",
+           "primary_category": "cs.AI", "categories": ["cs.AI"], "final_score": 5,
+           "published": "2026-09-01T00:00:00+00:00", "updated": "2026-09-02T00:00:00+00:00",
+           "abs_url": "https://arxiv.org/abs/2609.00001v2", "pdf_url": "https://arxiv.org/pdf/2609.00001v2"}
+    old_path = tmp_path / "run" / "2026-09-14" / "recommendations-agentict2i.json"
+    write_json(old_path, [{"profile_id": "agentict2i", "paper": raw, "verified": {}}])
+    write_json(tmp_path / "run" / "2026-09-15" / "recommendations-agentict2i.json",
+               [{"profile_id": "agentict2i", "paper": {**raw, "version": 4}, "verified": {}}])
+    with TestClient(app) as client:
+        app.state.jobs.submit("report", "hold", lambda: (release.wait(5), tmp_path / "run" / "hold.html")[1])
+        try:
+            page = client.get("/?date=2026-09-14")
+            assert 'name="source_date" value="2026-09-14"' in page.text
+            assert 'name="arxiv_id" value="2609.00001v2"' in page.text
+            response = client.post("/api/jobs/report", data={"arxiv_id": "2609.00001v2",
+                                   "origin": "recommendation", "source_date": "2026-09-14"})
+            assert response.status_code == 202
+            write_json(old_path, [])
+        finally:
+            release.set()
+        assert completed.wait(3)
+        assert received == [("2609.00001v2", 2)]
+
+
+def test_queue_close_cancels_pending_jobs_without_dispatching_after_shutdown(tmp_path):
+    manager = JobManager(tmp_path, max_parallel=1)
+    release, completed = threading.Event(), threading.Event()
+    def running():
+        release.wait(5)
+        completed.set()
+        return tmp_path / "done.html"
+    manager.submit("report", "running", running)
+    pending = manager.submit("report", "pending", lambda: (_ for _ in ()).throw(AssertionError("cancelled")))
+    manager.close()
+    release.set()
+    assert completed.wait(2)
+    assert manager.get(pending.id).status == "failed"
     manager.executor.shutdown(wait=True)
 
 

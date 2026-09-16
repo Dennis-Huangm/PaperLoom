@@ -77,7 +77,7 @@ def test_profile_generator_uses_reference_metadata_without_llm(tmp_path: Path, m
     _config(config_path)
     config = load_config(config_path)
     generator = ProfileGenerator(config)
-    generator.llm.enabled = False
+    generator.clients.llm.enabled = False
     paper = Paper(
         arxiv_id="2401.00001",
         title="World Models for Robots",
@@ -90,7 +90,7 @@ def test_profile_generator_uses_reference_metadata_without_llm(tmp_path: Path, m
         abs_url="https://arxiv.org/abs/2401.00001",
         pdf_url="https://arxiv.org/pdf/2401.00001",
     )
-    monkeypatch.setattr(generator.arxiv, "get", lambda _: paper)
+    monkeypatch.setattr(generator.clients.arxiv, "get", lambda _: paper)
 
     profile = generator.generate(
         "world-models",
@@ -111,7 +111,7 @@ def test_profile_generator_falls_back_to_alphaxiv_for_reference(monkeypatch) -> 
     config = AppConfig()
     config.discovery.alphaxiv_fallback_enabled = True
     generator = ProfileGenerator(config)
-    generator.llm.enabled = False
+    generator.clients.llm.enabled = False
     paper = Paper(
         arxiv_id="2609.00006",
         title="Fallback Reference",
@@ -124,8 +124,8 @@ def test_profile_generator_falls_back_to_alphaxiv_for_reference(monkeypatch) -> 
         abs_url="https://arxiv.org/abs/2609.00006",
         pdf_url="https://arxiv.org/pdf/2609.00006",
     )
-    generator.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
-    generator.alphaxiv = type(
+    generator.clients.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
+    generator.clients.alphaxiv = type(
         "AlphaXiv",
         (),
         {"enabled": True, "lookup": lambda *_args, **_kwargs: paper},
@@ -147,9 +147,9 @@ def test_profile_generator_falls_back_to_alphaxiv_for_reference(monkeypatch) -> 
 def test_profile_generator_preserves_reference_id_when_all_sources_fail() -> None:
     config = AppConfig()
     generator = ProfileGenerator(config)
-    generator.llm.enabled = False
-    generator.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
-    generator.alphaxiv = type("AlphaXiv", (), {"enabled": False})()
+    generator.clients.llm.enabled = False
+    generator.clients.arxiv = type("Arxiv", (), {"get": lambda *_args: (_ for _ in ()).throw(RuntimeError("429"))})()
+    generator.clients.alphaxiv = type("AlphaXiv", (), {"enabled": False})()
 
     profile = generator.generate(
         "offline-reference",

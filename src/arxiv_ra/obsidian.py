@@ -14,7 +14,7 @@ import yaml
 from .config import AppConfig
 from .feedback import FeedbackStore
 from .library import PaperLibraryStore
-from .llm import LLMClient
+from .research_clients import ResearchClients
 from .storage import read_recommendations
 from .utils import atomic_write_text, read_json, write_json
 
@@ -63,13 +63,21 @@ def discover_obsidian_vaults() -> list[dict[str, Any]]:
 
 
 class ObsidianExporter:
-    def __init__(self, config: AppConfig, project_root: Path) -> None:
+    def __init__(self, config: AppConfig, project_root: Path, *, clients: ResearchClients | None = None) -> None:
         self.config = config
         self.project_root = project_root.resolve()
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else self.project_root / output
         self.settings = config.obsidian
-        self.llm = LLMClient(config.llm)
+        self.clients = clients if clients is not None else ResearchClients(config)
+        self._owns_clients = clients is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if self._owns_clients:
+            self.clients.close()
 
     def status(self) -> dict[str, Any]:
         if not self.settings.enabled:
@@ -311,7 +319,7 @@ class ObsidianExporter:
         paper_lines = [
             "# 论文索引",
             "",
-            f"> 共 {len(papers)} 篇；由 arXiv Research Assistant 管理，用户笔记区不会被覆盖。",
+            f"> 共 {len(papers)} 篇；由 PaperLoom 管理，用户笔记区不会被覆盖。",
             "",
             "| 论文 | 年份 | 会议/期刊 | 状态 | 方向 |",
             "|---|---:|---|---|---|",
@@ -615,10 +623,10 @@ class ObsidianExporter:
         if not summary and reason:
             summary = reason
             source = "recommendation-rationale"
-        if not summary and self.llm.enabled:
+        if not summary and self.clients.llm.enabled:
             try:
                 summary = self._clean_summary(
-                    self.llm.chat(
+                    self.clients.llm.chat(
                         "你是严谨的 AI 论文笔记编辑。请将论文摘要精炼为中文研究笔记，不得逐句翻译、夸大贡献或补写原文没有的信息。",
                         f"""论文标题：{paper.get('title', '')}
 推荐理由：{paper.get('recommendation_reason') or '无'}

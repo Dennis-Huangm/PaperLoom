@@ -30,10 +30,10 @@ def test_report_generation_does_not_overwrite_daily_digest(tmp_path: Path) -> No
     report_path = run_dir / "reports" / "test" / "report.md"
     artifact = ReportArtifact(paper, report_path, None, VerifiedMetadata(), "report")
 
-    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline = DailyPipeline(AppConfig(output_dir=str(tmp_path)), tmp_path)
     pipeline.config = SimpleNamespace(timezone="Asia/Shanghai")
     pipeline.output_root = tmp_path
-    pipeline.arxiv = SimpleNamespace(get=lambda _arxiv_id: paper)
+    pipeline.clients.arxiv = SimpleNamespace(get=lambda _arxiv_id: paper)
     pipeline._process_paper = lambda *_args, **_kwargs: artifact
 
     assert pipeline.report_arxiv_id(paper.arxiv_id) == report_path
@@ -60,10 +60,10 @@ def test_report_generation_uses_local_snapshot_when_arxiv_api_fails(tmp_path: Pa
         [{"profile_id": "test", "paper": paper.to_dict(), "verified": {}}],
     )
     artifact = ReportArtifact(paper, output / "reports" / "snapshot" / "report.md", None, VerifiedMetadata(), "report")
-    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline = DailyPipeline(AppConfig(output_dir=str(tmp_path)), tmp_path)
     pipeline.config = SimpleNamespace(timezone="Asia/Shanghai", profile_id="test")
     pipeline.output_root = tmp_path / "run"
-    pipeline.arxiv = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(
         get=lambda _arxiv_id: (_ for _ in ()).throw(
             AssertionError("local snapshot should avoid the arXiv API")
         )
@@ -91,17 +91,17 @@ def test_report_generation_uses_alphaxiv_for_unknown_local_id(tmp_path: Path) ->
         pdf_url="https://arxiv.org/pdf/2609.00008",
     )
     artifact = ReportArtifact(paper, tmp_path / "report.md", None, VerifiedMetadata(), "report")
-    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline = DailyPipeline(AppConfig(output_dir=str(tmp_path)), tmp_path)
     pipeline.config = SimpleNamespace(
         timezone="Asia/Shanghai",
         profile_id="test",
         discovery=SimpleNamespace(provider="auto", alphaxiv_fallback_enabled=True),
     )
     pipeline.output_root = tmp_path / "run"
-    pipeline.arxiv = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(
         get=lambda _arxiv_id: (_ for _ in ()).throw(RuntimeError("429"))
     )
-    pipeline.alphaxiv = SimpleNamespace(enabled=True, lookup=lambda _arxiv_id: paper)
+    pipeline.clients.alphaxiv = SimpleNamespace(enabled=True, lookup=lambda _arxiv_id: paper)
     pipeline._process_paper = lambda *_args, **_kwargs: artifact
 
     assert pipeline.report_arxiv_id(paper.arxiv_id) == artifact.report_path
@@ -130,8 +130,8 @@ def test_daily_pipeline_publishes_only_after_localization(
     config.weekly.enabled = False
     config.version_tracking.enabled = False
     pipeline = DailyPipeline(config, tmp_path)
-    pipeline.arxiv = SimpleNamespace(search=lambda *_args, **_kwargs: [paper])
-    pipeline.verifier = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(search=lambda *_args, **_kwargs: [paper])
+    pipeline.clients.verifier = SimpleNamespace(
         verify=lambda item: VerifiedMetadata(
             title=item.title, authors=item.authors, sources=["arXiv only"]
         )
@@ -188,8 +188,8 @@ def test_delivery_failure_does_not_commit_processed_state(
     config.weekly.enabled = False
     config.version_tracking.enabled = False
     pipeline = DailyPipeline(config, tmp_path)
-    pipeline.arxiv = SimpleNamespace(search=lambda *_args, **_kwargs: [paper])
-    pipeline.verifier = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(search=lambda *_args, **_kwargs: [paper])
+    pipeline.clients.verifier = SimpleNamespace(
         verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
     )
     monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
@@ -235,15 +235,15 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     config.weekly.enabled = False
     config.version_tracking.enabled = False
     pipeline = DailyPipeline(config, tmp_path)
-    pipeline.arxiv = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(
         search=lambda *_args, **_kwargs: (_ for _ in ()).throw(
             RuntimeError("arXiv API 当前限流")
         )
     )
-    pipeline.alphaxiv = SimpleNamespace(
+    pipeline.clients.alphaxiv = SimpleNamespace(
         discover=lambda **_kwargs: [paper]
     )
-    pipeline.verifier = SimpleNamespace(
+    pipeline.clients.verifier = SimpleNamespace(
         verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
     )
     monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
@@ -253,9 +253,9 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     pipeline.run(force=True, demo=False, deliver=False)
 
     date_label = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
-    assert (tmp_path / "run" / date_label / "discovery-source.txt").read_text(
-        encoding="utf-8"
-    ).startswith("本次推荐使用 alphaXiv")
+    manifest = next((tmp_path / "run" / date_label).glob("discovery-test-*.json"))
+    assert read_json(manifest)["sources"]["alphaxiv"]["status"] == "ok"
+    assert not (tmp_path / "run" / date_label / "discovery-source.txt").exists()
 
 
 def test_fallback_does_not_publish_empty_success_when_all_candidates_are_processed(
@@ -279,10 +279,10 @@ def test_fallback_does_not_publish_empty_success_when_all_candidates_are_process
     config.weekly.enabled = False
     config.version_tracking.enabled = False
     pipeline = DailyPipeline(config, tmp_path)
-    pipeline.arxiv = SimpleNamespace(
+    pipeline.clients.arxiv = SimpleNamespace(
         search=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("429"))
     )
-    pipeline.alphaxiv = SimpleNamespace(discover=lambda **_kwargs: [paper])
+    pipeline.clients.alphaxiv = SimpleNamespace(discover=lambda **_kwargs: [paper])
     monkeypatch.setattr("arxiv_ra.pipeline.rank_papers", lambda papers, *_args: papers)
     monkeypatch.setattr("arxiv_ra.pipeline.matched_concept_groups", lambda *_args: 0)
     write_json(tmp_path / "run" / "state-test.json", {"processed": [paper.arxiv_id]})

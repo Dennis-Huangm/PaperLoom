@@ -58,10 +58,10 @@ def _send_message(config: DeliveryConfig, username: str, password: str, message:
 def send_test_email(config: DeliveryConfig) -> None:
     send_digest(
         config,
-        "arXiv Research Assistant｜QQ邮箱配置测试",
+        "PaperLoom｜QQ邮箱配置测试",
         """<html><body style="font-family:system-ui,sans-serif">
 <h2>QQ 邮箱配置成功</h2>
-<p>这是一封由 arXiv Research Assistant 发送的测试邮件。</p>
+<p>这是一封由 PaperLoom 发送的测试邮件。</p>
 <p>收到此邮件说明 SMTP 地址、SSL、邮箱帐号和授权码均可正常使用。</p>
 </body></html>""",
     )

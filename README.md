@@ -1,497 +1,386 @@
-# arXiv Research Assistant
+<p align="center">
+  <img src="assets/arxiv-research-assistant.png" width="104" alt="PaperLoom 标志">
+</p>
 
-面向 AI 研究者的本地优先科研助手：按时间范围抓取 arXiv 新论文，依据研究兴趣排序并发送每日推荐；需要深读时，再按 arXiv ID 主动生成中文阅读报告和方法图。
+<h1 align="center">PaperLoom · 知织</h1>
 
-当前版本：**v1.2.0**。发布说明见 [`RELEASE_NOTES_v1.2.0.md`](RELEASE_NOTES_v1.2.0.md)，历史版本变更统一记录在 [`CHANGELOG.md`](CHANGELOG.md)。
+<p align="center">
+  <strong>把论文织成知识。</strong><br>
+  Weave papers into understanding.<br>
+  面向研究者的本地优先论文助手，提供个性化推荐、中文阅读报告和持续研究记录。
+</p>
 
-开发与维护请先阅读 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；正式打包按
-[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) 逐项核对。
+<p align="center">
+  <img alt="Python 3.11 或更新版本" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-green"></a>
+  <img alt="Local First" src="https://img.shields.io/badge/Local-First-C56A16">
+</p>
 
-## 已实现能力
+<p align="center">
+  <a href="#quick-start">快速开始</a> ·
+  <a href="#discovery">协作检索</a> ·
+  <a href="#configuration">配置</a> ·
+  <a href="#integrations">集成</a> ·
+  <a href="#faq">常见问题</a> ·
+  <a href="#development">参与开发</a>
+</p>
 
-- 按 arXiv 类别和最近 N 天检索；
-- 正向/负向关键词低成本预筛；
-- 可选 LLM 精排，输出推荐分数和理由；
-- OpenAlex + Semantic Scholar + arXiv `journal_ref` 元数据核验；
-- Semantic Scholar 自动按免费 API 限额节流，遇到 429 时遵循 `Retry-After` 并退避重试；
-- 区分 arXiv 首发日期、修订日期和正式发表日期；
-- 作者机构、会议/期刊、DOI、引用数及来源冲突记录；
-- 方法图优先从 arXiv HTML 的 `figure/img/figcaption` 获取完整原图，缺失时回退到 PDF 版面重建；
-- 视觉模型观察图片并生成通俗中文解读，不在报告中照搬原始 caption；
-- Docling 可用时自动优先使用，否则回退 PyMuPDF；
-- 分片阅读全文并生成结构化中文报告；
-- 报告公式通过本地 KaTeX 渲染，离线查看时不依赖 CDN；
-- HTML 报告提供桌面侧边目录和移动端可折叠目录；
-- 明确区分“作者陈述的局限性”和“分析者推断”；
-- Markdown、HTML、JSON及方法图本地归档；
-- QQ SMTP 每日推荐邮件、Windows Task Scheduler 和 GitHub Actions 定时运行；
-- 每日推荐与完整阅读报告解耦，定时任务不会自动下载和深读全文。
-- 可根据关键词与参考 arXiv 论文生成多个研究方向档案，并在 GUI 中随时切换；定时任务自动跟随当前方向。
-- Zotero 10+ 本地 API 联动：单篇或批量保存推荐、条目去重、研究方向标签、摘要笔记、PDF 导入和阅读报告附件。
-- Obsidian 本地知识库联动：每日推荐、论文笔记、报告图片、周报、研究方向、概念页和 MOC 索引。
-- 按研究方向隔离的“我的文献库”：从每日推荐或本地报告显式收藏论文，长期保留摘要精要、推荐依据与报告入口。
-- 后台任务支持 1–8 路可配置并行（默认 3）；相同目标的重复任务自动合并，Obsidian 写入和 Semantic Scholar 限流保持并发安全。
-- Web UI 支持 1080p、2K、4K 与窄窗口响应式布局；4K 大屏会扩展主画布和工作区高度，并适度放大列表与详情内容。
-- arXiv API 检索对连接重置、超时、限流和临时服务错误执行指数退避重试，偶发网络瞬断不会直接中止每日推荐。
-- 刷新任务与推荐页面解耦：模型生成中文摘要时不持有缓存锁，新结果完成后再原子发布，因此任务运行期间仍可浏览上一份推荐和历史日期。
-- 提供多尺寸 Windows ICO 与透明 PNG 应用图标，并作为 GUI favicon 和品牌标志使用。
-- 精简的双信号偏好闭环：加入文献库即视为相关正样本；“不相关”作为负样本，自动影响后续推荐排序。
-- 文献推荐页提供“每日记录”月历，可回看当前研究方向每个有结果日期的完整推荐列表；有结果日期会高亮并标注篇数，历史日期的批量 Zotero 保存也只处理当日论文。
-- 每周研究综述：结合近 7 天推荐、用户反馈和完整阅读报告，归纳趋势、方法簇、分歧、开放问题与必读清单。
-- arXiv 版本追踪：从本地报告、反馈和 Zotero 建立基线，发现 v2/v3 后生成方法、实验、结论与局限差异报告。
-- Semantic Scholar 相关工作地图：展示关键参考、后续引用和语义相似论文。
+---
 
-会议状态不会根据 PDF 样式或模型印象猜测。只有得到外部元数据或 arXiv `journal_ref` 支持时才填写，否则保留“未核实”。
+PaperLoom 把论文发现、筛选、阅读和归档放在同一个工作流中：**arXiv 提供类别与关键词检索，alphaXiv 补充语义发现；你决定深读哪些论文，系统再生成报告并连接到 Zotero 或 Obsidian。**
 
-## 1. 安装
+项目提供本地 Web 界面与 CLI，研究方向、阅读偏好和生成文件保存在你控制的目录中。可以只使用基础检索，也可以逐步接入模型、语义发现与知识库。当前包版本为 **1.2.0**；参见 [变更记录](CHANGELOG.md)、[版本说明](RELEASE_NOTES_v1.2.0.md) 与 [近期架构改进](docs/ARCHITECTURE_IMPROVEMENTS_2026-09-16.md)。
 
-需要 Python 3.11 或更新版本。Windows PowerShell：
+PaperLoom 原名 arXiv Research Assistant。推荐使用新命令 `paperloom`，旧命令 `arxiv-ra` 继续可用；Python 发行包名 `arxiv-research-assistant` 与模块名 `arxiv_ra` 保留用于兼容升级。已有安装重新执行 `python -m pip install -e ".[gui]"` 后即可获得新命令，原有配置、研究方向和产物目录无需改名。
+
+## 能做什么
+
+| 能力 | 使用方式 |
+| --- | --- |
+| **围绕研究方向发现论文** | 按类别、时间范围和关键词检索，结合 alphaXiv 语义候选、规则评分与可选 LLM 精排 |
+| **建立可解释的阅读偏好** | 收藏作为正样本，“不相关”作为负样本；按方向隔离，并保留每日推荐历史 |
+| **按需生成中文阅读报告** | 提取论文正文、方法图与公式说明，输出 Markdown、HTML 和元数据 |
+| **保留证据与版本信息** | 记录发现来源、补全状态及出版信息核验结果；区分历史快照、最新查询和指定版本 |
+| **持续跟进一个主题** | 生成研究周报、追踪 arXiv 修订版本、浏览相关工作地图 |
+| **连接已有研究工具** | 保存到 Zotero、同步到 Obsidian、通过 SMTP 投递日报，或由本地计划任务定时执行 |
+
+适合希望持续跟进若干研究主题、用中文辅助阅读、并保留本地成果的个人研究者。Web 界面面向本机使用，不提供多用户账户与公网访问认证。
+
+<a id="quick-start"></a>
+## 快速开始
+
+### 1. 安装
+
+需要 **Python 3.11+**。下载或克隆源码后，在包含 `pyproject.toml` 的项目根目录执行。
+
+**Windows / PowerShell**
 
 ```powershell
-cd C:\path\to\arxiv-research-assistant
-py -3.11 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-Copy-Item config.example.yaml config.yaml
-Copy-Item .env.example .env
+python -m pip install -e ".[gui]"
+python -m pip install tzdata
+
+if (-not (Test-Path config.yaml)) { Copy-Item config.example.yaml config.yaml }
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-如果希望提升矢量图、复杂布局和图注关联效果：
+Windows 安装步骤额外补充 `tzdata`，供 Python 解析 `Asia/Shanghai` 等 IANA 时区。参见 [Python 时区数据说明](https://docs.python.org/3.12/library/zoneinfo.html#data-sources)。
 
-```powershell
-python -m pip install -e ".[docling,dev]"
+如果 PowerShell 不允许激活脚本，可以直接使用 `.\.venv\Scripts\python.exe -m pip ...` 安装，再通过 `.\.venv\Scripts\paperloom.exe` 运行命令，无需修改系统执行策略。
+
+<details>
+<summary>Linux / macOS / Bash 安装命令</summary>
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[gui]'
+
+[ -f config.yaml ] || cp config.example.yaml config.yaml
+[ -f .env ] || cp .env.example .env
 ```
 
-Docling 较大，CPU 环境也可以先使用默认的 PyMuPDF 回退链路。
+Windows 的 GUI 启动脚本和计划任务脚本仅用于 Windows；其他环境使用下方的通用 CLI 命令。
 
-## 2. 配置与切换研究方向
+</details>
 
-推荐在 GUI 的“方向”页面创建研究方向：输入方向名称、若干关键词和/或参考论文 arXiv ID，系统会读取参考论文元数据，并让已配置的 LLM 归纳 arXiv 类别、服务端查询词、正负关键词与概念组。若 LLM 暂不可用，则使用关键词和参考论文类别生成可用的回退配置。
+仅使用 CLI 时可安装 `python -m pip install -e .`。默认 PDF 解析器为 PyMuPDF；需要尝试 Docling 时，可安装 `python -m pip install -e ".[gui,docling]"`。Docling 是可选依赖，未安装时仍可生成报告。
 
-方向档案单独保存在：
+### 2. 先体验，再接入服务
 
-```text
-profiles/
-├── active.txt
-├── <profile-id>.yaml
-└── another-topic.yaml
+```bash
+# 检查配置、模型环境变量和可选组件
+paperloom --config config.yaml doctor
+
+# 完全离线的示例日报，不请求外部服务、不调用模型、不发送邮件
+paperloom --config config.yaml demo
+
+# 启动本地界面
+paperloom --config config.yaml gui
 ```
 
-`config.yaml` 继续保存模型、API 环境变量名、PDF、邮箱等全局设置；`profiles/*.yaml` 只保存检索和排序信息，不包含 `.env` 中的密钥。切换后，GUI、命令行和 Windows 定时任务都会读取 `active.txt`，无需重新安装计划任务。
+浏览器会打开 **http://127.0.0.1:8000**。也可使用 `gui --port 8001 --no-browser` 自定义端口并关闭自动打开浏览器。
 
-也可以从命令行查看与切换：
+`doctor` 是本地配置检查，不代表外部 API 已连通。`demo` 会在配置的输出目录写入示例文件；已有研究数据时，应使用独立的 `output_dir` 体验示例。
 
-```powershell
-arxiv-ra --config config.yaml profiles
-arxiv-ra --config config.yaml activate <profile-id>
+### 3. 创建方向，获取真实推荐
+
+1. 在“方向”页面填写主题名称、具体关键词和／或参考论文 arXiv ID。
+2. 在“配置”页面选择检索模式、填写可选服务凭据，并设置模型名称。
+3. 首次联网运行建议只刷新本地推荐，确认结果后再启用邮件和自动同步。
+
+```bash
+paperloom --config config.yaml run --no-email
 ```
 
-配置中心里的“检索”和“排序”字段只修改当前方向，其余字段仍修改全局 `config.yaml`。旧版本首次启动 GUI 或 CLI 时，会自动把 `config.yaml` 中现有的检索和排序参数迁移为默认档案。
-
-### 手工配置研究兴趣
-
-编辑当前的 `profiles/<方向ID>.yaml`（下列内容位于该文件的 `discovery` 段）：
-
-```yaml
-discovery:
-  lookback_days: 2
-  recommendation_count: 5
-  min_score: 0.5
-  arxiv_categories: [cs.AI, cs.LG, cs.CL, cs.CV, cs.RO]
-  positive_keywords:
-    - large language model
-    - multimodal agent
-    - reasoning
-  negative_keywords:
-    - survey
-```
-
-建议将 `positive_keywords` 写得比“AI”更具体，例如方法名称、任务、数据模态和你关注的问题。负向关键词表示降低优先级，不是绝对排除；最终分数低于 `min_score` 的论文不会进入每日推荐。
-
-同时把 `metadata.openalex_email` 改成自己的联系邮箱。OpenAlex 公共 API 可以不填写 key，但填写免费 key 后限额更稳定。
-
-### alphaXiv 备用检索（可选）
-
-每日检索默认优先使用 arXiv API。若连续重试后仍遇到限流或连接失败，且
-`discovery.provider` 为 `auto`、`alphaxiv_fallback_enabled` 为 `true`，系统会使用
-alphaXiv 的 `discover_papers` 作为备用发现源。请在 alphaXiv 的 Settings → API Keys
-创建密钥，并只把密钥写入本机 `.env`：
-
-```dotenv
-ALPHAXIV_API_KEY=your-key
-```
-
-备用结果仍会经过本项目的方向排序、去重和 OpenAlex/Semantic Scholar 元数据核验；
-alphaXiv 不会替代正式出版信息的核验来源。若不希望启用备用源，可在配置中心选择
-“仅使用 arXiv API”。
-
-## 3. 配置模型
-
-### OpenAI 或其他兼容服务
-
-在 `.env` 中设置：
-
-```dotenv
-LLM_API_KEY=your-key
-LLM_BASE_URL=
-```
-
-并在 `config.yaml` 中选择账户可用的模型。项目使用 OpenAI-compatible Chat Completions，因此也可以接入其他兼容服务。
-
-### 本地 Ollama
-
-先在 Ollama 中准备一个指令遵循能力较好的模型，然后设置：
-
-```dotenv
-LLM_API_KEY=ollama
-LLM_BASE_URL=http://localhost:11434/v1
-```
-
-将 `llm.model` 改成 Ollama 中的模型名。小模型容易遗漏实验数字或不遵守“未核实”约束，建议使用能力较强的模型。
-
-## 4. 运行
-
-### 本地可视化界面（推荐）
-
-安装 GUI 依赖：
-
-```powershell
-python -m pip install -e ".[gui,dev]"
-```
-
-启动仅限本机访问的界面：
-
-```powershell
-.\scripts\start_gui.ps1
-```
-
-也可以直接运行：
-
-```powershell
-arxiv-ra --config config.yaml gui
-```
-
-浏览器会打开 `http://127.0.0.1:8000`。GUI 提供今日推荐、后台生成完整报告、本地报告库、完整运行配置与服务状态。配置中心可以修改所有 `config.yaml` 字段，也可以更新 `.env` 中的 LLM/OpenAlex/Semantic Scholar/alphaXiv API、QQ 邮箱和 SMTP 授权码。
-
-后台并行数可在“配置 → 常规设置”中修改，保存后立即生效：
-
-```yaml
-jobs:
-  max_parallel: 3  # 允许 1–8，建议 2–4
-```
-
-Windows 图标位于 `assets/arxiv-research-assistant.ico`，透明高清源图位于 `assets/arxiv-research-assistant.png`。
-
-安全规则：现有凭据永不回显；凭据输入框留空表示保持原值，只有显式勾选“清除”才会删除。配置页面禁止浏览器缓存并拒绝跨站修改请求。GUI 固定监听 `127.0.0.1`，原有 CLI 与定时任务保持可用。修改 `output_dir` 后需要重启 GUI，以重新挂载本地报告目录。
-
-### 命令行
-
-先做环境检查：
-
-```powershell
-arxiv-ra --config config.yaml doctor
-```
-
-生成完全离线的示例日报，不下载论文也不调用模型：
-
-```powershell
-arxiv-ra --config config.yaml demo
-```
-
-执行每日流程：
-
-```powershell
-arxiv-ra --config config.yaml run
-```
-
-只生成真实推荐、暂不发送邮件（适合调试排序）：
-
-```powershell
-arxiv-ra --config config.yaml run --force --no-email
-```
-
-为指定论文生成报告：
-
-```powershell
-arxiv-ra --config config.yaml report 2409.13740
-```
-
-默认结果保存在：
-
-```text
-run/
-├── state-<profile-id>.json
-└── YYYY-MM-DD/
-    ├── candidates.json
-    ├── recommendations.json
-    ├── index.html
-    └── reports/
-        └── ARXIV-ID-title/
-            ├── paper.pdf
-            ├── report.md
-            ├── report.html
-            ├── metadata.json
-            ├── main-figure.png
-            └── figures/
-```
-
-`state-<方向ID>.json` 防止相邻时间窗重复推荐同一论文，不同研究方向的去重历史互不影响。`reports/` 仅在主动执行 `report ARXIV_ID` 后产生。需要重新发送同一时间窗的推荐时使用 `run --force`。
-
-## 5. 定时运行
-
-### Windows
-
-以当前用户创建每天 08:00 的任务：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -ProjectDir $PWD -At "08:00"
-```
-
-脚本只创建或更新名为 `arXiv Research Assistant` 的当前用户计划任务。`.env` 和 `config.yaml` 保留在本机。
-
-### GitHub Actions
-
-仓库包含 `.github/workflows/daily.yml`，默认北京时间工作日 07:30 运行，并上传 `run/` 作为私有 workflow artifact。使用前：
-
-1. 将本项目推送到私有 GitHub 仓库；
-2. 提交已编辑的 `config.yaml`；
-3. 在 Actions Secrets 中添加 `LLM_API_KEY`，以及可选的 OpenAlex、Semantic Scholar、`QQ_EMAIL` 和 `SMTP_PASSWORD`；
-4. 启用 Actions。
-
-不要把 `.env` 提交到仓库。
-
-工作流会使用私有 Actions Cache 在不同运行之间保留论文去重状态、阅读反馈、版本基线、周报和每日推荐索引；缓存不是长期备份，本地 `run/` 仍是主数据来源。
-
-## 6. QQ 邮箱投递
-
-项目已经按个人 QQ 邮箱预配置：
+示例配置启用了邮件投递、自动周报和自动版本检查。若希望先单独体验论文推荐，可将以下字段合并到 `config.yaml` 对应段中：
 
 ```yaml
 delivery:
-  email_enabled: true
-  smtp_host: smtp.qq.com
-  smtp_port: 465
-  smtp_ssl: true
-  email_address_env: QQ_EMAIL
-  password_env: SMTP_PASSWORD
+  email_enabled: false
+weekly:
+  auto_generate: false
+version_tracking:
+  auto_check: false
 ```
 
-登录 QQ 邮箱网页版，进入“设置 → 账号 → POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV 服务”，开启 POP3/SMTP 或 IMAP/SMTP 服务并生成授权码。授权码不是 QQ 登录密码。
+不配置 LLM 也能体验基础检索、规则排序和回退报告。高质量中文摘要、精排、全文综合与图示解读需要相应模型能力。
 
-只在本地 `.env` 中填写以下两项：
+<a id="discovery"></a>
+## arXiv 与 alphaXiv 如何协作
+
+```mermaid
+flowchart LR
+    P[研究方向] --> A[arXiv 类别与关键词检索]
+    P --> X[alphaXiv 语义发现]
+    A --> M[按 arXiv ID 合并并记录来源]
+    X --> M
+    M --> H[arXiv 补全与完整缓存恢复]
+    H --> F[阅读偏好与历史过滤]
+    F --> R[规则排序与可选 LLM 精排]
+    R --> D[每日推荐]
+    D --> U[用户选择深读]
+    U --> B[中文报告与知识库]
+```
+
+上图对应 `hybrid` 模式。三种模式的区别是：
+
+| `discovery.provider` | 行为 |
+| --- | --- |
+| `hybrid` | 每次尝试两路发现，合并去重后补全；alphaXiv 主动扩展候选集 |
+| `arxiv` | 仅使用 arXiv，适合没有 alphaXiv 凭据的环境 |
+| `auto` | 兼容旧行为：仅在 arXiv 检索失败后调用 alphaXiv |
+
+启用协作检索时，在 `.env` 中填写 `ALPHAXIV_API_KEY`，并在**当前研究方向**的 `discovery` 段设置：
+
+```yaml
+discovery:
+  provider: hybrid
+  alphaxiv_fallback_enabled: true
+  alphaxiv_max_candidates: 15
+  alphaxiv_minimum_concept_groups: 1
+```
+
+`alphaxiv_fallback_enabled` 沿用了旧配置名称，现在同时控制 `hybrid` 与 `auto` 中的 alphaXiv 开关。本项目的 alphaXiv 候选上限为 15，与 arXiv 候选上限独立。API 的可用性、额度和费用以服务提供方为准。
+
+**失败时保留可用信息。** 单路失败时仍处理另一来源的结果；arXiv 补全失败时优先复用完整本地缓存。摘要预览与未核实信息不会伪装成完整元数据，也不会把未知发布日期填成今天。两路都失败时保留已发布推荐；同日没有符合条件的新论文时，也保留已有推荐。
+
+每次发现的来源状态、耗时与补全计数写入 `discovery-<profile>-<run-id>.json`，便于区分网络失败、空结果和筛选后无候选。
+
+<a id="configuration"></a>
+## 配置与研究方向
+
+### 配置放在哪里
+
+| 文件 | 职责 |
+| --- | --- |
+| `config.yaml` | 模型、输出目录、PDF、邮件、集成、任务并行数等全局设置 |
+| `.env` | API 密钥、服务地址和 SMTP 凭据；从配置文件所在目录加载 |
+| `profiles/<id>.yaml` | 某个研究方向的检索与排序配置 |
+| `profiles/active.txt` | 当前启用的研究方向 |
+
+首次运行时会为尚无方向档案的项目建立默认方向。**活动方向的 `discovery` 和 `ranking` 段会覆盖全局同名段**；已有方向后，只修改 `config.yaml` 的检索字段可能不会生效。推荐通过 GUI 修改，或编辑当前方向的 YAML。完整字段见 [配置模板](config.example.yaml) 和 [环境变量模板](.env.example)。
+
+```bash
+paperloom --config config.yaml profiles
+paperloom --config config.yaml activate your-profile-id
+```
+
+关键词宜描述具体任务、方法和模态。负向关键词用于降低得分；用户标记“不相关”产生的负反馈还会参与候选过滤。收藏与“不相关”互斥，正向偏好学习仅取当前方向最近收藏的 30 篇论文。
+
+后台任务使用**提交时的配置和研究方向**。切换方向或修改设置影响后续提交，不改变已排队任务。GUI 并行数通过 `jobs.max_parallel` 调整，范围为 1–8，默认 3。
+
+### 模型与外部服务
+
+项目使用 OpenAI-compatible Chat Completions，可接入兼容的远程服务或本地端点。将 `.env` 中的 `LLM_API_KEY`、`LLM_BASE_URL` 与 `config.yaml` 中的 `llm.model` 配套设置；模型名应以实际服务可用的名称为准。
 
 ```dotenv
-QQ_EMAIL=你的完整QQ邮箱地址@qq.com
-SMTP_PASSWORD=QQ邮箱生成的授权码
+# 远程兼容服务；使用 SDK 默认服务地址时可留空 BASE_URL
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=
+
+# 按需填写
+ALPHAXIV_API_KEY=
+OPENALEX_API_KEY=
+SEMANTIC_SCHOLAR_API_KEY=
 ```
 
-同一个 `QQ_EMAIL` 默认同时作为 SMTP 登录帐号、发件人和收件人，因此日报会从你的 QQ 邮箱发送给自己。需要发送给多个地址时，可以在 `config.yaml` 的 `to_addresses` 中显式填写。
+本地 Ollama 可将 `LLM_BASE_URL` 设为 `http://localhost:11434/v1`、`LLM_API_KEY` 设为 `ollama`，并将 `llm.model` 设为本机已准备的模型名。图示解读还需要模型支持图像输入，普通文本模型无法替代视觉能力。
 
-配置后先发送独立测试邮件：
+OpenAlex 与 Semantic Scholar 用于出版信息核验；未配置凭据或请求失败时，能否返回结果取决于服务端策略。请将 `metadata.openalex_email` 改为自己的联系邮箱。不要将 `.env` 或真实凭据提交到仓库。
 
-```powershell
-arxiv-ra --config config.yaml test-email
-```
+## 日常使用
 
-收到标题为“arXiv Research Assistant｜QQ邮箱配置测试”的邮件即表示配置成功。每日正式运行只发送一封“arXiv 每日推荐”邮件，包含入选论文的标题、作者、会议核验结果、推荐理由、摘要、分数及 arXiv/PDF 链接。
+下面的命令都从项目根目录执行；若配置文件不在根目录，请用 `--config` 指定路径。
 
-定时任务不发送、也不自动生成完整阅读报告。需要深读某篇论文时主动执行：
+| 目标 | 命令 |
+| --- | --- |
+| 启动界面 | `paperloom --config config.yaml gui` |
+| 生成推荐并按配置投递 | `paperloom --config config.yaml run` |
+| 生成推荐、不发邮件 | `paperloom --config config.yaml run --no-email` |
+| 忽略已处理历史，重新筛选 | `paperloom --config config.yaml run --force --no-email` |
+| 阅读一篇论文的当前版本 | `paperloom --config config.yaml report 2407.05600` |
+| 阅读指定修订版 | `paperloom --config config.yaml report 2407.05600v2` |
+| 生成研究周报 | `paperloom --config config.yaml weekly` |
+| 检查已追踪论文的新版本 | `paperloom --config config.yaml versions` |
+| 生成相关工作地图 | `paperloom --config config.yaml citation 2407.05600` |
+| 同步 Obsidian | `paperloom --config config.yaml obsidian-sync` |
 
-```powershell
-arxiv-ra --config config.yaml report 2409.13740
-```
+`--force` 忽略论文已处理历史，仍会应用当前筛选规则。日报发现阶段不会自动为每篇候选生成完整报告；如果开启版本追踪的 PDF 对比，则发现修订更新时可能额外下载新旧全文。
 
-## 7. Zotero 联动
+### 报告与版本
 
-项目通过 Zotero 10+ 的本地 API 写入个人文献库，不需要把 Zotero 云端 API key 交给本项目。首次使用：
+| 入口 | 版本规则 |
+| --- | --- |
+| 历史推荐或文献库中的“生成报告” | 使用所选记录的版本，在提交任务时捕获快照 |
+| 在生成页面或 CLI 输入无版本 ID | 查询最新数据；请求失败时可使用本地数据，并注明未确认最新版本 |
+| 显式输入 `v2`、`v3` 等后缀 | 严格匹配指定版本，不以其他修订版替代 |
 
-1. 启动 Zotero；
-2. 在“设置 → 高级”中启用“允许本机其他应用与 Zotero 通信”；
-3. 打开 GUI 的“配置 → Zotero”；
-4. 点击“连接并授权”，然后在 Zotero 弹窗中批准 `arXiv Research Assistant` 写入。
+没有可靠版本号的历史记录会提示改用直接输入 ID。已知版本的元数据、PDF 和 HTML 配图使用同一修订版；不同方向、不同版本的报告分别保存。
 
-授权 key 自动保存到本机 `.env` 的 `ZOTERO_LOCAL_API_KEY`，不会显示在网页或进入脱敏压缩包。
+完整报告覆盖基本信息、研究价值、问题背景、核心方法、贡献、实验与结果、对比、局限及可复现性。方法图优先从 arXiv HTML 获取，缺失时尝试 PDF 提取；无法可靠提取时跳过。HTML 报告包含目录与本地 KaTeX 公式渲染。模型或全文解析失败时会输出带提示的回退结果，其深度不等同于成功完成的全文报告。
 
-可以从今日推荐页保存当前论文或批量保存今日推荐，也可以从报告库把完整阅读报告附加到同一 Zotero 条目。每次保存前都会弹出位置选择器，实时读取 Zotero 的现有分类树；可以选择任意嵌套分类、使用默认分类，或只放在“我的文库”中。已有论文会加入新选择的分类，但不会从原有分类移除。
+### 周报、版本追踪与图谱
 
-创建前会按 DOI、arXiv ID 和标题检查现有条目；重复点击不会重复创建论文。默认分类为 `arXiv Research Assistant`，并添加当前研究方向与 arXiv 类别标签。
+- **研究周报**：综合近期推荐、阅读偏好及可用报告，归纳主题趋势与待研究问题。
+- **版本追踪**：从配置启用的本地报告、反馈和 Zotero 来源收集论文；首次检查建立基线，后续发现版本上升时生成差异记录。
+- **相关工作地图**：组合 Semantic Scholar 的参考、引用和推荐论文。默认布局使用图内标题与摘要的 TF-IDF 相似度，真实引用边可单独展示；相似连线不代表引用关系。
 
-PDF 支持两种模式：
+<a id="integrations"></a>
+## 可选集成
 
-- `imported_file`（默认）：下载 arXiv PDF 并导入 Zotero 存储，可随 Zotero 文件同步；
-- `linked_file`：只链接项目中的本地文件，不占用 Zotero 存储，但换电脑后路径可能失效。
+### Zotero
 
-阅读报告 HTML 默认使用本地链接附件，避免重复占用 Zotero 存储。相关配置：
+通过 Zotero Desktop 的本地 API 保存单篇或批量论文，支持分类选择、条目去重、研究方向标签、摘要笔记及报告附件。
 
-```yaml
-zotero:
-  enabled: true
-  mode: local
-  base_url: http://127.0.0.1:23119/api
-  api_key_env: ZOTERO_LOCAL_API_KEY
-  collection_name: arXiv Research Assistant
-  attach_pdf: true
-  pdf_attachment_mode: imported_file
-  attach_report: true
-  add_profile_tag: true
-```
+启动支持本地写入授权的 Zotero，启用允许本机应用通信的设置，然后在 GUI“配置 → Zotero”中连接并授权。授权凭据保存在本机 `.env` 的 `ZOTERO_LOCAL_API_KEY`，此流程不使用 Zotero 云端 API key。
 
-## 8. 阅读反馈与研究周报
+PDF 支持 `imported_file` 与 `linked_file`：前者导入 Zotero 存储，后者链接本地文件。移动项目目录后，本地链接可能需要更新。批量保存历史推荐时，处理的是页面所选日期的论文。
 
-今日推荐只保留两种明确的偏好动作：点击“加入文献库”即把论文视为相关正样本；点击“不相关”则保存为负样本。两种状态互斥，收藏会清除该论文的负反馈，标记不相关会将论文移出当前方向的文献库。负样本按方向写入 `run/feedback-<方向ID>.json`，正样本直接来自 `run/paper-library-<方向ID>.json`；系统从标题提取可审计的偏好信号，命中相同短语或多个特征词的近似论文会在候选阶段被排除，并且不会静默改写 `profiles/*.yaml` 中的手工关键词。
+### Obsidian
 
-首页推荐也按当前研究方向读取各自最近一次结果。为避免文献库持续增长后对排序产生过强影响，推荐学习只使用当前方向最近收藏的 30 篇论文作为正样本。“加入文献库”同时出现在推荐页、报告列表和完整报告阅读页；从报告收藏时会优先复用当前方向的摘要缓存，缺失时从完整报告的“一句话总结/为什么值得阅读”提取中文内容，并在模型可用时补齐为与推荐页相同规格的摘要精要和保存价值。文献库页面会自动修复历史不完整条目，并根据本地报告状态显示“打开论文报告”或“生成论文报告”，同时继续支持搜索、arXiv/PDF、Zotero 与移出操作。
-
-周报可以在“周报”或“任务”页面手动生成，也可以由每日任务在指定星期自动生成。默认输出位于：
-
-```text
-run/weekly/YYYY-Www/
-├── report.md
-├── report.html
-└── metadata.json
-```
-
-配置示例：
-
-```yaml
-weekly:
-  enabled: true
-  days: 7
-  max_papers: 50
-  include_deep_reports: true
-  auto_generate: true
-  weekday: 6  # 0=周一，6=周日
-```
-
-也可以从命令行随时生成：
-
-```powershell
-arxiv-ra --config config.yaml weekly
-```
-
-## 9. arXiv 版本追踪与相关工作地图
-
-版本追踪会合并当前方向的本地报告、阅读反馈和 Zotero 条目，并使用一次批量 arXiv API 请求建立或刷新基线。首次检查只记录当前版本，不会误报更新。检测到版本号上升后，系统才下载新旧 PDF，抽取关键章节并生成差异报告。
-
-```text
-run/
-├── version-state-<profile-id>.json
-└── versions/
-    ├── index.html
-    └── ARXIV-ID/v1-to-v2/
-        ├── report.md
-        ├── report.html
-        ├── ARXIV-IDv1.pdf
-        └── ARXIV-IDv2.pdf
-```
-
-PDF 下载会跳过已有文件，检查最小文件大小，连续下载间隔至少 1 秒，并在 429 后等待重试。每日任务默认自动刷新版本基线，也可以手动运行：
-
-```powershell
-arxiv-ra --config config.yaml versions
-```
-
-“图谱”页面可根据一个 arXiv ID 生成 Connected Papers 风格的交互式关系画布：左侧论文列表、中心力导向 SVG 图、右侧详情面板。主布局不是引用树，而是使用图内论文标题与摘要的 TF-IDF 相似度；相似度越高，连线越粗、距离越近。节点大小表示引用量，暖灰到炭灰的颜色表示年份，橙色节点表示起点论文。支持搜索、关系筛选、最低引用数、标签开关、缩放、平移、拖拽节点与点击定位。
-
-图谱候选集包含关键参考、后续引用和 Semantic Scholar 推荐论文；真实引用边通过一次批量请求补齐，但默认不参与布局，可在工具栏中作为橙色虚线叠加层显示。页面内的“如何阅读”会说明本项目的相似度近似与 Connected Papers 专有嵌入算法之间的差别：
-
-```powershell
-arxiv-ra --config config.yaml citation 2407.05600
-```
-
-结果保存在 `run/citations/ARXIV-ID/`。引用关系来自 Semantic Scholar，可能存在元数据同步延迟，应以论文原文为准。
-
-## 10. Obsidian 知识库联动
-
-项目可以把现有本地成果同步为 Obsidian 原生 Markdown 知识库。它不依赖 Obsidian 插件或云端 API，只需要一个已经存在的 vault 路径。
-
-推荐通过 GUI“配置 → Obsidian”选择 vault。对于专用研究 vault，可把 `root_folder` 设为 `.`，形成下面的可发现性分层；若 vault 还用于其他用途，则保留一个独立根目录即可：
-
-```text
-ObsidianVault/
-├── Home/
-│   └── Research Hub.md
-├── Daily/YYYY/MM/
-├── Papers/<研究方向>/
-├── Topics/
-├── Reviews/Weekly/YYYY/
-├── Attachments/
-└── System/
-    ├── Profiles/
-    └── Indexes/
-```
-
-笔记包含 YAML frontmatter、`[[双向链接]]`、概念反向链接和 MOC 索引。论文文件名优先使用标题冒号前的方法/模型名（例如 `ToolArtist.md`、`VCode.md`）；没有明确方法名时使用可读的论文标题。arXiv ID 只保存在 frontmatter 和正文链接中，不再占用文件名。论文正文不写入冗长的 arXiv 原文摘要，而是优先复用完整报告的模型“一句话总结”，其次使用模型推荐理由，必要时调用模型生成 3–5 句中文精炼摘要并缓存。完整报告中的本地方法图会复制到 `Attachments/` 并改写成 Obsidian wikilink；PDF 默认不复制，仍由 Zotero 管理。
-
-为了保护个人编辑，应用只更新托管标记内的内容：
-
-```html
-<!-- ARXIV_RA_MANAGED_START -->
-应用生成内容
-<!-- ARXIV_RA_MANAGED_END -->
-```
-
-标记以外的“我的笔记”“我的周总结”等内容不会被覆盖。若同名文件已经存在但不含托管标记，系统会使用带 `(arXiv RA)` 的备用名称，不会修改原文件。同步过程幂等，内容没有变化时不会重写；不会自动 git commit 或 push。
-
-配置示例：
+指定已有 vault 路径即可同步每日推荐、论文笔记、阅读报告、周报和主题索引，无需专用 Obsidian 插件。
 
 ```yaml
 obsidian:
   enabled: true
   vault_path: 'D:\YourVault'
-  root_folder: .
-  home_folder: Home
-  daily_folder: Daily
-  papers_folder: Papers
-  concepts_folder: Topics
-  weekly_folder: Reviews/Weekly
-  attachments_folder: Attachments
-  profiles_folder: System/Profiles
-  indexes_folder: System/Indexes
+  root_folder: PaperLoom
   auto_sync: true
-  sync_daily: true
-  sync_reports: true
-  sync_weekly: true
-  sync_feedback: true
   copy_figures: true
   copy_pdf: false
-  generate_concepts: true
 ```
 
-手动执行全量同步：
+应用更新笔记的托管区块，保留区块外的个人笔记；无托管标记的同名文件会使用备用名称处理。图片可复制到 vault，PDF 默认不复制。同步不会自动执行 Git 提交或推送。
 
-```powershell
-arxiv-ra --config config.yaml obsidian-sync
+### SMTP 邮件
+
+配置模板使用 QQ SMTP，可在全局配置中调整 SMTP 参数。启用邮件后，在 `.env` 填写 `QQ_EMAIL` 和 `SMTP_PASSWORD`；QQ 场景下使用邮箱生成的 **SMTP 授权码**，而非登录密码。
+
+默认将邮件发送给配置的自身邮箱；自定义收件人使用 `delivery.to_addresses`。先验证投递，再交给定时任务：
+
+```bash
+paperloom --config config.yaml test-email
 ```
 
-目录、frontmatter、双向链接和 MOC 思路参考了 [huangkiki/dailypaper-skills](https://github.com/huangkiki/dailypaper-skills)，但实现使用本项目已有的数据模型、报告结构、研究方向与安全边界，没有直接访问 Zotero SQLite，也不会自动删除用户笔记。
+<a id="automation"></a>
+## 定时运行
 
-生成的完整报告、方法图和 PDF 仅保存在本地 `run/YYYY-MM-DD/reports/`。
+**Windows Task Scheduler**
 
-报告结构约定：完整报告固定使用“基本信息 → 总结与价值 → 问题背景 → 核心方法 → 贡献 → 实验与结果 → 对比 → 局限 → 可复现性”的顺序。不再武断指定唯一主图；实验章节之前能够可靠定位的 Figure 仅在“核心方法 → 方法图解析”出现一次。图片下方不展示 `arXiv HTML`、`PDF 第 N 页` 等内部来源标签。图示解读由定稿器统一生成，报告模型不得再创建第二套 Figure 小节。核心方法正文需另外说明整体数据流、关键模块、训练/推理差异；若论文包含关键公式，则逐式解释符号、计算顺序、设计动机和对训练或推理的作用。无法可靠提取整图时直接跳过，不生成占位章节。报告不包含“阅读建议”和“核验备注”。修改渲染规则后，可批量规范化并重建本地报告：
+在已创建 `.venv` 的项目根目录执行：
 
 ```powershell
-$env:PYTHONPATH="$PWD\src"
-python scripts\rebuild_reports.py .
+powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -ProjectDir $PWD -At "08:00"
 ```
 
-需要重新调用视觉模型为方法图生成通俗解读时：
+脚本为当前用户创建或更新名为 `arXiv Research Assistant` 的兼容任务，使用项目虚拟环境运行 `run`。任务采用交互式登录模式，需要该用户处于登录状态。每次启动读取当前活动研究方向；电脑需在计划时间处于可运行状态。
 
-```powershell
-python scripts\rebuild_reports.py . --paper 2511.02778 --explain
+**GitHub Actions**
+
+仓库附带 [定时工作流模板](.github/workflows/daily.yml)，配置的触发时间为北京时间工作日 07:30，也支持手动触发。使用前需要准备个人运行配置与对应的 Secrets。
+
+当前模板仍需按实际使用方式调整：启用协作检索时补充 `ALPHAXIV_API_KEY` 的环境变量映射；缓存中补充 `reading-state-*.json`、方向专属推荐文件及需要保留的元数据缓存。`config.yaml` 和 `profiles/` 默认被 Git 忽略，需要在专用运行环境中显式准备。
+
+云端任务不会直接访问你电脑上的 Zotero 或 Obsidian vault。工作流会上传 `run/`，请根据仓库可见性与内容决定是否启用；artifact 名称中的 “private” 不会赋予它额外的访问保护。
+
+## 数据与隐私
+
+本地优先意味着**配置和成果由你保存与管理**，不意味着所有计算都离线。启用远程模型后，相关论文标题、摘要、正文片段、研究兴趣及用于图示解读的图片可能被发送到所选服务；检索和元数据核验也会访问对应外部 API。
+
+默认输出目录为 `run/`，主要结构如下。部分文件仅在相应功能运行后生成：
+
+```text
+run/
+├── reading-state-<profile>.json       # 收藏与负反馈的统一状态
+├── state-<profile>.json               # 推荐去重历史
+├── version-state-<profile>.json       # 版本追踪基线
+├── metadata-cache/                   # 完整论文元数据缓存
+├── YYYY-MM-DD/
+│   ├── recommendations-<profile>.json
+│   ├── candidates-<profile>.json
+│   ├── discovery-<profile>-<run-id>.json
+│   ├── index-<profile>.html
+│   └── reports/<arxiv-id>-v<n>-<profile>-<title>/
+│       ├── report.md
+│       ├── report.html
+│       ├── metadata.json
+│       ├── paper.pdf
+│       └── method-figure-*.png
+├── weekly/<year>-W<week>-<profile>/
+├── versions/<profile>/<arxiv-id>/v<n>-to-v<m>/
+└── citations/<arxiv-id>-<profile>/
 ```
 
-## 报告准确性边界
+兼容文件 `recommendations.json` 与 `index.html` 仍可能存在，多方向读取应使用方向专属文件。图片也可能采用 PNG 以外的格式。
 
-- arXiv `published` 是预印本首次公开时间，不等同正式出版时间；
-- Semantic Scholar/OpenAlex 可能存在同步延迟或元数据冲突，冲突会写入报告；
-- arXiv HTML 不存在、转换失败或某个 Figure 由多个不明确图片节点组成时，该 Figure 会回退到 PDF；
-- PDF 回退通过 caption 位置与同页位图/矢量对象的联合边界重新裁剪，避免误取复合图中的单个嵌入式子图；
-- LLM 生成内容必须作为研究助理初稿使用，关键数值和结论应回看 PDF。
+升级前请备份 **`.env`、`config.yaml`、`profiles/` 和输出目录**。旧收藏与反馈文件会在首次修改时导入统一阅读状态，原文件保留；迁移后旧文件不再更新，不应让旧版本程序继续向同一目录写入。详见 [存储与迁移说明](docs/ARCHITECTURE_IMPROVEMENTS_2026-09-16.md)。
 
-## 测试
+Web 界面默认绑定 `127.0.0.1`，凭据不回显，并限制跨站修改请求。不要将它当作已经具备认证与隔离能力的多人公网服务部署。
 
-```powershell
-python -m pytest
+<a id="faq"></a>
+## 常见问题
+
+**arXiv 返回 429，换了出口还需要限速吗？** 需要。先确认 Python 进程的代理、出口与目标 API 连通性；浏览器能打开网页不代表 API 请求使用同一路径。客户端保留请求节流、退避和 `Retry-After` 处理，可用出口也不能保证所有限流都消失。
+
+**开启 `hybrid` 后看不到 alphaXiv 候选？** 检查当前方向的 provider、启用开关与 API key，再查看当次 discovery manifest。API 失败、候选重复、缺少发布日期、得分不足或被历史过滤，都会影响最终入选结果。
+
+**为什么刷新后还是原来的推荐？** 当日没有符合条件的新论文时会保留已有结果。需要忽略已处理历史重新筛选时使用 `--force`；该参数不会绕过所有评分与偏好规则。
+
+**为什么报告只有摘要级内容，或没有方法图？** 可能是模型未配置、全文下载或解析失败，或没有可靠的图片提取结果。查看报告中的运行提示，分别排查模型、PDF 和 HTML 获取情况。
+
+**修改配置后没有生效？** 检索与排序可能被活动方向覆盖；已排队任务使用提交时的配置。修改 `output_dir` 后还需重启 GUI，才能重新挂载产物目录。
+
+**“已核验”的出版信息能代替原始来源吗？** 不能。arXiv 首发时间不是正式发表时间；外部元数据可能延迟或冲突，arXiv 中作者声明的发表信息也会单独标注。报告属于辅助阅读材料，关键数字、结论和引用信息仍应核对原文。
+
+<a id="development"></a>
+## 开发与贡献
+
+欢迎提交可复现的问题、文档修订、测试和功能改进。提交 Issue 时，建议附上 Python／操作系统版本、脱敏配置、复现命令和必要错误信息；涉及推荐异常时附上脱敏后的 discovery manifest。不要附带真实密钥或完整个人数据目录。
+
+```bash
+python -m pip install -e '.[gui,dev]'
+python -m pytest -q
 python -m compileall -q src tests
+python -m pip check
 ```
+
+修改前先阅读 [架构说明](docs/ARCHITECTURE.md) 与 [领域用语](CONTEXT.md)。外部服务逻辑应放入对应适配模块；行为改动应提供离线测试，覆盖失败或回退路径。界面改动应检查窄窗口与桌面布局。发布流程见 [发布检查单](docs/RELEASE_CHECKLIST.md)。
+
+最近一次本地回归记录：**2026-09-16，153 项测试通过**，详见 [验证记录](docs/ARCHITECTURE_IMPROVEMENTS_2026-09-16.md#验证结果)。
+
+| 代码位置 | 职责 |
+| --- | --- |
+| `discovery.py` / `paper_data.py` | 多来源发现、版本选择、补全与缓存恢复 |
+| `reading_state.py` | 阅读状态的原子变更、并发协调与旧数据导入 |
+| `pipeline.py` / `research_clients.py` | 研究流程及依赖创建与释放 |
+| `web.py` / `web_jobs.py` | 本地界面、提交时上下文与后台队列 |
+| `metadata.py` / `pdf_pipeline.py` / `report.py` | 来源核验、正文解析与报告生成 |
+| `zotero.py` / `obsidian.py` / `emailer.py` | 外部工具集成 |
+
+## 致谢与许可证
+
+感谢 arXiv、alphaXiv、OpenAlex、Semantic Scholar 及项目所依赖的开源工具。Obsidian 知识库的组织思路参考了 [dailypaper-skills](https://github.com/huangkiki/dailypaper-skills)。本项目是独立工具，不代表上述服务的官方产品。
+
+项目代码采用 [MIT License](LICENSE)。第三方依赖、字体与静态资源保留各自的许可证；生成内容所引用的论文与图片不因本项目的代码许可证而改变其权利归属。

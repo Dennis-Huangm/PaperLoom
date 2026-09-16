@@ -20,7 +20,7 @@ ARXIV_ID_RE = re.compile(
 
 
 class AlphaXivError(RuntimeError):
-    """Base error for the optional alphaXiv fallback."""
+    """Base error for alphaXiv semantic discovery."""
 
 
 class AlphaXivUnavailable(AlphaXivError):
@@ -30,7 +30,7 @@ class AlphaXivUnavailable(AlphaXivError):
 class AlphaXivClient:
     """Minimal Streamable HTTP MCP client for alphaXiv discovery.
 
-    The fallback intentionally uses only ``discover_papers``. It does not treat
+    The adapter uses ``discover_papers`` and marks results as partial. It does not treat
     alphaXiv as the authoritative source for venues, DOI, or publication dates;
     those fields continue through the existing metadata verifier.
     """
@@ -48,7 +48,7 @@ class AlphaXivClient:
             timeout=timeout,
             follow_redirects=True,
             headers={
-                "User-Agent": f"arxiv-research-assistant/{__version__} (alphaXiv fallback)"
+                "User-Agent": f"PaperLoom/{__version__} (alphaXiv discovery)"
             },
         )
 
@@ -68,7 +68,7 @@ class AlphaXivClient:
     ) -> list[Paper]:
         if not self.enabled:
             raise AlphaXivUnavailable(
-                "alphaXiv 备用检索未配置 API Key；请在配置中心填写 ALPHAXIV_API_KEY"
+                "alphaXiv 语义检索未配置 API Key；请在配置中心填写 API Key"
             )
         excluded_ids = {item.strip() for item in (excluded_ids or set()) if item.strip()}
         if excluded_ids:
@@ -85,10 +85,15 @@ class AlphaXivClient:
             "prioritize": "default",
         }
         payload = self._call_tool("discover_papers", arguments)
+        normalized = self._normalize_papers(payload)
+        if isinstance(payload, dict) and payload.get("text") and not normalized:
+            raise AlphaXivError("alphaXiv 返回的候选格式无法识别，未将解析失败当作空检索结果")
+        cutoff = self._date(published_after)
         papers = [
             paper
-            for paper in self._normalize_papers(payload)
+            for paper in normalized
             if paper.arxiv_id not in excluded_ids
+            and (paper.published is None or cutoff is None or paper.published.date() >= cutoff.date())
         ]
         return papers[: max(1, min(15, int(limit)))]
 
@@ -104,12 +109,14 @@ class AlphaXivClient:
             limit=10,
             difficulty=1,
         )
-        return next((paper for paper in papers if paper.arxiv_id == arxiv_id), None)
+        base_id = re.sub(r"v\d+$", "", arxiv_id, flags=re.I)
+        return next((paper for paper in papers if paper.arxiv_id == base_id), None)
 
     def _headers(self, session_id: str = "") -> dict[str, str]:
         headers = {
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
+            "MCP-Protocol-Version": "2025-03-26",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -131,26 +138,37 @@ class AlphaXivClient:
             raise AlphaXivError(
                 f"alphaXiv 请求失败（HTTP {response.status_code}）"
             ) from exc
-        return self._response_json(response), response.headers.get("Mcp-Session-Id", session_id)
+        session = response.headers.get("Mcp-Session-Id", session_id)
+        if "id" not in body:
+            return {}, session  # Notifications normally receive 202 with no body.
+        return self._response_json(response, body["id"]), session
 
     @staticmethod
-    def _response_json(response: httpx.Response) -> dict[str, Any]:
+    def _response_json(response: httpx.Response, request_id: int | None = None) -> dict[str, Any]:
         content_type = response.headers.get("content-type", "")
         if "text/event-stream" not in content_type:
             try:
                 value = response.json()
             except (ValueError, json.JSONDecodeError) as exc:
                 raise AlphaXivError("alphaXiv 返回了无法解析的 JSON") from exc
-            return value if isinstance(value, dict) else {"result": value}
+            if not isinstance(value, dict) or (request_id is not None and value.get("id") != request_id):
+                raise AlphaXivError("alphaXiv 返回了不匹配的 MCP 响应")
+            return value
         events: list[dict[str, Any]] = []
-        for line in response.text.splitlines():
-            if line.startswith("data:"):
+        data: list[str] = []
+        for line in [*response.text.splitlines(), ""]:
+            if not line and data:
                 try:
-                    value = json.loads(line[5:].strip())
+                    value = json.loads("\n".join(data))
                 except json.JSONDecodeError:
-                    continue
+                    value = None
+                data = []
                 if isinstance(value, dict):
                     events.append(value)
+            elif line.startswith("data:"):
+                data.append(line[5:].lstrip(" "))
+        if request_id is not None:
+            events = [item for item in events if item.get("id") == request_id and ("result" in item or "error" in item)]
         if not events:
             raise AlphaXivError("alphaXiv 返回了空的 MCP 事件流")
         return events[-1]
@@ -165,7 +183,7 @@ class AlphaXivClient:
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
                     "clientInfo": {
-                        "name": "arxiv-research-assistant",
+                        "name": "paperloom",
                         "version": __version__,
                     },
                 },
@@ -173,6 +191,9 @@ class AlphaXivClient:
         )
         if initialize.get("error"):
             raise AlphaXivError(self._error_text(initialize["error"]))
+        if (initialize.get("result") or {}).get("protocolVersion") != "2025-03-26":
+            raise AlphaXivError("alphaXiv 协商了不支持的 MCP 协议版本")
+        self._rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, session_id)
         response, _session_id = self._rpc(
             {
                 "jsonrpc": "2.0",
@@ -187,6 +208,8 @@ class AlphaXivClient:
         result = response.get("result") or {}
         if result.get("isError"):
             raise AlphaXivError(self._content_text(result) or "alphaXiv 工具调用失败")
+        if isinstance(result.get("structuredContent"), (dict, list)):
+            return result["structuredContent"]
         text = self._content_text(result)
         if text:
             try:
@@ -262,9 +285,14 @@ class AlphaXivClient:
                     categories=[],
                     primary_category="",
                     published=published,
-                    updated=published,
+                    updated=None,
                     abs_url=f"https://arxiv.org/abs/{arxiv_id}",
                     pdf_url=f"https://arxiv.org/pdf/{arxiv_id}",
+                    version=cls._version(record),
+                    discovery_sources=["alphaxiv"],
+                    metadata_source="alphaxiv",
+                    metadata_status="partial",
+                    abstract_kind="preview",
                 )
             )
             seen.add(arxiv_id)
@@ -311,10 +339,19 @@ class AlphaXivClient:
         return ""
 
     @staticmethod
-    def _date(value: Any) -> datetime:
+    def _version(record: dict[str, Any]) -> int | None:
+        for key in ("arxiv_id", "arxivId", "id", "url", "abs_url"):
+            match = ARXIV_ID_RE.search(str(record.get(key) or ""))
+            version = re.search(r"v(\d+)$", match.group(1), re.I) if match else None
+            if version:
+                return int(version.group(1))
+        return None
+
+    @staticmethod
+    def _date(value: Any) -> datetime | None:
         raw = str(value or "").strip().replace("Z", "+00:00")
         try:
             parsed = datetime.fromisoformat(raw)
         except ValueError:
-            parsed = datetime.now(timezone.utc)
+            return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

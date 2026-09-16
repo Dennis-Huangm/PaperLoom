@@ -26,8 +26,14 @@ class CitationExplorer:
         self.output_root = output if output.is_absolute() else project_root / output
         self.client = httpx.Client(timeout=30.0, follow_redirects=True)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.client.close()
+
     def generate(self, arxiv_id: str) -> Path:
-        folder = self.output_root / "citations" / arxiv_id.replace("/", "-")
+        folder = self.output_root / "citations" / f"{arxiv_id.replace('/', '-')}-{self.config.profile_id or 'default'}"
         existing_path = folder / "graph.json"
         try:
             existing = json.loads(existing_path.read_text(encoding="utf-8")) if existing_path.exists() else {}
@@ -113,7 +119,7 @@ class CitationExplorer:
         payload: dict[str, Any] | None = None,
     ) -> Any:
         attempts = max(1, self.config.citations.max_retries + 1)
-        headers = {"User-Agent": f"arxiv-research-assistant/{__version__}"}
+        headers = {"User-Agent": f"PaperLoom/{__version__}"}
         key = os.getenv(self.config.metadata.semantic_scholar_api_key_env)
         if key:
             headers["x-api-key"] = key

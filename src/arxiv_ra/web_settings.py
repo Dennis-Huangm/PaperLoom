@@ -59,7 +59,7 @@ def _env_name(form: Any, name: str) -> str:
 
 def build_config_update(form: Any) -> dict[str, Any]:
     provider = str(form.get("discovery_provider", "auto")).strip()
-    if provider not in {"auto", "arxiv"}:
+    if provider not in {"auto", "arxiv", "hybrid"}:
         raise ValueError("无效的检索来源模式")
     alphaxiv_endpoint = str(
         form.get("alphaxiv_endpoint", "https://api.alphaxiv.org/mcp/v1")
@@ -144,6 +144,8 @@ def build_config_update(form: Any) -> dict[str, Any]:
             "alphaxiv_endpoint": alphaxiv_endpoint,
             "alphaxiv_api_key_env": _env_name(form, "alphaxiv_api_key_env"),
             "alphaxiv_difficulty": _int_value(form, "alphaxiv_difficulty", 1, 10),
+            "alphaxiv_max_candidates": _int_value({"value": form.get("alphaxiv_max_candidates", "15")}, "value", 1, 15),
+            "alphaxiv_minimum_concept_groups": _int_value({"value": form.get("alphaxiv_minimum_concept_groups", "1")}, "value", 0, 100),
             "interest_description": str(form.get("interest_description", "")).strip(),
             "lookback_days": _int_value(form, "lookback_days", 1, 365),
             "max_candidates": max_candidates,
@@ -309,7 +311,7 @@ def credential_specs(config: AppConfig) -> list[dict[str, Any]]:
         ("llm_base_url", "LLM Base URL", config.llm.base_url_env, False, "OpenAI-compatible API 地址；官方 OpenAI 可留空"),
         ("openalex_api_key", "OpenAlex API Key", config.metadata.openalex_api_key_env, True, "用于提升 OpenAlex 请求额度"),
         ("semantic_scholar_api_key", "Semantic Scholar API Key", config.metadata.semantic_scholar_api_key_env, True, "可选的学术元数据增强源"),
-        ("alphaxiv_api_key", "alphaXiv API Key", config.discovery.alphaxiv_api_key_env, True, "arXiv API 限流时的备用检索源；在 alphaXiv Settings → API Keys 创建"),
+        ("alphaxiv_api_key", "alphaXiv API Key", config.discovery.alphaxiv_api_key_env, True, "主动语义发现与备用检索；在 alphaXiv Settings → API Keys 创建"),
         ("email_address", "QQ 邮箱地址", config.delivery.email_address_env, False, "SMTP 登录、默认发件人与收件地址"),
         ("smtp_password", "QQ SMTP 授权码", config.delivery.password_env, True, "QQ 邮箱生成的 SMTP 授权码，不是登录密码"),
         ("zotero_api_key", "Zotero 本地写入授权", config.zotero.api_key_env, True, "由 Zotero 授权窗口自动生成，通常无需手工填写"),

@@ -8,10 +8,9 @@ from zoneinfo import ZoneInfo
 
 import pymupdf as fitz
 
-from .arxiv_client import ArxivClient
 from .config import AppConfig
 from .feedback import FeedbackStore
-from .llm import LLMClient
+from .research_clients import ResearchClients
 from .render import render_report
 from .utils import read_json, write_json
 from .zotero import ZoteroClient
@@ -21,14 +20,21 @@ ARXIV_ID_IN_TEXT = re.compile(r"(?:arxiv[:/\s]+)([a-z-]+/\d{7}|\d{4}\.\d{4,5})",
 
 
 class VersionTracker:
-    def __init__(self, config: AppConfig, project_root: Path) -> None:
+    def __init__(self, config: AppConfig, project_root: Path, *, clients: ResearchClients | None = None) -> None:
         self.config = config
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else project_root / output
         suffix = config.profile_id or "default"
         self.state_path = self.output_root / f"version-state-{suffix}.json"
-        self.arxiv = ArxivClient()
-        self.llm = LLMClient(config.llm)
+        self.clients = clients if clients is not None else ResearchClients(config)
+        self._owns_clients = clients is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if self._owns_clients:
+            self.clients.close()
 
     def tracked_sources(self) -> dict[str, dict[str, Any]]:
         sources: dict[str, dict[str, Any]] = {}
@@ -73,7 +79,7 @@ class VersionTracker:
         sources = self.tracked_sources()
         payload = read_json(self.state_path, {}) or {}
         state = payload.get("items", {}) if isinstance(payload.get("items", {}), dict) else {}
-        current = {paper.arxiv_id: paper for paper in self.arxiv.get_many(list(sources))}
+        current = {paper.arxiv_id: paper for paper in self.clients.arxiv.get_many(list(sources))}
         new_events: list[dict[str, Any]] = []
         for arxiv_id, source in sources.items():
             paper = current.get(arxiv_id)
@@ -104,7 +110,7 @@ class VersionTracker:
         return self._render_overview(state, new_events, now)
 
     def _version_event(self, paper, old_version: int, now: datetime) -> dict[str, Any]:
-        folder = self.output_root / "versions" / paper.arxiv_id.replace("/", "-") / f"v{old_version}-to-v{paper.version}"
+        folder = self.output_root / "versions" / (self.config.profile_id or "default") / paper.arxiv_id.replace("/", "-") / f"v{old_version}-to-v{paper.version}"
         folder.mkdir(parents=True, exist_ok=True)
         report_path = folder / "report.html"
         if self.config.version_tracking.analyze_pdf_diff:
@@ -125,14 +131,14 @@ class VersionTracker:
     ) -> str:
         old_pdf = folder / f"{arxiv_id.replace('/', '-') }v{old_version}.pdf"
         new_pdf = folder / f"{arxiv_id.replace('/', '-') }v{new_version}.pdf"
-        self.arxiv.download_version(arxiv_id, old_version, old_pdf)
-        self.arxiv.download_version(arxiv_id, new_version, new_pdf)
+        self.clients.arxiv.download_version(arxiv_id, old_version, old_pdf)
+        self.clients.arxiv.download_version(arxiv_id, new_version, new_pdf)
         old_text = self._section_sample(old_pdf)
         new_text = self._section_sample(new_pdf)
-        if not self.llm.enabled:
+        if not self.clients.llm.enabled:
             return self._fallback_diff(title, arxiv_id, old_version, new_version, old_text, new_text)
         try:
-            return self.llm.chat(
+            return self.clients.llm.chat(
                 "你是严谨的论文版本差异分析助手。只报告给定两个版本文本能够支持的变化，不得猜测作者动机。",
                 f"""论文：{title}（arXiv:{arxiv_id}）
 旧版本：v{old_version}
@@ -229,7 +235,8 @@ class VersionTracker:
                 f"- [{item.get('title', item.get('arxiv_id'))}]({item.get('abs_url', '')}) · arXiv:{item.get('arxiv_id')} · v{item.get('latest_version')} · {', '.join(item.get('sources') or [])}"
             )
         markdown = "\n".join(lines) + "\n"
-        (folder / "index.md").write_text(markdown, encoding="utf-8")
-        html_path = folder / "index.html"
+        name = f"index-{self.config.profile_id or 'default'}"
+        (folder / f"{name}.md").write_text(markdown, encoding="utf-8")
+        html_path = folder / f"{name}.html"
         render_report(markdown, html_path, f"{self.config.profile_name} · arXiv 版本追踪")
         return html_path

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from .config import AppConfig
 from .feedback import FeedbackStore
 from .library import PaperLibraryStore
-from .llm import LLMClient
+from .research_clients import ResearchClients
 from .obsidian import ObsidianExporter
 from .render import render_report
 from .storage import read_recommendations
@@ -16,18 +16,26 @@ from .utils import read_json, write_json
 
 
 class WeeklySynthesizer:
-    def __init__(self, config: AppConfig, project_root: Path) -> None:
+    def __init__(self, config: AppConfig, project_root: Path, *, clients: ResearchClients | None = None) -> None:
         self.config = config
         self.project_root = project_root
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else project_root / output
-        self.llm = LLMClient(config.llm)
+        self.clients = clients if clients is not None else ResearchClients(config)
+        self._owns_clients = clients is None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if self._owns_clients:
+            self.clients.close()
 
     def generate(self, now: datetime | None = None) -> Path:
         now = now or datetime.now(ZoneInfo(self.config.timezone))
         iso_year, iso_week, _ = now.isocalendar()
         week_id = f"{iso_year}-W{iso_week:02d}"
-        destination = self.output_root / "weekly" / week_id
+        destination = self.output_root / "weekly" / f"{week_id}-{self.config.profile_id or 'default'}"
         destination.mkdir(parents=True, exist_ok=True)
         papers = self._collect(now)
         feedback = FeedbackStore(self.output_root, self.config.profile_id).all()
@@ -63,7 +71,7 @@ class WeeklySynthesizer:
             and self.config.obsidian.sync_weekly
         ):
             try:
-                ObsidianExporter(self.config, self.project_root).sync_weekly(
+                ObsidianExporter(self.config, self.project_root, clients=self.clients).sync_weekly(
                     metadata_payload, report_path
                 )
             except Exception as exc:
@@ -119,7 +127,7 @@ class WeeklySynthesizer:
                 f"# {self.config.profile_name} · {week_id} 研究周报\n\n"
                 "## 本周概览\n\n本周没有新的推荐论文。\n"
             )
-        if not self.llm.enabled:
+        if not self.clients.llm.enabled:
             return self._fallback_markdown(week_id, papers, feedback, library)
         blocks: list[str] = []
         for index, item in enumerate(papers, start=1):
@@ -148,7 +156,7 @@ class WeeklySynthesizer:
             )
         evidence = "\n\n".join(blocks)
         try:
-            return self.llm.chat(
+            return self.clients.llm.chat(
                 "你是严谨的 AI 科研周报编辑。只依据给定论文证据归纳，不得发明趋势、实验结论或论文关系。",
                 f"""研究方向：{self.config.discovery.interest_description}
 周次：{week_id}

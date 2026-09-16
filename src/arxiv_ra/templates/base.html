@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>{% block title %}arXiv Research Assistant{% endblock %}</title>
+  <title>{% block title %}PaperLoom · 知织{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', path='/app-icon.ico') }}" sizes="any">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
@@ -13,9 +13,9 @@
 </head>
 <body class="page-{{ active }}">
   <header class="app-header">
-    <a class="brand" href="/" aria-label="arXiv Research Assistant 首页">
+    <a class="brand" href="/" aria-label="PaperLoom · 知织 首页">
       <span class="brand-icon"><img src="{{ url_for('static', path='/app-icon.png') }}" alt=""></span>
-      <span class="brand-copy"><strong>arXiv Research Assistant</strong><small>{{ config.profile_name }} · 当前方向</small></span>
+      <span class="brand-copy"><strong>PaperLoom</strong><small>{{ config.profile_name }} · 当前方向</small></span>
     </a>
 
     <nav class="primary-nav" aria-label="主导航">

@@ -378,6 +378,7 @@ if (dataNode) {
     setText('#inspector-position', `${index + 1} / ${papers.length}`);
     setText('#inspector-title', paper.title);
     setText('#inspector-reason', paper.recommendation_detail || paper.recommendation_reason || '依据研究主题、关键词与发布时间完成自动筛选。');
+    setText('#inspector-source', paper.source_label || '历史记录，来源待核实');
     setText('#inspector-abstract', paper.abstract_zh || paper.abstract);
     setText('#inspector-venue', verified.venue || '出版信息待核实');
     const [statusText, statusClass] = humanVenueStatus(verified.venue_status);
@@ -387,8 +388,8 @@ if (dataNode) {
       statusNode.className = `status-text ${statusClass}`;
     }
     setText('#inspector-id', paper.arxiv_id);
-    setText('#inspector-published', paper.published.slice(0, 10));
-    setText('#inspector-updated', paper.updated.slice(0, 10));
+    setText('#inspector-published', (paper.published || '').slice(0, 10) || '待核实');
+    setText('#inspector-updated', (paper.updated || '').slice(0, 10) || '待核实');
     setText('#inspector-category', paper.primary_category);
     setText('#inspector-score', Number(paper.final_score).toFixed(1));
     const arxiv = document.querySelector('#inspector-arxiv');
@@ -399,7 +400,7 @@ if (dataNode) {
     const zoteroId = document.querySelector('#inspector-zotero-id');
     if (arxiv) arxiv.href = paper.abs_url;
     if (pdf) pdf.href = paper.pdf_url;
-    if (reportId) reportId.value = paper.arxiv_id;
+    if (reportId) reportId.value = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
     if (reportLabel) reportLabel.textContent = item.has_report ? '重新生成报告' : '生成完整报告';
     if (reportOpen) {
       reportOpen.hidden = !item.report_url;

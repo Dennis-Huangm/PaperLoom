@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ProjectDir,
     [string]$At = "08:00",
+    # Reuse the existing task instead of scheduling a duplicate after the rebrand.
     [string]$TaskName = "arXiv Research Assistant"
 )
 
@@ -28,8 +29,7 @@ Register-ScheduledTask `
     -Action $action `
     -Trigger $trigger `
     -Principal $principal `
-    -Description "Generate the personalized daily arXiv research digest." `
+    -Description "PaperLoom: generate the personalized daily research digest." `
     -Force | Out-Null
 
 Write-Output "Scheduled task '$TaskName' created for $At."
-

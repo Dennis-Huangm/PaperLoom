@@ -30,8 +30,8 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="arxiv-ra", description="个性化 arXiv 科研日报与论文阅读报告")
+def build_parser(prog: str = "paperloom") -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog=prog, description="PaperLoom · 知织 — 把论文织成知识")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", default="config.yaml", help="配置文件路径")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -97,7 +97,8 @@ def _has_module(name: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> None:
-    args = build_parser().parse_args(argv)
+    command = Path(sys.argv[0]).stem
+    args = build_parser("arxiv-ra" if command == "arxiv-ra" else "paperloom").parse_args(argv)
     config_path = Path(args.config).resolve()
     _load_dotenv(config_path.parent / ".env")
     if args.command == "doctor":
@@ -134,7 +135,7 @@ def main(argv: list[str] | None = None) -> None:
         url = f"http://127.0.0.1:{args.port}"
         if not args.no_browser:
             threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-        print(f"arXiv Research Assistant GUI: {url}")
+        print(f"PaperLoom GUI: {url}")
         uvicorn.run(create_app(config_path), host="127.0.0.1", port=args.port, log_level="info")
         return
     if args.command == "test-email":
@@ -147,28 +148,32 @@ def main(argv: list[str] | None = None) -> None:
         print("QQ 邮箱测试邮件已发送。")
         return
     if args.command == "weekly":
-        path = WeeklySynthesizer(config, config_path.parent).generate()
+        with WeeklySynthesizer(config, config_path.parent) as synthesizer:
+            path = synthesizer.generate()
         print(path.resolve())
         return
     if args.command == "versions":
-        path = VersionTracker(config, config_path.parent).check()
+        with VersionTracker(config, config_path.parent) as tracker:
+            path = tracker.check()
         print(path.resolve())
         return
     if args.command == "citation":
-        path = CitationExplorer(config, config_path.parent).generate(args.arxiv_id)
+        with CitationExplorer(config, config_path.parent) as explorer:
+            path = explorer.generate(args.arxiv_id)
         print(path.resolve())
         return
     if args.command == "obsidian-sync":
-        path = ObsidianExporter(config, config_path.parent).sync_all()
+        with ObsidianExporter(config, config_path.parent) as exporter:
+            path = exporter.sync_all()
         print(path.resolve())
         return
-    pipeline = DailyPipeline(config, config_path.parent)
-    if args.command == "demo":
-        path = pipeline.run(force=True, demo=True)
-    elif args.command == "run":
-        path = pipeline.run(force=args.force, demo=False, deliver=not args.no_email)
-    elif args.command == "report":
-        path = pipeline.report_arxiv_id(args.arxiv_id)
-    else:
-        raise SystemExit(f"未知命令：{args.command}")
+    with DailyPipeline(config, config_path.parent) as pipeline:
+        if args.command == "demo":
+            path = pipeline.run(force=True, demo=True)
+        elif args.command == "run":
+            path = pipeline.run(force=args.force, demo=False, deliver=not args.no_email)
+        elif args.command == "report":
+            path = pipeline.report_arxiv_id(args.arxiv_id)
+        else:
+            raise SystemExit(f"未知命令：{args.command}")
     print(path.resolve())

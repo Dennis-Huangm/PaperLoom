@@ -2,13 +2,34 @@ from __future__ import annotations
 
 import threading
 import uuid
+import copy
+import hashlib
+import json
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from .web_catalog import result_artifact_url
+from .config import AppConfig
+
+
+@dataclass(frozen=True)
+class JobContext:
+    """Submission-time research intent, independent of the active GUI profile."""
+
+    config: AppConfig = field(repr=False)
+    project_root: Path
+
+    @classmethod
+    def capture(cls, config: AppConfig, project_root: Path) -> "JobContext":
+        return cls(copy.deepcopy(config), project_root.resolve())
+
+    def identity(self, kind: str, **parameters: object) -> str:
+        payload = {"kind": kind, "parameters": parameters, "config": asdict(self.config),
+                   "project_root": str(self.project_root)}
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
 JOB_LABELS = {
@@ -31,6 +52,7 @@ class BackgroundJob:
     updated_at: str
     detail: str = ""
     result_url: str | None = None
+    profile_id: str = ""
 
 
 class JobManager:
@@ -51,24 +73,29 @@ class JobManager:
         self.active_count = 0
         self.max_parallel = self._bounded_parallelism(max_parallel)
         self.lock = threading.RLock()
+        self.identities: dict[str, str] = {}
+        self.closed = False
 
     @staticmethod
     def _bounded_parallelism(value: int) -> int:
         return max(1, min(8, int(value)))
 
     def submit(
-        self, kind: str, detail: str, function: Callable[[], Path]
+        self, kind: str, detail: str, function: Callable[[], Path],
+        *, identity: str | None = None, profile_id: str = "",
     ) -> BackgroundJob:
         if kind not in JOB_LABELS:
             raise ValueError(f"未知任务类型：{kind}")
         now = datetime.now().isoformat(timespec="seconds")
+        identity = identity or json.dumps([kind, detail])
         with self.lock:
+            if self.closed:
+                raise RuntimeError("任务队列已关闭")
             duplicate = next(
                 (
                     job
                     for job in self.jobs.values()
-                    if job.kind == kind
-                    and job.detail == detail
+                    if self.identities[job.id] == identity
                     and job.status in {"queued", "running"}
                 ),
                 None,
@@ -83,8 +110,10 @@ class JobManager:
                 created_at=now,
                 updated_at=now,
                 detail=detail,
+                profile_id=profile_id,
             )
             self.jobs[job.id] = job
+            self.identities[job.id] = identity
             self.pending.append((job.id, function))
             self._dispatch_locked()
         return job
@@ -136,4 +165,9 @@ class JobManager:
 
     def close(self) -> None:
         """Release executor threads when the FastAPI application shuts down."""
+        with self.lock:
+            self.closed = True
+            for job_id, _ in self.pending:
+                self._update(job_id, status="failed", detail="应用关闭，尚未开始的任务已取消")
+            self.pending.clear()
         self.executor.shutdown(wait=False, cancel_futures=False)

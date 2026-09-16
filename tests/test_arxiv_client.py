@@ -127,3 +127,45 @@ def test_too_small_pdf_does_not_replace_existing_file(tmp_path) -> None:
 
     assert destination.read_bytes() == b"previous complete PDF"
     assert list(tmp_path.glob("*.part")) == []
+
+
+@pytest.mark.parametrize("date_header", [False, True])
+def test_retry_after_long_cooldown_is_not_shortened(monkeypatch, date_header):
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+    clock = [1000.0]
+    calls = []
+    fixed_now = datetime(2026, 9, 16, tzinfo=timezone.utc)
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+    monkeypatch.setattr("arxiv_ra.arxiv_client.datetime", FixedDatetime)
+    header = format_datetime(fixed_now + timedelta(seconds=120), usegmt=True) if date_header else "120"
+    def handler(request):
+        calls.append(clock[0])
+        return httpx.Response(429, headers={"Retry-After": header}) if len(calls) == 1 else httpx.Response(200)
+    client = ArxivClient(max_retries=1, rate_limit_key=f"long-cooldown-{date_header}")
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        monkeypatch.setattr("time.monotonic", lambda: clock[0])
+        monkeypatch.setattr("time.sleep", lambda delay: clock.__setitem__(0, clock[0] + delay))
+        client._get("https://export.arxiv.org/api/query")
+    assert 119 <= calls[1] - calls[0] <= 120
+
+
+def test_get_many_batches_without_truncating_ids():
+    from urllib.parse import parse_qs
+    batches = []
+    def handler(request):
+        batches.append(parse_qs(request.url.query.decode())["id_list"][0].split(","))
+        return httpx.Response(200, text='<feed xmlns="http://www.w3.org/2005/Atom"/>')
+    client = ArxivClient(min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        ids = [f"2609.{i:05}" for i in range(101)]
+        client.get_many(ids)
+    assert [len(batch) for batch in batches] == [50, 50, 1]
+    assert [aid for batch in batches for aid in batch] == ids

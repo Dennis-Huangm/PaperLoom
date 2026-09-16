@@ -33,8 +33,8 @@ def score_paper(paper: Paper, discovery: DiscoveryConfig, ranking: RankingConfig
     positive = sum(min(_phrase_count(text, keyword), 3) for keyword in discovery.positive_keywords)
     negative = sum(min(_phrase_count(text, keyword), 3) for keyword in discovery.negative_keywords)
     category_hits = sum(1 for category in paper.categories if category in discovery.arxiv_categories)
-    age_hours = max((datetime.now(timezone.utc) - paper.published).total_seconds() / 3600, 0)
-    recency = math.exp(-age_hours / 96)
+    age_hours = max((datetime.now(timezone.utc) - paper.published).total_seconds() / 3600, 0) if paper.published else None
+    recency = math.exp(-age_hours / 96) if age_hours is not None else 0.0
     title_bonus = sum(1.5 for keyword in discovery.positive_keywords if _phrase_count(paper.title, keyword))
     group_hits = matched_concept_groups(paper, discovery)
     group_bonus = group_hits * 4.0
@@ -55,4 +55,4 @@ def rank_papers(
 ) -> list[Paper]:
     for paper in papers:
         paper.lexical_score = score_paper(paper, discovery, ranking)
-    return sorted(papers, key=lambda paper: (paper.final_score, paper.published), reverse=True)
+    return sorted(papers, key=lambda paper: (paper.final_score, paper.published_sort_key), reverse=True)

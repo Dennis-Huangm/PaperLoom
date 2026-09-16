@@ -70,7 +70,7 @@ class ArxivHtmlFigureClient:
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": f"arxiv-research-assistant/{__version__} (personal research use)"},
+            headers={"User-Agent": f"PaperLoom/{__version__} (personal research use)"},
         )
 
     def fetch(self, arxiv_id: str, output_dir: Path) -> list[FigureCandidate]:

@@ -107,6 +107,8 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "date": metadata_path.parents[2].name,
                 "folder": metadata_path.parent.name,
                 "arxiv_id": paper.get("arxiv_id", ""),
+                "version": paper.get("version"),
+                "profile_id": payload.get("profile_id", ""),
                 "title": paper.get("title", metadata_path.parent.name),
                 "authors": [
                     item.get("name", "") for item in (paper.get("authors") or [])

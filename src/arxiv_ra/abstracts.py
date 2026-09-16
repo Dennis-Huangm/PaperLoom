@@ -144,6 +144,10 @@ def localize_abstracts(
                 }
             except Exception:
                 translated = {}
+            finally:
+                client = getattr(llm, "client", None)
+                if client is not None:
+                    client.close()
 
     cache_updates: dict[str, dict[str, Any]] = {}
     for paper in missing:

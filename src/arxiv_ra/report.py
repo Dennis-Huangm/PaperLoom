@@ -358,8 +358,10 @@ class ReportGenerator:
         return f"""- 标题：{metadata.title or paper.title}
 - 作者与机构：{authors}
 - arXiv ID：{paper.arxiv_id}
-- arXiv 首发：{paper.published.date().isoformat()}
-- arXiv 修订：{paper.updated.date().isoformat()}
+- 发现来源：{paper.source_label}
+- 摘要类型：{"完整摘要" if paper.abstract_kind == "full" else "摘要预览（待补全）"}
+- arXiv 首发：{paper.published.date().isoformat() if paper.published else '未核实'}
+- arXiv 修订：{paper.updated.date().isoformat() if paper.updated else '未核实'}
 - 会议/期刊：{metadata.venue or '未核实'}
 - 会议状态：{metadata.venue_status}
 - 正式发表日期：{metadata.publication_date or '未核实'}
@@ -386,8 +388,10 @@ class ReportGenerator:
 | 作者 | {authors} |
 | 作者机构 | {'；'.join(affiliations) if affiliations else '未核实'} |
 | arXiv 类别 | {', '.join(paper.categories)} |
-| arXiv 首次公开 | {paper.published.date().isoformat()} |
-| arXiv 最近修订 | {paper.updated.date().isoformat()} |
+| 发现来源 | {paper.source_label} |
+| 摘要类型 | {'完整摘要' if paper.abstract_kind == 'full' else '摘要预览（待补全）'} |
+| arXiv 首次公开 | {paper.published.date().isoformat() if paper.published else '未核实'} |
+| arXiv 最近修订 | {paper.updated.date().isoformat() if paper.updated else '未核实'} |
 | 会议或期刊 | {metadata.venue or '未核实'} |
 | 状态 | {metadata.venue_status} |
 | 正式发表日期 | {metadata.publication_date or '未核实'} |

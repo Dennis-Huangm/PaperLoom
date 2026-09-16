@@ -2,6 +2,15 @@
 
 所有重要变更记录在此文件中。
 
+## Unreleased
+
+### Changed
+
+- 项目对外名称更新为 **PaperLoom · 知织**，标语为“把论文织成知识”。README、本地界面、新生成的报告、测试邮件与集成展示名称同步更新。
+- 新增 `paperloom` CLI 入口，保留 `arxiv-ra`、`arxiv_ra` 模块名及 `arxiv-research-assistant` 发行包名，兼容已有安装与脚本。
+- 新配置模板使用 PaperLoom 作为 Zotero 分类和 Obsidian 根目录名称；已有配置、旧默认目录、Obsidian 托管标记及 Windows 计划任务标识不自动迁移。
+- 新源码归档使用 `paperloom-<version>-source.zip`，历史版本说明与已有生成文件保留原有名称。
+
 ## 1.2.0 - 2026-08-22
 
 ### Changed

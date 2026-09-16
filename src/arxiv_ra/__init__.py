@@ -1,3 +1,3 @@
-"""arXiv Research Assistant."""
+"""PaperLoom."""
 
 __version__ = "1.2.0"

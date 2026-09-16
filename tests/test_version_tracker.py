@@ -46,7 +46,7 @@ def _tracker(tmp_path: Path) -> VersionTracker:
 
 def test_first_version_check_establishes_baseline_without_event(tmp_path: Path, monkeypatch) -> None:
     tracker = _tracker(tmp_path)
-    monkeypatch.setattr(tracker.arxiv, "get_many", lambda ids: [_paper(2)])
+    monkeypatch.setattr(tracker.clients.arxiv, "get_many", lambda ids: [_paper(2)])
 
     overview = tracker.check(datetime(2026, 8, 19, tzinfo=timezone.utc))
 
@@ -71,7 +71,7 @@ def test_new_version_creates_event(tmp_path: Path, monkeypatch) -> None:
             }
         },
     )
-    monkeypatch.setattr(tracker.arxiv, "get_many", lambda ids: [_paper(2)])
+    monkeypatch.setattr(tracker.clients.arxiv, "get_many", lambda ids: [_paper(2)])
     diff = tracker.output_root / "versions" / "2407.05600" / "v1-to-v2" / "report.html"
     diff.parent.mkdir(parents=True)
     diff.write_text("report", encoding="utf-8")

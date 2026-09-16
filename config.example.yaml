@@ -2,12 +2,16 @@ timezone: Asia/Shanghai
 output_dir: run
 
 discovery:
-  # Keep arXiv as the source of truth; alphaXiv is used only after arXiv API retries fail.
-  provider: auto
+  # hybrid: query both sources and hydrate alphaXiv candidates with arXiv metadata.
+  # auto: legacy fallback only. arxiv: disable alphaXiv.
+  provider: hybrid
+  # Legacy name retained; enables alphaXiv in both hybrid and auto modes.
   alphaxiv_fallback_enabled: true
   alphaxiv_endpoint: https://api.alphaxiv.org/mcp/v1
   alphaxiv_api_key_env: ALPHAXIV_API_KEY
   alphaxiv_difficulty: 5
+  alphaxiv_max_candidates: 15
+  alphaxiv_minimum_concept_groups: 1
   lookback_days: 2
   max_candidates: 300
   prefilter_count: 30
@@ -79,7 +83,7 @@ zotero:
   mode: local
   base_url: http://127.0.0.1:23119/api
   api_key_env: ZOTERO_LOCAL_API_KEY
-  collection_name: arXiv Research Assistant
+  collection_name: PaperLoom
   attach_pdf: true
   pdf_attachment_mode: imported_file
   attach_report: true
@@ -88,7 +92,7 @@ zotero:
 obsidian:
   enabled: false
   vault_path: ''
-  root_folder: arXiv Research Assistant
+  root_folder: PaperLoom
   home_folder: Home
   daily_folder: Daily
   papers_folder: Papers

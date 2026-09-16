@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}我的文献库 · arXiv Research Assistant{% endblock %}
+{% block title %}我的文献库 · PaperLoom{% endblock %}
 {% block content %}
   <header class="page-heading library-heading">
     <div><p class="section-kicker">SAVED PAPERS</p><h1>我的文献库</h1><p>保存当前研究方向中值得长期跟进的论文，不受每日推荐刷新影响。</p></div>
@@ -37,7 +37,7 @@
         {% if entry.report_url %}
         <a href="{{ entry.report_url }}" target="_blank"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
         {% else %}
-        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
+        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
         {% endif %}
         <a href="{{ paper.abs_url }}" target="_blank" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
         <a href="{{ paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>

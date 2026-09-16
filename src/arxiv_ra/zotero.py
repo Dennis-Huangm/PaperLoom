@@ -83,7 +83,7 @@ class ZoteroClient:
         try:
             response = self.client.post(
                 f"{self.base_url}/local/authorize",
-                json={"appName": "arXiv Research Assistant"},
+                json={"appName": "PaperLoom"},
                 headers={
                     "Zotero-API-Version": "3",
                     "Zotero-Server-ID": server_id,
@@ -136,7 +136,7 @@ class ZoteroClient:
                 self._create_linked_attachment(
                     item_key,
                     report_path,
-                    "arXiv Research Assistant 阅读报告",
+                    "PaperLoom 阅读报告",
                     "text/html",
                 )
             )
@@ -448,12 +448,12 @@ class ZoteroClient:
             {
                 "parentItem": item_key,
                 "note": (
-                    "<h2>arXiv Research Assistant</h2>"
+                    "<h2>PaperLoom</h2>"
                     f"<p><strong>研究方向：</strong>{html.escape(profile_name)}</p>"
                     f"<p><strong>推荐理由：</strong>{reason or '由当前研究方向自动筛选。'}</p>"
                     f"<p><strong>arXiv ID：</strong>{arxiv_id}</p>"
                 ),
-                "tags": [{"tag": "arXiv Research Assistant"}],
+                "tags": [{"tag": "PaperLoom"}],
             }
         )
         self._post_objects("/users/0/items", [note])

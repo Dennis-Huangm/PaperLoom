@@ -194,9 +194,9 @@ def test_missing_report_and_reason_uses_cached_llm_summary(tmp_path: Path, monke
     paper = _paper()
     paper["recommendation_reason"] = ""
     calls = []
-    exporter.llm.enabled = True
+    exporter.clients.llm.enabled = True
     monkeypatch.setattr(
-        exporter.llm,
+        exporter.clients.llm,
         "chat",
         lambda system, user: calls.append(user)
         or "该工作研究智能体图像生成，通过视觉反馈迭代修正结果。摘要报告方法可提升一致性，但没有说明完整泛化边界。",
