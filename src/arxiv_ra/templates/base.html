@@ -8,10 +8,12 @@
   <link rel="icon" href="{{ url_for('static', path='/app-icon.ico') }}" sizes="any">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20260911-calendar">
-  <script defer src="{{ url_for('static', path='/app.js') }}?v=20260911-calendar"></script>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20260927-summary">
+  <link rel="stylesheet" href="{{ url_for('static', path='/vendor/katex/katex.min.css') }}">
+  <script defer src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>
+  <script defer src="{{ url_for('static', path='/app.js') }}?v=20260927-summary"></script>
 </head>
-<body class="page-{{ active }}">
+<body class="page-{{ active }}" data-profile-id="{{ config.profile_id }}">
   <header class="app-header">
     <a class="brand" href="/" aria-label="PaperLoom · 知织 首页">
       <span class="brand-icon"><img src="{{ url_for('static', path='/app-icon.png') }}" alt=""></span>
@@ -21,6 +23,7 @@
     <nav class="primary-nav" aria-label="主导航">
       <a href="/" class="{% if active == 'dashboard' %}active{% endif %}"><i class="far fa-file-alt" aria-hidden="true"></i><span>文献推荐</span></a>
       <a href="/library" class="{% if active == 'library' %}active{% endif %}"><i class="far fa-bookmark" aria-hidden="true"></i><span>文献库</span></a>
+      <a href="/search" class="{% if active == 'search' %}active{% endif %}"><i class="fas fa-search" aria-hidden="true"></i><span>搜索</span></a>
       <a href="/reports" class="{% if active == 'reports' %}active{% endif %}"><i class="far fa-folder-open" aria-hidden="true"></i><span>报告</span></a>
       <a href="/weekly" class="{% if active == 'weekly' %}active{% endif %}"><i class="fas fa-chart-line" aria-hidden="true"></i><span>周报</span></a>
       <a href="/versions" class="{% if active == 'versions' %}active{% endif %}"><i class="fas fa-code-branch" aria-hidden="true"></i><span>追踪</span></a>

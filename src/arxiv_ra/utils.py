@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +48,16 @@ def atomic_write_text(path: Path, content: str) -> None:
     temporary = path.with_name(f".~{uuid.uuid4().hex[:12]}.tmp")
     try:
         temporary.write_text(content, encoding="utf-8")
-        temporary.replace(path)
+        for attempt in range(8):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError as exc:
+                # Windows readers (including indexers) may briefly omit delete
+                # sharing. Keep the original intact and retry only the rename.
+                if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 7:
+                    raise
+                time.sleep(min(0.02 * 2 ** attempt, 0.2))
     finally:
         temporary.unlink(missing_ok=True)
 

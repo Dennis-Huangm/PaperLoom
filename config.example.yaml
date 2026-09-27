@@ -126,9 +126,20 @@ version_tracking:
   auto_check: true
   max_tracked: 50
   include_reports: true
-  include_feedback: true
+  include_library: true
   include_zotero: true
   analyze_pdf_diff: true
+
+# 自动同步策略：有研究方向时保存在 profiles/<id>.yaml，追踪页可独立编辑。
+# 保存设置不触发任务；在每日任务、GUI 或 CLI 的版本检查后运行。
+version_sync:
+  enabled: false
+  max_papers: 10
+  max_model_papers: 2
+  max_model_calls: 20
+  report: false
+  zotero: false
+  obsidian: false
 
 citations:
   enabled: true

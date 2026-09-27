@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}备份与恢复 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">LOCAL BACKUP</p><h1>备份与恢复</h1><p>保存全部研究方向的本地记录，在独立目录中检查恢复结果。</p></div><a class="button secondary" href="/settings">返回配置</a></header>
+{% if message %}<p class="notice success" role="status">{{ message }}</p>{% endif %}
+{% if restored %}<section class="feedback-panel"><h2>恢复完成</h2><p>恢复目录：<code>{{ restored.target }}</code></p>{% if restored.before %}<p>恢复前的完整目录保存在：<code>{{ restored.before }}</code></p>{% endif %}<p>检查资料后，可在终端运行以下命令启动恢复副本：</p><pre class="search-source-text">paperloom --config "{{ restored.target }}/config.yaml" gui --port 8001</pre><p>该副本使用独立 run 目录。启动不会自动重跑中断任务；请在执行模型任务或同步前检查凭据和外部路径。</p></section>{% endif %}
+{% if pending_restores %}<section class="feedback-panel"><h2>有 {{ pending_restores|length }} 条中断恢复记录</h2><p>整理会在目标目录缺失时放回旧目录；已经发布的新目录继续保留。暂存资料不删除。</p><form method="post" action="/backups/reconcile"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button secondary">整理中断恢复</button></form></section>{% endif %}
+<section class="feedback-panel"><h2>创建备份</h2><p>默认包含配置、全部方向、收藏/阅读/笔记/反馈、推荐记录、版本状态与批次、GUI 任务历史。报告与 PDF 可按需加入，搜索索引可重新建立。</p>
+<form method="post" action="/backups/create"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+<p><label><input type="checkbox" name="reports" value="true"> 包含报告、周报、比较、图谱及配图</label></p>
+<p><label><input type="checkbox" name="pdfs" value="true"> 包含本地 PDF（可能较大）</label></p>
+<p><label><input type="checkbox" name="secrets" value="true"> 包含 .env 凭据文件（明文保存，请妥善保管）</label></p>
+<p>备份不是脱敏包：即使不包含 .env，配置、个人笔记和历史记录仍可能包含私人信息。不会复制进程中的环境变量或外部 Zotero / Obsidian 库。</p>
+<p>创建期间请停止编辑及 CLI 写入，等待后台任务结束。文件有变化时备份会失败并保留原资料。</p><button class="button primary">创建并校验备份</button></form>
+<p>保存位置：<code>{{ backup_folder }}</code></p>
+{% for item in backups %}<p><a href="/backups/download/{{ item.name }}">{{ item.name }}</a> · {{ (item.size / 1048576)|round(2) }} MiB</p>{% else %}<p>尚未创建备份。</p>{% endfor %}</section>
+<section class="feedback-panel"><h2>恢复预览</h2><p>恢复到 <code>{{ restore_folder }}</code> 下的独立目录，不覆盖当前运行的项目。已有恢复目录须先关闭其 GUI 与 CLI；冲突按文件处理，不合并笔记字段，也不删除备份以外的文件。</p>
+<form class="search-filters" method="post" action="/backups/preview"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+<label class="search-query">本机备份 ZIP 完整路径<input name="archive_path" value="{{ plan.archive if plan else '' }}" placeholder="可粘贴其他电脑复制过来的备份路径" required></label>
+<label>恢复目录名称<input name="name" value="{{ plan.name if plan else 'research-copy' }}" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}" required></label>
+<label>冲突处理<select name="mode"><option value="keep" {% if not plan or plan.mode == 'keep' %}selected{% endif %}>保留现有文件</option><option value="replace" {% if plan and plan.mode == 'replace' %}selected{% endif %}>使用备份替换冲突文件</option></select></label><button class="button secondary">校验并预览</button></form></section>
+{% if plan %}<section class="feedback-panel"><h2>确认恢复范围</h2><p>目标：<code>{{ plan.target }}</code> · 备份时间：{{ plan.created_at }}</p><p>{% for action,count in plan.counts.items() %}{{ action }} {{ count }} 个文件{% if not loop.last %} · {% endif %}{% endfor %}</p><p>{% if plan.has_secrets %}此备份包含 .env 凭据，将按上述冲突规则恢复。{% else %}此备份不包含 .env，已有凭据文件会保留；新目录需另行配置凭据。{% endif %}</p><p>输出目录迁移为 run，任务配置中的项目/输出路径随之调整。外部同步路径和连接设置保持原值，请在使用前检查。已有目标将先完整保留到相邻的 before 目录。</p>
+<details><summary>查看全部文件与处理方式（{{ plan.files|length }}）</summary><ul>{% for item in plan.files %}<li>{{ item.action }} · <code>{{ item.path }}</code></li>{% endfor %}</ul></details>
+<form method="post" action="/backups/restore"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="archive_path" value="{{ plan.archive }}"><input type="hidden" name="name" value="{{ plan.name }}"><input type="hidden" name="mode" value="{{ plan.mode }}"><input type="hidden" name="token" value="{{ plan.token }}"><button class="button primary">按此预览恢复到独立目录</button></form></section>{% endif %}
+{% endblock %}

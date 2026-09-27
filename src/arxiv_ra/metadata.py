@@ -12,6 +12,7 @@ from .config import MetadataConfig
 from .models import Author, Paper, VerifiedMetadata
 from .rate_limit import shared_rate_limit
 from .utils import env, normalize_title
+from .task_runtime import task_warning
 
 
 def _similar_title(left: str, right: str) -> float:
@@ -32,8 +33,22 @@ DECLARED_VENUE_RE = re.compile(
 def declared_venue_from_comment(comment: str | None) -> str | None:
     if not comment:
         return None
-    match = DECLARED_VENUE_RE.search(comment) or KNOWN_VENUE_RE.search(comment)
-    return match.group(1).strip() if match else None
+    # A conference name in submission status or a reference to earlier work is
+    # not this paper's publication declaration. Prefer explicit acceptance;
+    # retain the common terse "NeurIPS 2024 Spotlight" announcement form.
+    clauses = re.split(r"[.;\n]", comment)
+    candidates = []
+    for clause in clauses:
+        if re.search(r"\b(?:submit\w*|submission\w*|reject\w*|withdraw\w*|under\s+review|not|never)\b",
+                     clause, re.IGNORECASE):
+            continue
+        explicit = DECLARED_VENUE_RE.search(clause)
+        if explicit:
+            return explicit.group(1).strip()
+        terse = KNOWN_VENUE_RE.fullmatch(clause.strip())
+        if terse:
+            candidates.append(terse.group(1).strip())
+    return candidates[0] if candidates else None
 
 
 class MetadataVerifier:
@@ -52,11 +67,19 @@ class MetadataVerifier:
         except Exception as exc:
             openalex = None
             result.conflicts.append(f"OpenAlex 查询失败：{type(exc).__name__}")
+            task_warning(
+                "OpenAlex 元数据",
+                f"出版信息查询失败，已继续使用其他来源：{type(exc).__name__}: {exc}",
+            )
         try:
             semantic = self._semantic_scholar(paper)
         except Exception as exc:
             semantic = None
             result.conflicts.append(f"Semantic Scholar 查询失败：{type(exc).__name__}")
+            task_warning(
+                "Semantic Scholar 元数据",
+                f"引用与出版信息查询失败，已继续使用其他来源：{type(exc).__name__}: {exc}",
+            )
         if openalex:
             self._merge_openalex(result, openalex, paper)
         if semantic:
@@ -153,12 +176,17 @@ class MetadataVerifier:
         result.sources.append("Semantic Scholar")
         venue_obj = item.get("publicationVenue") or {}
         venue = venue_obj.get("name") or item.get("venue")
-        if venue and venue.casefold() not in {"arxiv", "corr"}:
+        is_preprint = venue and ("arxiv" in venue.casefold() or venue.strip().casefold() == "corr")
+        if venue and not is_preprint:
             if result.venue and normalize_title(result.venue) != normalize_title(venue):
                 result.conflicts.append(f"会议/期刊来源冲突：OpenAlex={result.venue}；Semantic Scholar={venue}")
             else:
                 result.venue = venue
                 result.venue_status = "verified_metadata"
-        result.publication_date = item.get("publicationDate") or result.publication_date
+                # A preprint date (or a rejected, conflicting venue's date)
+                # must not become the report's formal publication date.
+                result.publication_date = result.publication_date or item.get("publicationDate")
         external = item.get("externalIds") or {}
-        result.doi = external.get("DOI") or result.doi
+        doi = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", external.get("DOI") or "", flags=re.I).strip()
+        if doi and not doi.casefold().startswith("10.48550/arxiv."):
+            result.doi = result.doi or doi

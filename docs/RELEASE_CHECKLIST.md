@@ -20,10 +20,15 @@
 
 ## Packaging
 
-- [ ] Run `scripts\build_release.ps1`; do not hand-copy the source tree.
+- [ ] Prepare `.venv` with `scripts\setup_environment.ps1 -Dev`, then run
+      `scripts\build_release.ps1`; do not hand-copy the source tree.
+- [ ] Match `pyproject.toml`, `arxiv_ra.__version__`, build default and release notes.
+- [ ] Build with the project `.venv`; verify all source files and packaged assets.
 - [ ] Build wheel without network-dependent build isolation when necessary.
 - [ ] Install the wheel into a clean or disposable environment.
 - [ ] Run `paperloom --version` and `paperloom doctor`; verify the legacy
       `arxiv-ra --version` entry point still works.
 - [ ] Record SHA-256 hashes in `release/<version>/SHA256SUMS.txt`.
 - [ ] Copy release notes and changelog into the release directory.
+- [ ] Compare staged files and package contents; scan both for local credentials.
+- [ ] Push the reviewed commit and matching tag, then verify published asset hashes.

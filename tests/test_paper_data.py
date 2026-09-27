@@ -102,7 +102,7 @@ def test_report_pipeline_uses_same_revision_for_metadata_pdf_and_figures(tmp_pat
     config = AppConfig(output_dir=str(tmp_path), profile_id="a")
     arxiv = SimpleNamespace(get=Mock(side_effect=AssertionError("snapshot already complete")), download_pdf=Mock())
     figures = SimpleNamespace(fetch=Mock(return_value=[]))
-    parser = SimpleNamespace(parse=Mock(return_value=SimpleNamespace(figures=[], parser="test")))
+    parser = SimpleNamespace(parse=Mock(return_value=SimpleNamespace(figures=[], parser="test", text="Paper text", page_texts=["Paper text"], total_pages=1)))
     reporter = SimpleNamespace(generate=Mock(return_value="# Test\n\nReport"))
     clients = ResearchClients(config, arxiv=arxiv, alphaxiv=SimpleNamespace(enabled=False),
                               arxiv_html=figures, parser=parser, reporter=reporter,

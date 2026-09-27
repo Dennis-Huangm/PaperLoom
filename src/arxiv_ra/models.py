@@ -37,6 +37,7 @@ class Paper:
     metadata_status: str = "complete"
     abstract_kind: str = "full"
     resolution_note: str = ""
+    ranking_explanation: dict[str, Any] = field(default_factory=dict)
 
     @property
     def source_label(self) -> str:
@@ -114,6 +115,7 @@ class Paper:
             metadata_status=partial,
             abstract_kind=str(value.get("abstract_kind") or ("full" if partial == "complete" else "preview")),
             resolution_note=str(value.get("resolution_note") or ""),
+            ranking_explanation=dict(value.get("ranking_explanation") or {}),
         )
 
 
@@ -149,6 +151,7 @@ class ParsedPaper:
     page_texts: list[str]
     figures: list[FigureCandidate] = field(default_factory=list)
     parser: str = "pymupdf"
+    total_pages: int | None = None
 
 
 @dataclass(slots=True)

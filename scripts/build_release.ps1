@@ -1,9 +1,18 @@
 param(
-    [string]$Version = "1.3.0"
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version = "1.4.0"
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$projectPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $projectPython)) {
+    throw "Project environment missing. Run scripts\setup_environment.ps1 -Dev first."
+}
+$actualVersion = & $projectPython -c "import pathlib,sys,tomllib; print(tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))['project']['version'])" (Join-Path $projectRoot "pyproject.toml")
+if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $Version) {
+    throw "Requested version does not match pyproject.toml: $Version / $actualVersion"
+}
 $workRoot = Join-Path $projectRoot "work\release-build-$Version"
 $packageRoot = Join-Path $workRoot "paperloom-$Version"
 $wheelRoot = Join-Path $workRoot "wheel"
@@ -23,7 +32,7 @@ if (Test-Path -LiteralPath $workRoot) {
 }
 New-Item -ItemType Directory -Force -Path $packageRoot, $wheelRoot, $releaseRoot | Out-Null
 
-$directories = @(".github", "assets", "docs", "scripts", "src", "tests")
+$directories = @(".github", "assets", "docs", "requirements", "scripts", "src", "tests")
 foreach ($name in $directories) {
     $source = Join-Path $projectRoot $name
     if (Test-Path -LiteralPath $source) {
@@ -55,8 +64,12 @@ Copy-Item -LiteralPath $currentReleaseNotes -Destination $packageRoot
 
 $qaArtifacts = Join-Path $packageRoot "docs\qa"
 if (Test-Path -LiteralPath $qaArtifacts) {
-    Assert-InProject $qaArtifacts
-    Remove-Item -LiteralPath $qaArtifacts -Recurse -Force
+    Get-ChildItem -LiteralPath $qaArtifacts -File -Recurse -Force |
+        Where-Object { $_.Extension -ne ".md" } |
+        ForEach-Object {
+            Assert-InProject $_.FullName
+            Remove-Item -LiteralPath $_.FullName -Force
+        }
 }
 
 Get-ChildItem -LiteralPath $packageRoot -Directory -Recurse -Force |
@@ -78,7 +91,7 @@ Compress-Archive -LiteralPath $packageRoot -DestinationPath $sourceArchive -Comp
 
 Push-Location $projectRoot
 try {
-    python -m pip wheel . --no-deps --no-cache-dir --no-build-isolation --wheel-dir $wheelRoot
+    & $projectPython -m pip wheel . --no-deps --no-cache-dir --no-build-isolation --wheel-dir $wheelRoot
     if ($LASTEXITCODE -ne 0) { throw "Wheel build failed with exit code $LASTEXITCODE" }
 }
 finally {

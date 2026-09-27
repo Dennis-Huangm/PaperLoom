@@ -46,6 +46,7 @@ def test_feedback_terms_raise_related_papers_and_lower_unrelated_pattern(tmp_pat
     store.set(
         {"arxiv_id": "2", "title": "Medical Image Segmentation", "abstract": ""},
         "not_relevant",
+        scope="topic", terms=["medical image segmentation"],
     )
     library = {
         "1": {

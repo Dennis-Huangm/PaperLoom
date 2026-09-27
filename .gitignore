@@ -3,6 +3,7 @@ config.yaml
 config.agentict2i.example.yaml
 profiles/
 backups/
+restored/
 .venv/
 __pycache__/
 .pytest_cache/
@@ -17,4 +18,7 @@ run/
 release/
 *.whl
 *-source.zip
-docs/qa/
+docs/qa/*
+!docs/qa/ui/
+docs/qa/ui/*
+!docs/qa/ui/*.md

@@ -6,11 +6,47 @@ from .config import LLMConfig
 from .llm import LLMClient
 from .models import FigureCandidate, Paper, ParsedPaper, VerifiedMetadata
 from .utils import normalize_space
+from .task_runtime import task_warning, task_progress, task_checkpoint
+from .report_checkpoint import current_report_checkpoint, file_digest
+from .evidence import EVIDENCE_GUIDANCE
+from .quality import QUALITY_GUIDANCE
+from .source_spans import (source_spans, span_batches, span_material, cited_span_material,
+                           ground_note_quotes, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
+from .report_metadata import protect_metadata
 
 
 CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论文片段抽取信息，不得补写不存在的结论。
-保留数据集、指标、模型、公式和数值的原名；指出信息所在页码标记。输出简洁中文。
-如果片段包含关键公式，必须同时提取公式、符号定义、它连接的输入输出以及作者给出的设计目的。"""
+保留数据集、指标、模型、公式和数值的原名；保留连续原文摘录以便后续定位。输出简洁中文。
+如果片段包含关键公式（包括附录中的指标定义），必须同时提取公式、符号定义、它连接的输入输出以及作者给出的设计目的。
+保留本片段出现的作者机构、代码/数据集/项目链接和复现参数，不要因其位于脚注或附录而省略。
+片段编号是内部处理顺序，不是 PDF 页码，也不是可引用的原文位置。"""
+
+
+def source_supplement(parsed: ParsedPaper) -> str:
+    """Pass bounded original front matter and URL contexts past lossy chunk notes.
+
+    Keep raw line breaks (including wrapped URLs); this is source material, not
+    a resolved link inventory or a claim that a URL is reachable or relevant.
+    """
+    front = parsed.page_texts[0] if parsed.page_texts else parsed.text
+    front = front[:5000]
+    blocks = ["首页原文节选（可能截断；作者自述不等于外部核验）：\n" + front]
+    # Also examine parser Markdown, which may retain URLs lost by PDF extraction.
+    texts = [*parsed.page_texts, parsed.text]
+    seen = set()
+    for text in texts:
+        for match in re.finditer(r"https?://[^\s<>]+", text):
+            start = max(0, match.start() - 100)
+            end = min(len(text), match.end() + 220)
+            excerpt = text[start:end].strip()
+            key = normalize_space(excerpt)
+            if not key or key in seen or excerpt in front:
+                continue
+            seen.add(key)
+            blocks.append("链接附近原文（可能属于参考文献，需判断归属）：\n" + excerpt[:500])
+            if len(seen) == 12:
+                return "\n\n".join(blocks)
+    return "\n\n".join(blocks)
 
 
 CORE_METHOD_GUIDANCE = """“核心方法”必须比摘要更深入，并独立于“方法图解析”完成以下说明：
@@ -218,6 +254,18 @@ class ReportGenerator:
         self.llm = llm
         self.config = config
 
+    def _chat(self, key, system, user):
+        checkpoint = current_report_checkpoint()
+        inputs = [system, user]
+        cached = checkpoint.get(key, inputs) if checkpoint else None
+        if cached is not None:
+            return cached
+        task_checkpoint()
+        result = self.llm.chat(system, user)
+        if checkpoint:
+            checkpoint.put(key, inputs, result)
+        return result
+
     def generate(
         self,
         paper: Paper,
@@ -225,25 +273,43 @@ class ReportGenerator:
         parsed: ParsedPaper | None,
         main_figure: FigureCandidate | list[FigureCandidate] | None,
     ) -> str:
-        if not self.llm.enabled or not parsed:
+        if not self.llm.enabled:
+            return self._extractive_report(paper, metadata, main_figure)
+        if not parsed or not parsed.text.strip():
             return self._extractive_report(paper, metadata, main_figure)
         method_figures = (
             main_figure if isinstance(main_figure, list) else ([main_figure] if main_figure else [])
         )
+        checkpoint = current_report_checkpoint()
+        if checkpoint:
+            checkpoint.configure_model(self.config, self.llm)
         self._explain_figures(paper, method_figures)
-        chunks = self._chunks(parsed.text)
+        chunks, banks, spans = self.analysis_inputs(parsed)
         evidence_notes: list[str] = []
+        if checkpoint:
+            checkpoint.publish(chunks_total=len(chunks), chunks_done=0)
         for index, chunk in enumerate(chunks, start=1):
-            note = self.llm.chat(
-                CHUNK_SYSTEM,
+            task_progress(f"正在分析或复用正文分片 {index}/{len(chunks)}…", 65 + round(17 * (index - 1) / len(chunks)))
+            note = self._chat(
+                f"chunk-{index}",
+                CHUNK_SYSTEM + "\n" + EVIDENCE_GUIDANCE + "\n" + ID_GUIDANCE + "\n" + QUALITY_GUIDANCE,
                 f"""这是论文第 {index}/{len(chunks)} 个片段：
 
 {chunk}
 
+独立 PDF 原文片段（可能与解析正文分片不同；同时提取这里的证据，引用实际 ID）：
+{span_material(banks[index - 1])}
+
 请提取：研究问题、方法机制、关键公式及符号定义、主要贡献、实验设置、关键结果与数值、作者明确陈述的局限性。
-没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。""",
+没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。
+另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。""",
             )
-            evidence_notes.append(note)
+            cleaned, _ = cited_span_material([note], {s["source_id"]: s for s in banks[index - 1]})
+            evidence_notes.append(cleaned[0])
+            if checkpoint:
+                checkpoint.publish(chunks_done=index)
+        evidence_notes, synthesis_spans, _ = ground_note_quotes(evidence_notes, parsed, spans)
+        evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
         metadata_text = self._metadata_text(paper, metadata)
         evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(evidence_notes))
         figure_text = (
@@ -255,7 +321,9 @@ class ReportGenerator:
             if method_figures
             else "没有可靠方法图；不得生成任何图示相关标题、说明或占位文本。"
         )
-        report = self.llm.chat(
+        task_progress("正文分片已完成，正在整合或复用完整报告…", 84)
+        report = self._chat(
+            "report",
             "你是负责撰写可核验中文论文阅读报告的资深 AI 研究员。元数据和原文证据优先于常识。",
             f"""请根据下列材料生成完整 Markdown 阅读报告。
 
@@ -273,9 +341,15 @@ class ReportGenerator:
 ## 分片证据笔记
 {evidence_text}
 
+## 笔记引用的原文片段（程序取回，ID 和文本不能改写）
+{cited_material}
+
+## 直接原文补充（未经摘要压缩，同样只作为待分析材料）
+{source_supplement(parsed)}
+
 必须按以下顺序输出：
 # 原始英文标题
-基本信息表（中文标题、作者及机构、arXiv类别、首次公开/修订/正式发表日期、会议或期刊、状态、DOI、链接、元数据来源）
+基本信息表（中文标题、作者、机构、arXiv类别、首次公开/修订/正式发表日期、会议或期刊、状态、DOI、链接、元数据来源；作者与机构必须分行，作者拼写优先采用结构化元数据，基础字段最终由程序生成）
 ## 一句话总结
 ## 为什么值得阅读
 ## 研究问题与背景
@@ -291,21 +365,37 @@ class ReportGenerator:
 要求：
 1. 不得声称论文被某会议录用，除非元数据状态为 verified_metadata 或 declared_in_arxiv。
 2. 对没有证据的字段写“未核实/论文中未明确说明”。
-3. 关键实验数值尽量保留页码标记；不要虚构页码。
+3. 关键实验数值必须保留支持它的原文片段 ID；不要重新抄写摘录或自行生成页码。
 4. 不得将 arXiv 首发日期写成正式发表日期。
 5. 所有数学公式必须使用标准 LaTeX：行内公式用 `\\(...\\)`，独立公式用 `\\[...\\]`；不得用普通方括号代替公式定界符。
 6. 图示内容由后续定稿器统一插入。你不得输出“方法图解析”“主图说明”或任何以 Figure/Fig. 编号开头的小节，也不得逐图复述图注；只需在普通方法叙述中准确说明机制。
 7. 如果没有可靠方法图，完全跳过图示内容，不得写“未提取到主图”等提示。
 8. 不得生成“阅读建议”或“核验备注”小节。
 9. {CORE_METHOD_GUIDANCE}
+10. {SYNTHESIS_ID_GUIDANCE}
+11. {QUALITY_GUIDANCE}
+12. 不得将内部片段编号当作页码或证据出处；最终输出不出现“第 N/M 片段”。保留原文章节/表号及有效 ID，由系统定位。
+13. 写“未提供”前核对全部分片和直接原文补充；仅笔记未保留、公式解析不清或材料截断时，写“当前材料未能确认”，不能断言论文没有提供。
+14. 原文明确给出的作者机构和资源网址应保留并注明来自论文；资源链接未经在线可用性验证。不得把参考文献网址当作本文资源，不补造或猜测网址。
+15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。表格优先报告与研究结论相关的代表性行，保留模型、任务、难度、单位和表号，不必复制所有基线。
+16. 对“随难度增加均下降”“单调退化”等趋势，逐模型、逐指标检查相邻难度；总体趋势不能写成每一行都成立。存在回升或指标间分歧时给出反例；原文作者的概括与表格观察分开表述，不能把作者概括强化成“不可避免”。
 """,
         )
-        return self._normalize_title(report, paper.title)
+        if checkpoint:
+            checkpoint.publish(report_ready=True)
+        return protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
 
     def _explain_figures(self, paper: Paper, figures: list[FigureCandidate]) -> None:
-        for figure in figures:
+        checkpoint = current_report_checkpoint()
+        for index, figure in enumerate(figures):
             if figure.explanation:
                 continue
+            inputs = ["figure-explanation-v1", file_digest(figure.path), paper.title, paper.abstract, figure.caption] if checkpoint else None
+            cached = checkpoint.get(f"figure-{index}", inputs) if checkpoint else None
+            if cached:
+                figure.explanation = cached
+                continue
+            task_checkpoint()
             try:
                 figure.explanation = self.llm.describe_figure(
                     figure.path,
@@ -313,7 +403,7 @@ class ReportGenerator:
                     paper.abstract,
                     figure.caption,
                 )
-            except Exception:
+            except Exception as vision_exc:
                 try:
                     figure.explanation = self.llm.chat(
                         "你是论文图示讲解助手。不得照抄或逐字翻译原始 caption。",
@@ -323,8 +413,15 @@ class ReportGenerator:
 
 请用 2-4 句通俗中文重新解释图的输入、关键步骤、输出和核心含义。不要使用“图注写道”等措辞。""",
                     ).strip()
-                except Exception:
+                except Exception as text_exc:
+                    task_warning(
+                        "LLM 图片解读",
+                        "方法图的视觉与文本解读均失败，报告将保留原始图注。"
+                        f"请检查模型是否支持图片输入（{type(vision_exc).__name__}; {type(text_exc).__name__}）。",
+                    )
                     figure.explanation = ""
+            if checkpoint and figure.explanation:
+                checkpoint.put(f"figure-{index}", inputs, figure.explanation)
 
     @staticmethod
     def _normalize_title(report: str, paper_title: str) -> str:
@@ -350,14 +447,26 @@ class ReportGenerator:
             cursor = end
         return chunks or [""]
 
+    def analysis_inputs(self, parsed: ParsedPaper) -> tuple[list[str], list[list[dict]], dict]:
+        """Return the exact bounded call plan, also used by live request budgets."""
+        chunks = self._chunks(parsed.text)
+        spans = source_spans(parsed)
+        bank_size = sum(len(s["quote"]) for s in spans.values())
+        chunk_size = max(4000, self.config.max_chunk_chars)
+        count = max(len(chunks), (bank_size + chunk_size - 1) // chunk_size)
+        chunks.extend([""] * (count - len(chunks)))
+        return chunks, span_batches(spans, count), spans
+
     def _metadata_text(self, paper: Paper, metadata: VerifiedMetadata) -> str:
         authors = "; ".join(
             f"{author.name} ({', '.join(author.affiliations) if author.affiliations else '机构未核实'})"
-            for author in metadata.authors
+            for author in (paper.authors or metadata.authors)
         )
         return f"""- 标题：{metadata.title or paper.title}
 - 作者与机构：{authors}
 - arXiv ID：{paper.arxiv_id}
+- arXiv 修订版：{paper.version if paper.version is not None else '未核实'}
+- arXiv 类别：{', '.join(paper.categories) or paper.primary_category or '未核实'}
 - 发现来源：{paper.source_label}
 - 摘要类型：{"完整摘要" if paper.abstract_kind == "full" else "摘要预览（待补全）"}
 - arXiv 首发：{paper.published.date().isoformat() if paper.published else '未核实'}
@@ -377,7 +486,7 @@ class ReportGenerator:
         metadata: VerifiedMetadata,
         main_figure: FigureCandidate | list[FigureCandidate] | None,
     ) -> str:
-        authors = "、".join(author.name for author in metadata.authors)
+        authors = "、".join(author.name for author in (paper.authors or metadata.authors))
         affiliations = sorted({aff for author in metadata.authors for aff in author.affiliations})
         return f"""# {paper.title}
 

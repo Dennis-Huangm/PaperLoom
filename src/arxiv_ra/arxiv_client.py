@@ -4,6 +4,7 @@ import re
 import time
 import uuid
 import math
+import ssl
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -87,10 +88,18 @@ class ArxivClient:
         self.retry_base_delay = max(0.0, retry_base_delay)
         self.min_interval = max(0.0, min_interval)
         self.rate_limit_key = rate_limit_key
+        # Match the TLS 1.3 capability advertised by stdlib HTTPSConnection and
+        # urllib3. arXiv cold queries returned empty HTTP 406 with httpx's default
+        # handshake, while this single option allowed the identical request.
+        # Keep httpx's CA environment handling and certificate verification.
+        tls = httpx.create_ssl_context()
+        if ssl.HAS_TLSv1_3:
+            tls.post_handshake_auth = True
         self.client = httpx.Client(
             timeout=timeout,
             follow_redirects=True,
             headers={"User-Agent": f"PaperLoom/{__version__} (personal research use)"},
+            verify=tls,
         )
 
     def _get(self, url: str) -> httpx.Response:

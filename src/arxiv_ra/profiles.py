@@ -63,6 +63,7 @@ class ProfileManager:
             },
             "discovery": raw.get("discovery") or {},
             "ranking": raw.get("ranking") or {},
+            "version_sync": raw.get("version_sync") or {},
         }
         self.save(payload)
         self.activate(profile_id)

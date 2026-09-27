@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}跨论文比较 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">PAPER COMPARISON</p><h1>跨论文比较</h1><p>选择 2–5 篇不同论文的指定版本，对照研究问题、方法、实验条件和适用边界。</p></div><a class="button secondary" href="/reports">返回报告库</a></header>
+<form id="comparison-form" class="job-form feedback-panel" action="/api/jobs/compare" method="post">
+  <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+  <label for="comparison-search">筛选本地论文</label><input id="comparison-search" type="search" placeholder="按标题或 arXiv ID 筛选">
+  <p>同一论文只选一个版本。优先使用该版本的完整报告和原文摘录；没有报告时仅使用摘要，证据不足的维度留待核对。提交时固定所用资料，不自动下载或生成单篇报告。</p>
+  <div class="comparison-choices">
+  {% for item in choices %}<label class="comparison-choice" data-search="{{ (item.paper.title ~ ' ' ~ item.key)|lower }}"><input type="checkbox" name="papers" value="{{ item.key }}" data-paper-id="{{ item.paper.arxiv_id }}"><span><strong>{{ item.paper.title }}</strong><small>{{ item.key }} · {% if item.quality == 'full' %}全文报告{% elif item.quality == 'abstract' %}摘要级报告{% elif item.quality == 'metadata' %}仅摘要/元数据{% else %}历史报告，质量未记录{% endif %}</small></span></label>
+  {% else %}<p>当前没有带可靠版本号的本地论文。先从推荐页收藏论文或生成阅读报告。</p>{% endfor %}
+  </div>
+  <label for="comparison-question">比较关注点（可选，会发送给配置的模型）</label><textarea id="comparison-question" name="question" rows="2" maxlength="1000" placeholder="例如：对比反馈机制、实验数据和推理成本"></textarea>
+  <p>比较会使用配置的模型，个人阅读笔记和标签不会发送。实验条件不一致或尚未核对时，不生成胜负排名。</p>
+  <div class="comparison-footer"><span id="comparison-count" role="status">已选 0 篇，请选择 2–5 篇</span><button class="button primary" type="submit" disabled>生成比较矩阵</button></div>
+</form>
+<section class="feedback-panel"><h2>已有比较</h2>{% for item in comparisons %}<article class="feedback-rule"><div><h3>{{ item.question or '研究问题、方法与实验条件' }}</h3><p>{{ item.generated_at[:16]|replace('T', ' ') }} · {{ item.paper_count }} 篇 · {% if item.status == 'model_assisted' %}模型辅助比较{% else %}材料清单与待核对矩阵{% endif %}</p><p>{% for paper in item.papers %}{{ paper.arxiv_id }}v{{ paper.version }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div><a class="button secondary" href="{{ item.url }}" target="_blank" rel="noreferrer">打开比较</a></article>{% else %}<p>尚未生成比较矩阵。</p>{% endfor %}</section>
+<section class="queue-section"><header><h2>本页任务</h2><a href="/generate">全部后台任务</a></header><div id="job-list" class="job-list"><div class="queue-empty">提交后在这里查看进度与结果。</div></div></section>
+{% endblock %}

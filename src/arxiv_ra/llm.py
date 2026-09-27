@@ -9,10 +9,20 @@ from openai import OpenAI
 
 from .config import LLMConfig
 from .models import Paper
+from .model_budget import current_model_budget, ModelBudgetExceeded
 from .utils import env, extract_json_object
 
 
 class LLMClient:
+    def _completion(self, **kwargs):
+        budget = current_model_budget()
+        client = self.client
+        if budget is not None:
+            budget.reserve()
+            # Count every outbound attempt; the SDK must not retry invisibly.
+            client = client.with_options(max_retries=0)
+        return client.chat.completions.create(**kwargs)
+
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
         api_key = env(config.api_key_env)
@@ -33,7 +43,9 @@ class LLMClient:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         try:
-            response = self.client.chat.completions.create(**kwargs)
+            response = self._completion(**kwargs)
+        except ModelBudgetExceeded:
+            raise
         except Exception:
             retry_kwargs = dict(kwargs)
             retry_kwargs.pop("temperature", None)
@@ -41,8 +53,11 @@ class LLMClient:
                 retry_kwargs.pop("response_format", None)
             if retry_kwargs == kwargs:
                 raise
-            response = self.client.chat.completions.create(**retry_kwargs)
-        return response.choices[0].message.content or ""
+            response = self._completion(**retry_kwargs)
+        content = response.choices[0].message.content or ""
+        if not content.strip():
+            raise RuntimeError("LLM 返回空内容")
+        return content
 
     def rerank(self, papers: list[Paper], interest_description: str) -> None:
         if not self.enabled or not papers:
@@ -115,8 +130,10 @@ class LLMClient:
             "temperature": self.config.temperature,
         }
         try:
-            response = self.client.chat.completions.create(**kwargs)
+            response = self._completion(**kwargs)
+        except ModelBudgetExceeded:
+            raise
         except Exception:
             kwargs.pop("temperature", None)
-            response = self.client.chat.completions.create(**kwargs)
+            response = self._completion(**kwargs)
         return (response.choices[0].message.content or "").strip()

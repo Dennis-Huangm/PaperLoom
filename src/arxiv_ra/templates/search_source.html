@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}搜索来源 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">SEARCH SOURCE · {{ search_kinds[document.kind] }}</p><h1>{{ document.title }}</h1><p>{{ config.profile_name }} · {{ document.aid }} · {% if document.version %}v{{ document.version }}{% else %}修订版未记录{% endif %}{% if document.page %} · PDF 第 {{ document.page }} 页{% endif %}</p></div><a class="button secondary" href="/search">返回搜索</a></header>
+<section class="feedback-panel"><h2>命中段落</h2><p>以下为本地材料中的原样文本片段。报告正文保留 Markdown 标记，PDF 页码为物理页码。</p><pre class="search-source-text">{{ document.body }}</pre>
+{% if document.url %}<a class="button primary" href="{{ document.url }}{% if document.kind == 'pdf' and document.page %}#page={{ document.page }}{% endif %}" target="_blank" rel="noreferrer">{% if document.kind == 'pdf' %}打开 PDF 对应页{% elif document.kind == 'notes' %}打开文献库阅读记录{% else %}打开原始材料{% endif %}</a>{% elif document.kind == 'notes' %}<p>论文已移出文献库，保留的个人笔记仍可检索。</p>{% endif %}
+</section>
+{% endblock %}

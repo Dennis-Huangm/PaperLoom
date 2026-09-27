@@ -1,0 +1,778 @@
+{
+  "date": "2026-09-25",
+  "scope": "Targeted agent review of text-only production generation; not blinded, not exhaustive and not an accuracy estimate.",
+  "request_cap": 20,
+  "requests_used": 19,
+  "originals_unchanged": true,
+  "stages": [
+    {
+      "action": "report",
+      "paper": "2502.19453",
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T12:58:05.630553+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "6a7d63954154c3dac845e6d48ea8ba6b34f0181a5a21d631126e30e1bf344cee",
+        "evidence.py": "e321b302c132c244f050224bacb4d5ce605276a3c0416778d32abf98eef65f61",
+        "comparison.py": "97156dddd9c1e5b826b7f31f96c3c58d172fe1e13955d93eb5e610db5699330d"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [],
+      "status": "completed",
+      "chunks": 4,
+      "pages": 17,
+      "pdf_sha256": "67fd081b6a0ae09fced523113b2722848ed6580d1ff636c0a120b76262477831",
+      "request_limit": 6,
+      "result": "library/2026-09-25/reports/2502.19453/report.html",
+      "located_quotes": 50,
+      "rejected_quotes": 24,
+      "numeric_issues": 3,
+      "requests_used": 5,
+      "response_models": [
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T12:59:45.294064+00:00",
+      "originals_unchanged": true,
+      "stage": "2502.19453",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/2502.19453/run.json",
+        "sha256": "e7d7fbadcce843d4ac423797133bea6791f4b6570bb6e353b358a99b8429d05d"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-01.request.json",
+          "sha256": "a7694bb6008990010b247f0180e221c470ae4303a99c0f3d1680d09d687882d1"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-02.request.json",
+          "sha256": "15a72e7dde8061cfe3652f420d5cbf32cf067a386f93202b8a91095fcc025f56"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-03.request.json",
+          "sha256": "e5dbded9317e82ade7d88113ba0b3ddc2f76ff2bef3270fdde118a13e661733c"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-04.request.json",
+          "sha256": "1fff2a65ad3d1615232d95a804139afb6833d299c3790636961023ee721306b0"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-05.request.json",
+          "sha256": "3b1109253dfff36dfce9f496cefc882c77405c16bd895ca18db6b71a3bcb9455"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-01.response.txt",
+          "sha256": "861913dcca299fce6cf2e934b6c041ec8e3697f1886987d9e7f8b9a7f77b7d99"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-02.response.txt",
+          "sha256": "81402951785ea864e4b26660bb5a3c92cee6adfd9982e9e39a65d9768bde39db"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-03.response.txt",
+          "sha256": "df64cd89c55fecdda9cd8d570a84df9c8ce076e38734b1d4eac0a1bc533e72bb"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-04.response.txt",
+          "sha256": "506b7550615abdae25e1794931db2b805514f8ebec1c70d05852fbad8f7538f9"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2502.19453/call-05.response.txt",
+          "sha256": "5e0fbb0a6a2c3955b05811337dab4302150d9733e5ae9b2464085262e2d9727c"
+        }
+      ],
+      "raw_report": {
+        "path": "work/quality-regeneration-20260925/2502.19453/raw-report.md",
+        "sha256": "5e0fbb0a6a2c3955b05811337dab4302150d9733e5ae9b2464085262e2d9727c"
+      }
+    },
+    {
+      "action": "report",
+      "paper": "2506.03139",
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T12:58:05.634589+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "6a7d63954154c3dac845e6d48ea8ba6b34f0181a5a21d631126e30e1bf344cee",
+        "evidence.py": "e321b302c132c244f050224bacb4d5ce605276a3c0416778d32abf98eef65f61",
+        "comparison.py": "97156dddd9c1e5b826b7f31f96c3c58d172fe1e13955d93eb5e610db5699330d"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [],
+      "status": "completed",
+      "chunks": 7,
+      "pages": 19,
+      "pdf_sha256": "7d8acb214a8af6fa6daa83b43a4222cae6389f2974757bce304b89e1ff3549ff",
+      "request_limit": 9,
+      "result": "library/2026-09-25/reports/2506.03139/report.html",
+      "located_quotes": 78,
+      "rejected_quotes": 61,
+      "numeric_issues": 50,
+      "requests_used": 8,
+      "response_models": [
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash",
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T13:01:28.354149+00:00",
+      "originals_unchanged": true,
+      "stage": "2506.03139",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/2506.03139/run.json",
+        "sha256": "9a96ef60b95abd422908afe94709a931c513ca840f49153d0871d23db9ba7389"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-01.request.json",
+          "sha256": "bda4bb7ffc8fb2c148b798586e4c1571275c1b40313124eaa46ed72c2df1f72b"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-02.request.json",
+          "sha256": "bca1f6a8000f0c1a44e8eba42319c77bfd72e58d18a4f6c15a9c19ec50bb3a7b"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-03.request.json",
+          "sha256": "c55100ee5f6012991c3c1f40481b2c1d8a75178eb8348421b2f7ef80beece813"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-04.request.json",
+          "sha256": "88e25d6543a9e826a37a8769e8d2aa8edff3e1b2ef546251851880aaa8dddc64"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-05.request.json",
+          "sha256": "7cd1f6d1e8a8a5382b1ceb7674550a298431df4c61fce99b6f897d42025b83ff"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-06.request.json",
+          "sha256": "7cc04594d33dd3fad61f24dde829e44b7e1dd79b570cfbbc2698c28d1c420553"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-07.request.json",
+          "sha256": "9f4b1019e294eec678d2138885e055090b58d02990fbf4552b5c1f5a88526d46"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-08.request.json",
+          "sha256": "4ab77876e463a378abc6b609cced4c9ee5da01890d8cb72a0be6c68c0aa87d21"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-01.response.txt",
+          "sha256": "36bf8c23733a97474a1d37d989945e9d168dff36514b6ff1796f8edb2a46f8ea"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-02.response.txt",
+          "sha256": "65fc49f0f5bb1c5f88cb407f3dd2d7ea6b79a64d1cc2eb6dda4852ada3360c81"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-03.response.txt",
+          "sha256": "80b4722eda29912b50fde8d5a3ba03f28ebf8bfa49d85ac4d27978ba85ff76a9"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-04.response.txt",
+          "sha256": "ff0630fff2308747f69dccded698fe0447f4090c17ec4090863d5817f471f0ba"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-05.response.txt",
+          "sha256": "f93f966f5ab5ea9df9e4c292d370100b49eded64f47462e2c0115999aafdcac1"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-06.response.txt",
+          "sha256": "be6f845dcdc5a201efefb8d74f5539959b202d5d4d4ed1d039def549b2207788"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-07.response.txt",
+          "sha256": "67e863884f310634c4c07853d4239e6ef7826243bbf85e68c3d94cab92c5363a"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.03139/call-08.response.txt",
+          "sha256": "0065aa99630ebc6599937c69385cbe2b94e15d74483503146e593a3896e6fad3"
+        }
+      ],
+      "raw_report": {
+        "path": "work/quality-regeneration-20260925/2506.03139/raw-report.md",
+        "sha256": "0065aa99630ebc6599937c69385cbe2b94e15d74483503146e593a3896e6fad3"
+      }
+    },
+    {
+      "action": "report",
+      "paper": "2506.15903",
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T12:51:43.695564+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "de69879463c5a96a72a175792244653d9b939806d445b77304bd54b5dbff271d",
+        "evidence.py": "d779744b97b7a0e2c649c71aa8d2aca67633af6530b071313d1141269d524e06",
+        "comparison.py": "97156dddd9c1e5b826b7f31f96c3c58d172fe1e13955d93eb5e610db5699330d"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [],
+      "status": "completed",
+      "chunks": 1,
+      "pages": 5,
+      "pdf_sha256": "e4694a991accffaecaaa90b3f9092db456c0f5917ef1f440313db6214f2854a2",
+      "request_limit": 3,
+      "result": "library/2026-09-25/reports/2506.15903/report.html",
+      "located_quotes": 18,
+      "rejected_quotes": 6,
+      "numeric_issues": 12,
+      "requests_used": 2,
+      "response_models": [
+        "gemini-3.8-flash",
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T12:52:27.929216+00:00",
+      "originals_unchanged": true,
+      "stage": "2506.15903",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/2506.15903/run.json",
+        "sha256": "78b2dd97c6a64ebe9ddbc8335011fed6b4b6fb69020ec4c3b3689b9b32a7c3ee"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903/call-01.request.json",
+          "sha256": "af8100edfb6b02e970f7bfff009d365c238e934ad5e08afbd91d567b4f512995"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903/call-02.request.json",
+          "sha256": "204dc17d0e9c46575275cbc5de2c945c1696be2ec46f6afaa98ce8aee2179c0e"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903/call-01.response.txt",
+          "sha256": "6730aaabffb529d905975ec12536c493dbf1d094660aff0b57d8c4cbfbaa4e87"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903/call-02.response.txt",
+          "sha256": "7204fe5f653bc88d3cb87f16e5d02ad4a069519b95f1df07da687697bc3fb678"
+        }
+      ],
+      "raw_report": {
+        "path": "work/quality-regeneration-20260925/2506.15903/raw-report.md",
+        "sha256": "7204fe5f653bc88d3cb87f16e5d02ad4a069519b95f1df07da687697bc3fb678"
+      }
+    },
+    {
+      "action": "report",
+      "paper": "2506.15903",
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T12:56:35.153330+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "6a7d63954154c3dac845e6d48ea8ba6b34f0181a5a21d631126e30e1bf344cee",
+        "evidence.py": "e321b302c132c244f050224bacb4d5ce605276a3c0416778d32abf98eef65f61",
+        "comparison.py": "97156dddd9c1e5b826b7f31f96c3c58d172fe1e13955d93eb5e610db5699330d"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [],
+      "status": "completed",
+      "chunks": 1,
+      "pages": 5,
+      "pdf_sha256": "e4694a991accffaecaaa90b3f9092db456c0f5917ef1f440313db6214f2854a2",
+      "request_limit": 3,
+      "result": "library/2026-09-25/reports/2506.15903/report.html",
+      "located_quotes": 14,
+      "rejected_quotes": 21,
+      "numeric_issues": 6,
+      "requests_used": 2,
+      "response_models": [
+        "gemini-3.8-flash",
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T12:57:01.257006+00:00",
+      "originals_unchanged": true,
+      "stage": "2506.15903-evidence-v2",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/run.json",
+        "sha256": "1d60c227845cac7b9300241da25b5d5aa1f1c3881e66c0432308d0b0fbe3456a"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/call-01.request.json",
+          "sha256": "327680be801957510fd1ee6ee9a229219b59e2dea5726fe55eb126d5c80716f3"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/call-02.request.json",
+          "sha256": "9be114627856483b59f76288877487c3d607ce5846f61a66ee50e10e970b0f37"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/call-01.response.txt",
+          "sha256": "593064b81a2fab711f6f9e57d67178610b427ede5731f02dc23355d1927e6cf9"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/call-02.response.txt",
+          "sha256": "ac3903c0e171112806816990080d4c964f3e01f488a19baff89d2cdce7f6c370"
+        }
+      ],
+      "raw_report": {
+        "path": "work/quality-regeneration-20260925/2506.15903-evidence-v2/raw-report.md",
+        "sha256": "ac3903c0e171112806816990080d4c964f3e01f488a19baff89d2cdce7f6c370"
+      }
+    },
+    {
+      "action": "compare",
+      "paper": null,
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T13:02:00.256660+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "6a7d63954154c3dac845e6d48ea8ba6b34f0181a5a21d631126e30e1bf344cee",
+        "evidence.py": "e321b302c132c244f050224bacb4d5ce605276a3c0416778d32abf98eef65f61",
+        "comparison.py": "17b9441e07ed32dee3848e3efcd1faccaa2460ad088d6c498ce9dcd06e068838"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [
+        {
+          "component": "比较证据",
+          "message": "7 个单元格未通过来源、支持摘录、数值或可比性检查，已标为证据不足；原因保存在矩阵中。"
+        }
+      ],
+      "status": "completed",
+      "request_limit": 2,
+      "result": "library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/report.html",
+      "quality_checks": {
+        "version": 1,
+        "accepted_cells": 7,
+        "rejected_cells": 7,
+        "unknown_cells": 7,
+        "semantic_support": "not_assessed",
+        "numeric_scope": "literal_values_and_known_units_in_primary_support"
+      },
+      "model_status": "model_assisted",
+      "requests_used": 1,
+      "response_models": [
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T13:02:15.179376+00:00",
+      "originals_unchanged": true,
+      "stage": "comparison",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/comparison/run.json",
+        "sha256": "3db60f101fd2219548036f3bda4408d7846c2cb949efe98922ec841ad2646554"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/comparison/call-01.request.json",
+          "sha256": "beb2426e8a2b1f6150a4c283405d711d98a6dfad0e1b3c024b675ce277490fcc"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/comparison/call-01.response.txt",
+          "sha256": "d84cf77848ae5f3f5dd5e5922b06b71d21a3f8687d93b404170d076d6b988d46"
+        }
+      ]
+    },
+    {
+      "action": "compare",
+      "paper": null,
+      "requested_model": "gemini-3.8-flash-high",
+      "llm_config": {
+        "model": "gemini-3.8-flash-high",
+        "api_key_env": "PAPERLOOM_EVAL_API_KEY",
+        "base_url_env": "PAPERLOOM_EVAL_BASE_URL",
+        "temperature": 0.1,
+        "max_chunk_chars": 18000
+      },
+      "started_at": "2026-09-25T13:03:44.277734+00:00",
+      "code_sha256": {
+        "report.py": "2084734d62efb0a0156483322d249f1d9bf12235895fc67e74ccbb9fb5174c4d",
+        "quality.py": "6a7d63954154c3dac845e6d48ea8ba6b34f0181a5a21d631126e30e1bf344cee",
+        "evidence.py": "e321b302c132c244f050224bacb4d5ce605276a3c0416778d32abf98eef65f61",
+        "comparison.py": "3fb8b3ae48bcff79de31af539136ee93ec88ef73e1797f5ba3a0210f159f250e"
+      },
+      "scope": "production text generation and evidence attachment; no image analysis or external integrations",
+      "warnings": [
+        {
+          "component": "比较证据",
+          "message": "4 个单元格未通过来源、支持摘录、数值或可比性检查，已标为证据不足；原因保存在矩阵中。"
+        }
+      ],
+      "status": "completed",
+      "request_limit": 2,
+      "result": "library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/report.html",
+      "quality_checks": {
+        "version": 1,
+        "accepted_cells": 10,
+        "rejected_cells": 4,
+        "unknown_cells": 4,
+        "semantic_support": "not_assessed",
+        "numeric_scope": "literal_values_and_known_units_in_primary_support"
+      },
+      "model_status": "model_assisted",
+      "requests_used": 1,
+      "response_models": [
+        "gemini-3.8-flash"
+      ],
+      "finished_at": "2026-09-25T13:04:00.544152+00:00",
+      "originals_unchanged": true,
+      "stage": "comparison-support-v2",
+      "run_manifest": {
+        "path": "work/quality-regeneration-20260925/comparison-support-v2/run.json",
+        "sha256": "935bb53bcb8c68ea40605d4cbcc2a19b1f9b70d9ce7635994cd09ff8a8d5d4cf"
+      },
+      "requests": [
+        {
+          "path": "work/quality-regeneration-20260925/comparison-support-v2/call-01.request.json",
+          "sha256": "a4d9a3a6b05d41928a4798fea4d2280500737c647351da788043c0a27c35a9a3"
+        }
+      ],
+      "responses": [
+        {
+          "path": "work/quality-regeneration-20260925/comparison-support-v2/call-01.response.txt",
+          "sha256": "b8e78f990f5ddf1a6ab56196e3f82b37389588fc647932858173dbf2453dfc9d"
+        }
+      ]
+    }
+  ],
+  "reports": [
+    {
+      "arxiv_id": "2506.15903",
+      "version": 1,
+      "artifacts": [
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.15903/report.md",
+          "sha256": "e2abb2f4e3c2befda6c7ffffe042ace6a89cd480a0dc031c3946ad4b867fe6a9"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.15903/report.html",
+          "sha256": "ca9cbe7cd4da8ec2e0d1021cb46c33750585f851f5cc754f813c95697e484dca"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.15903/evidence.json",
+          "sha256": "56bd0ca0a30803ea478be71ad5aa6bbedaed4044f4f5326fd89c4f9e7a2d0cf3"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.15903/metadata.json",
+          "sha256": "88f992758e97c399ca1f3b23df01b9ff552859e6e13229ab21d351f8c892f884"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.15903/paper.pdf",
+          "sha256": "e4694a991accffaecaaa90b3f9092db456c0f5917ef1f440313db6214f2854a2"
+        }
+      ],
+      "located_quotes": 14,
+      "rejected_quotes": 21,
+      "numeric_issue_reasons": {
+        "no_located_quote": 5,
+        "not_in_quote": 1
+      }
+    },
+    {
+      "arxiv_id": "2502.19453",
+      "version": 1,
+      "artifacts": [
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2502.19453/report.md",
+          "sha256": "ac6f27fe449c22ca718e7e01f22ca43c62e28cfe528895a2f315fc194aa9d75d"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2502.19453/report.html",
+          "sha256": "4665ad19c5e7b75df71b82f3cbbbbb69925e6db98f175ab8bc6b8f282d5f1221"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2502.19453/evidence.json",
+          "sha256": "8d16e9a47ffaf97011e9ca4b17f42b15f0f312ba6fb4a37ba76c16b4a1a0a3bc"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2502.19453/metadata.json",
+          "sha256": "56e3c1391226e070c170edc2eff99a7924d241a2f9e2f8d9b7de652f120d769a"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2502.19453/paper.pdf",
+          "sha256": "67fd081b6a0ae09fced523113b2722848ed6580d1ff636c0a120b76262477831"
+        }
+      ],
+      "located_quotes": 50,
+      "rejected_quotes": 24,
+      "numeric_issue_reasons": {
+        "not_in_quote": 2,
+        "no_located_quote": 1
+      }
+    },
+    {
+      "arxiv_id": "2506.03139",
+      "version": 1,
+      "artifacts": [
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.03139/report.md",
+          "sha256": "d2d88ad82cbca7809f460cb68b702627001533fc6c622f61209c5c9de84d4f65"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.03139/report.html",
+          "sha256": "bfae3ea4d53945f8ea0bf616b069a2fbb89cb17599a82b83d889cf5d11994b75"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.03139/evidence.json",
+          "sha256": "efefcf82767849f27cf676c271f4e67b1778bcdb2526bc74b281167834caada2"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.03139/metadata.json",
+          "sha256": "5ca1739cc42cb33ff38706d6a9cde61556c65f92f381ce6441c0e50609ca9819"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/2026-09-25/reports/2506.03139/paper.pdf",
+          "sha256": "7d8acb214a8af6fa6daa83b43a4222cae6389f2974757bce304b89e1ff3549ff"
+        }
+      ],
+      "located_quotes": 78,
+      "rejected_quotes": 61,
+      "numeric_issue_reasons": {
+        "not_in_quote": 4,
+        "no_located_quote": 46
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "stage": "comparison",
+      "checks": {
+        "version": 1,
+        "accepted_cells": 7,
+        "rejected_cells": 7,
+        "unknown_cells": 7,
+        "semantic_support": "not_assessed",
+        "numeric_scope": "literal_values_and_known_units_in_primary_support"
+      },
+      "artifacts": [
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/report.md",
+          "sha256": "9f82b8b38847c2e4f6ae256e312cb19254223bf4dd809c9c5b4f8c3890ab74a6"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/report.html",
+          "sha256": "eb50e4da3b758916dcc372d1dac0606d729c5deaec17c02cdc38f3b6d259ca37"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/sources.json",
+          "sha256": "a01963f7b52322e1d43015225bacaea8309587cd71d60a22da6ef8a7c880eb7f"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/matrix.json",
+          "sha256": "50ec1f9857ef877bfe91482ac60be6e7b2d917244efc7dce8bfa5b892f11842a"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-e5e74be17b57/metadata.json",
+          "sha256": "12e8cbacd149843c02f8ca8cc143cc53a90ebb28eb011308c99763858a0a0003"
+        }
+      ],
+      "rejection_reasons": {
+        "P1:关键结果": "numeric_mismatch",
+        "P1:局限性": "invalid_support",
+        "P1:复现成本": "invalid_support",
+        "P2:核心方法": "invalid_support",
+        "P2:实验条件": "invalid_support",
+        "P2:关键结果": "invalid_support",
+        "P2:局限性": "invalid_support"
+      }
+    },
+    {
+      "stage": "comparison-support-v2",
+      "checks": {
+        "version": 1,
+        "accepted_cells": 10,
+        "rejected_cells": 4,
+        "unknown_cells": 4,
+        "semantic_support": "not_assessed",
+        "numeric_scope": "literal_values_and_known_units_in_primary_support"
+      },
+      "artifacts": [
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/report.md",
+          "sha256": "d24dd48502815fbb289300ef29627681438f3a7c7a20a6f565ef7d397fd9930c"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/report.html",
+          "sha256": "f7dafd7e18bba5f6d6b648de914d0d443002531ab9d43103435db189ce13ad39"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/sources.json",
+          "sha256": "f2934ec4d274e058f4a1088093b0c45384467c5295f4ea37d9a3f5af6faed4c1"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/matrix.json",
+          "sha256": "90dfdd6ea79560b250f30b0f801e8b6b2946395ccac7396d179814a5568f9922"
+        },
+        {
+          "path": "work/quality-regeneration-20260925/library/comparisons/2026-09-25-quality-evaluation-0e7fd807788b/metadata.json",
+          "sha256": "b87bf55a1fa2376ebfd1ff0df5519dedfe8d6e55dc94cda6c14a91ecc0fc6fdc"
+        }
+      ],
+      "rejection_reasons": {
+        "P1:数据与任务": "numeric_mismatch",
+        "P1:实验条件": "numeric_mismatch",
+        "P1:关键结果": "numeric_mismatch",
+        "P1:复现成本": "numeric_mismatch"
+      }
+    }
+  ],
+  "targeted_checks": [
+    {
+      "paper": "2506.15903",
+      "id": "main_table",
+      "status": "supported",
+      "pdf_pages": [
+        4
+      ],
+      "assessment": "Seven model/baseline rows agree with Table 2 and now each has a located quote."
+    },
+    {
+      "paper": "2506.15903",
+      "id": "metric_scope",
+      "status": "supported",
+      "pdf_pages": [
+        4
+      ],
+      "assessment": "CLIP/DINO claim is scoped; MSE exceptions 8526 and 9627 versus 10488 retained."
+    },
+    {
+      "paper": "2506.15903",
+      "id": "dataset_url",
+      "status": "supported",
+      "pdf_pages": [
+        1
+      ],
+      "assessment": "Hugging Face URL retained and uniquely located."
+    },
+    {
+      "paper": "2506.15903",
+      "id": "front_matter",
+      "status": "partial",
+      "pdf_pages": [
+        1
+      ],
+      "assessment": "Institutions/category retained; new author typo Marek K駆lcík differs from arXiv author Marek Kadlčík."
+    },
+    {
+      "paper": "2502.19453",
+      "id": "baseline_rows",
+      "status": "supported",
+      "pdf_pages": [
+        5
+      ],
+      "assessment": "Original and Ground Truth separate; Original DINO 0.897, not 0.8971; both rows located."
+    },
+    {
+      "paper": "2502.19453",
+      "id": "resource_and_affiliation",
+      "status": "partial",
+      "pdf_pages": [
+        1,
+        7
+      ],
+      "assessment": "Tokyo affiliation and correct repository URL retained; repository quote failed exact location."
+    },
+    {
+      "paper": "2506.03139",
+      "id": "appendix_formulas",
+      "status": "supported",
+      "pdf_pages": [
+        18,
+        19
+      ],
+      "assessment": "CCR and rMSE expressions and symbol definitions retained; source formulas checked in earlier rendered pages."
+    },
+    {
+      "paper": "2506.03139",
+      "id": "formula_locations",
+      "status": "partial",
+      "pdf_pages": [
+        18,
+        19
+      ],
+      "assessment": "CCR formula locates at p18; rMSE formula quote fails but variable definitions and interpretation locate at p19."
+    },
+    {
+      "paper": "2506.03139",
+      "id": "pqa_values",
+      "status": "supported",
+      "pdf_pages": [
+        10
+      ],
+      "assessment": "82.72 GPT-4o Easy, 55.13 DeepSeek-R1 Medium, 44.44 DeepSeek-R1 Hard retained."
+    },
+    {
+      "paper": "2506.03139",
+      "id": "pss_weights",
+      "status": "supported",
+      "pdf_pages": [
+        10
+      ],
+      "assessment": "0.6 macro and 0.4 micro retained with located quote."
+    },
+    {
+      "paper": "2506.03139",
+      "id": "universal_decrease",
+      "status": "overgeneralization",
+      "pdf_pages": [
+        5,
+        10
+      ],
+      "assessment": "All-model monotonic PQA decline overstates table: GPT-4o 35.53 Medium to 42.22 Hard; Qwen3-1.7B 22.37 to 28.89."
+    },
+    {
+      "paper": "comparison",
+      "id": "vector_mse_exception",
+      "status": "supported",
+      "pdf_pages": [
+        4
+      ],
+      "assessment": "Final P2 key-results cell retains correct MSE exceptions backed by located rows."
+    },
+    {
+      "paper": "comparison",
+      "id": "semantic_coverage",
+      "status": "partial",
+      "pdf_pages": [],
+      "assessment": "P2 limitations support does not cover all instruction-noise details; literal rules are not semantic validation."
+    }
+  ]
+}

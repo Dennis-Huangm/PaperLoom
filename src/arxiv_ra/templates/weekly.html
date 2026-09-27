@@ -2,16 +2,20 @@
 {% block title %}研究周报 · PaperLoom{% endblock %}
 {% block content %}
   <header class="page-heading">
-    <div><p class="section-kicker">WEEKLY SYNTHESIS</p><h1>研究周报</h1><p>把分散的每日推荐整理为可追踪的研究趋势与问题线索。</p></div>
-    <form class="job-form" action="/api/jobs/weekly" method="post"><button class="button primary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>生成本周综述</button></form>
+    <div><p class="section-kicker">WEEKLY SYNTHESIS</p><h1>研究活动周报</h1><p>综合近 {{ config.weekly.days }} 天的推荐、收藏、阅读进度、报告生成与版本更新。</p></div>
+    <a class="button secondary" href="/compare">跨论文比较</a>
   </header>
+
+  <section class="feedback-panel"><h2>本期活动概览</h2><p>{{ activity.start[:10] }} 至 {{ activity.end[:10] }} · 新增收藏 {{ activity.counts.get('saved', 0) }} · 标记已读 {{ activity.counts.get('completed', 0) }} · 生成报告 {{ activity.counts.get('report', 0) }} · 发现新版 {{ activity.counts.get('version', 0) }} · 笔记更新 {{ activity.counts.get('notes', 0) }}</p><p>{{ activity.history_note }} 生成报告不等于已经读完。</p>
+    <form class="job-form" action="/api/jobs/weekly" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><label class="notes-option"><input type="checkbox" name="include_notes" value="true">将本期个人笔记与结论附入周报</label><p>个人笔记在模型生成后原样附入，不发送给模型。{% if config.obsidian.enabled and config.obsidian.auto_sync and config.obsidian.sync_weekly %}已启用自动同步，勾选后这些笔记也会写入当前 Obsidian 周报。{% endif %}每次生成保留独立版本。</p><button class="button primary" type="submit">生成研究活动周报</button></form>
+  </section>
 
   {% if weekly_reports %}
   <section class="weekly-grid">
     {% for report in weekly_reports %}
     <article class="weekly-card">
       <div class="weekly-card-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></div>
-      <div><span>{{ report.week_id }}</span><h2>{{ report.profile_name }}</h2><p>汇总 {{ report.paper_count }} 篇论文 · {{ report.generated_at[:16]|replace('T', ' ') }}</p></div>
+      <div><span>{{ report.week_id }}</span><h2>{{ report.profile_name }}</h2><p>汇总 {{ report.paper_count }} 篇论文 · {{ report.generated_at[:16]|replace('T', ' ') }}</p>{% if report.activity_counts %}<p>已读 {{ report.activity_counts.get('completed', 0) }} · 报告 {{ report.activity_counts.get('report', 0) }} · 新版 {{ report.activity_counts.get('version', 0) }}</p>{% endif %}{% if report.includes_personal_notes %}<p>含个人笔记</p>{% endif %}</div>
       <a class="button secondary" href="{{ report.report_url }}" target="_blank">打开周报</a>
     </article>
     {% endfor %}
@@ -19,4 +23,5 @@
   {% else %}
   <section class="empty-state"><i class="fas fa-chart-line" aria-hidden="true"></i><h1>还没有研究周报</h1><p>生成后会在这里按周归档。</p><a class="button primary" href="/generate">前往运行任务</a></section>
   {% endif %}
+  <section class="queue-section"><header><h2>本页任务</h2><a href="/generate">全部后台任务</a></header><div id="job-list" class="job-list"><div class="queue-empty">提交后在这里查看进度与结果。</div></div></section>
 {% endblock %}

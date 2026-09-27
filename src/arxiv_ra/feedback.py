@@ -7,6 +7,7 @@ from typing import Any
 
 from .models import Paper
 from .reading_state import ReadingStateStore
+from .ranker import _phrase_count
 
 
 VERDICTS = {
@@ -52,12 +53,18 @@ class FeedbackStore:
     def all(self) -> dict[str, dict[str, Any]]:
         return self.state.snapshot()["feedback"]
 
-    def set(self, paper: dict[str, Any], verdict: str) -> dict[str, Any]:
+    def set(self, paper: dict[str, Any], verdict: str, *, scope: str = "paper",
+            terms: list[str] | None = None) -> dict[str, Any]:
         if verdict not in VERDICTS:
             raise ValueError("无效的阅读反馈")
         arxiv_id = str(paper.get("arxiv_id") or "").strip()
         if not arxiv_id:
             raise ValueError("反馈缺少 arXiv ID")
+        if scope not in {"paper", "topic"}:
+            raise ValueError("无效的反馈范围")
+        terms = list(dict.fromkeys(term.strip().casefold() for term in (terms or []) if term.strip()))
+        if scope == "topic" and (not terms or len(terms) > 10 or any(len(t) < 2 or len(t) > 80 for t in terms)):
+            raise ValueError("主题屏蔽需要 1–10 个明确的词或短语，每项 2–80 字")
         entry = {
             "arxiv_id": arxiv_id,
             "verdict": verdict,
@@ -69,7 +76,8 @@ class FeedbackStore:
                 "primary_category": str(paper.get("primary_category") or ""),
                 "abs_url": str(paper.get("abs_url") or ""),
             },
-            "terms": _paper_terms(str(paper.get("title") or "")),
+            "scope": scope,
+            "terms": terms if scope == "topic" else [],
         }
         return self.state.dismiss(entry)
 
@@ -80,9 +88,12 @@ class FeedbackStore:
         self,
         library_entries: dict[str, dict[str, Any]] | None = None,
         library_limit: int = DEFAULT_LIBRARY_SIGNAL_LIMIT,
+        *, feedback_entries: dict | None = None,
     ) -> dict[str, float]:
         scores: dict[str, float] = {}
-        for entry in self.all().values():
+        for entry in (self.all() if feedback_entries is None else feedback_entries).values():
+            if entry.get("scope") == "paper":
+                continue
             weight = VERDICT_WEIGHTS.get(str(entry.get("verdict") or ""), 0.0)
             for term in entry.get("terms") or []:
                 scores[str(term)] = scores.get(str(term), 0.0) + weight
@@ -102,30 +113,39 @@ class FeedbackStore:
         papers: list[Paper],
         library_entries: dict[str, dict[str, Any]] | None = None,
         library_limit: int = DEFAULT_LIBRARY_SIGNAL_LIMIT,
+        *, feedback_entries: dict | None = None,
     ) -> None:
-        learned = self.learned_terms(library_entries, library_limit)
-        if not learned:
-            return
+        learned = self.learned_terms(library_entries, library_limit, feedback_entries=feedback_entries)
         for paper in papers:
             text = f"{paper.title} {paper.abstract}".casefold()
-            raw = sum(weight for term, weight in learned.items() if term in text)
+            raw = sum(weight for term, weight in learned.items() if _phrase_count(text, term))
             paper.feedback_score = round(max(-3.0, min(3.0, raw * 0.28)), 4)
+            paper.ranking_explanation["feedback_matches"] = [
+                {"term": term, "weight": weight} for term, weight in learned.items()
+                if weight and _phrase_count(text, term)]
 
     def blocks(self, paper: Paper) -> bool:
-        """Hard-filter papers that closely match a user-declared negative pattern."""
+        return bool(self.block_reasons(paper))
+
+    def block_reasons(self, paper: Paper, entries: dict | None = None) -> list[dict]:
+        """Explicit paper/topic rules; unscoped legacy rules retain their old meaning."""
+        reasons = []
         text = f"{paper.title} {paper.abstract}".casefold()
-        for entry in self.all().values():
+        for entry in (self.all() if entries is None else entries).values():
             if str(entry.get("verdict") or "") != "not_relevant":
                 continue
             if str(entry.get("arxiv_id") or "") == paper.arxiv_id:
-                return True
+                reasons.append({"rule_id": entry["arxiv_id"], "reason": "已排除此论文", "terms": []})
+                continue
+            if entry.get("scope") == "paper":
+                continue
             matches = {
                 str(term)
                 for term in (entry.get("terms") or [])
-                if str(term) and str(term) in text
+                if str(term) and (_phrase_count(text, str(term)) if entry.get("scope") == "topic" else str(term) in text)
             }
-            if any(" " in term for term in matches):
-                return True
-            if len(matches) >= 2:
-                return True
-        return False
+            if ((entry.get("scope") == "topic" and matches)
+                    or any(" " in term for term in matches) or len(matches) >= 2):
+                reasons.append({"rule_id": entry["arxiv_id"], "reason": "命中主题屏蔽" if entry.get("scope") else "命中历史相似主题规则",
+                                "terms": sorted(matches)})
+        return reasons
