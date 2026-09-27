@@ -151,9 +151,30 @@ class VersionTrackingConfig:
     auto_check: bool = True
     max_tracked: int = 50
     include_reports: bool = True
-    include_feedback: bool = True
+    include_feedback: bool = False  # Legacy setting; negative feedback is never a watch source.
+    include_library: bool = True
     include_zotero: bool = True
     analyze_pdf_diff: bool = True
+
+
+@dataclass(slots=True)
+class VersionSyncConfig:
+    enabled: bool = False
+    max_papers: int = 10
+    max_model_papers: int = 2
+    max_model_calls: int = 20
+    report: bool = False
+    zotero: bool = False
+    obsidian: bool = False
+
+    def validate(self) -> None:
+        for name, maximum in (("max_papers", 200), ("max_model_papers", 200), ("max_model_calls", 1000)):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError(f"{name} 必须在 1 到 {maximum} 之间")
+        for name in ("enabled", "report", "zotero", "obsidian"):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} 必须是布尔值")
 
 
 @dataclass(slots=True)
@@ -183,6 +204,7 @@ class AppConfig:
     jobs: JobsConfig = field(default_factory=JobsConfig)
     weekly: WeeklyConfig = field(default_factory=WeeklyConfig)
     version_tracking: VersionTrackingConfig = field(default_factory=VersionTrackingConfig)
+    version_sync: VersionSyncConfig = field(default_factory=VersionSyncConfig)
     citations: CitationConfig = field(default_factory=CitationConfig)
 
 
@@ -190,22 +212,30 @@ def _section(cls: type, data: dict[str, Any], name: str):
     return cls(**(data.get(name) or {}))
 
 
-def load_config(path: Path) -> AppConfig:
+def load_config(path: Path, *, profile_id: str | None = None) -> AppConfig:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    profile_id = ""
+    explicit_profile = profile_id is not None
+    if explicit_profile and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", profile_id):
+        raise ValueError("无效的研究方向 ID")
+    profile_id = profile_id or ""
     profile_name = "默认方向"
     active_path = path.parent / "profiles" / "active.txt"
-    if active_path.exists():
-        profile_id = active_path.read_text(encoding="utf-8").strip()
+    if explicit_profile or active_path.exists():
+        if not explicit_profile:
+            profile_id = active_path.read_text(encoding="utf-8").strip()
         profile_path = path.parent / "profiles" / f"{profile_id}.yaml"
         if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", profile_id) and profile_path.exists():
             profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
             profile_name = str(profile.get("name") or profile_id)
+            # Enabling automation in one direction must never enable another.
+            data["version_sync"] = profile.get("version_sync") or {}
             if profile.get("discovery"):
                 data["discovery"] = profile["discovery"]
             if profile.get("ranking"):
                 data["ranking"] = profile["ranking"]
         else:
+            if explicit_profile:
+                raise ValueError("调度指定的研究方向不存在")
             profile_id = ""
     return AppConfig(
         timezone=data.get("timezone", "Asia/Shanghai"),
@@ -223,5 +253,6 @@ def load_config(path: Path) -> AppConfig:
         jobs=_section(JobsConfig, data, "jobs"),
         weekly=_section(WeeklyConfig, data, "weekly"),
         version_tracking=_section(VersionTrackingConfig, data, "version_tracking"),
+        version_sync=_section(VersionSyncConfig, data, "version_sync"),
         citations=_section(CitationConfig, data, "citations"),
     )

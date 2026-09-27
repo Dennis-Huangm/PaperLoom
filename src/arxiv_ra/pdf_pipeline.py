@@ -229,11 +229,17 @@ class PDFParser:
             candidate.score = score_figure(candidate)
             figures.append(candidate)
         markdown = result.document.export_to_markdown()
+        # Docling Markdown has no stable physical page boundaries. Validate
+        # quotes against the actual PDF, independently of the report parser.
+        with fitz.open(pdf_path) as source:
+            total_pages = len(source)
+            page_texts = [source[i].get_text("text") for i in range(min(total_pages, self.config.max_pages))]
         return ParsedPaper(
             text=markdown,
-            page_texts=[markdown],
+            page_texts=page_texts,
             figures=sorted(figures, key=lambda item: item.score, reverse=True),
             parser="docling",
+            total_pages=total_pages,
         )
 
     def _parse_pymupdf(self, pdf_path: Path, output_dir: Path) -> ParsedPaper:
@@ -243,7 +249,8 @@ class PDFParser:
         figures_dir = output_dir / "figures"
         figures_dir.mkdir(parents=True, exist_ok=True)
         seen_xrefs: set[int] = set()
-        max_pages = min(len(document), self.config.max_pages)
+        total_pages = len(document)
+        max_pages = min(total_pages, self.config.max_pages)
         for page_index in range(max_pages):
             page = document[page_index]
             text = page.get_text("text")
@@ -280,4 +287,5 @@ class PDFParser:
             page_texts=page_texts,
             figures=page_figures + sorted(figures, key=lambda item: item.score, reverse=True),
             parser="pymupdf",
+            total_pages=total_pages,
         )

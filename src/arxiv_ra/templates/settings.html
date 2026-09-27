@@ -3,6 +3,7 @@
 {% block content %}
   <header class="page-heading compact-heading">
     <div><p class="section-kicker">CONFIGURATION</p><h1>完整配置中心</h1><p>运行参数与本地凭据分开保存；现有密钥永不回显。</p></div>
+    <a class="button secondary" href="/backups">备份与恢复</a>
   </header>
   {% if saved == 'config' %}<div class="notice success">✓ 全局设置已写入 config.yaml，检索与排序参数已写入当前研究方向档案。</div>{% endif %}
   {% if saved == 'credentials' %}<div class="notice success">✓ API 与邮箱凭据已安全写入本地 .env，并已应用到当前进程。</div>{% endif %}
@@ -28,7 +29,7 @@
   <section class="form-section credential-section" id="credentials">
     <p class="section-kicker">LOCAL SECRETS · .ENV</p><h2>API 与邮箱凭据</h2>
     <div class="notice secret-notice"><strong>安全设计</strong><p>现有值永不回显。留空表示保持不变；只有勾选“清除”才会删除。凭据只写入本机 `.env`，不会进入脱敏压缩包。</p></div>
-    <form method="post" action="/settings/credentials" autocomplete="off">
+    <form method="post" action="/settings/credentials" autocomplete="off"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
       <div class="credential-grid">
         {% for item in credentials %}
         <label class="credential-card">
@@ -44,7 +45,7 @@
     </form>
   </section>
 
-  <form class="settings-form" method="post" action="/settings/config">
+  <form class="settings-form" method="post" action="/settings/config"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
     <section class="form-section" id="general">
       <p class="section-kicker">APPLICATION</p><h2>常规设置</h2>
       <div class="form-columns">
@@ -215,12 +216,13 @@
     <section class="form-section" id="research-tracking">
       <p class="section-kicker">VERSION & CITATION GRAPH</p><h2>版本追踪与相关工作</h2>
       <h3>arXiv 版本追踪</h3>
+      <p>检查完成后的自动下载、报告与外部同步策略，请到<a href="/versions">追踪页</a>按研究方向单独设置。</p>
       <div class="config-grid four">
-        <label>最多追踪论文<input type="number" name="version_tracking_max_tracked" min="1" max="500" value="{{ config.version_tracking.max_tracked }}"></label>
+        <label>每轮检查篇数<input type="number" name="version_tracking_max_tracked" min="1" max="500" value="{{ config.version_tracking.max_tracked }}"></label>
         <label class="toggle-field"><span>启用版本追踪</span><input type="checkbox" name="version_tracking_enabled" value="true" {% if config.version_tracking.enabled %}checked{% endif %}></label>
         <label class="toggle-field"><span>每日任务自动检查</span><input type="checkbox" name="version_tracking_auto_check" value="true" {% if config.version_tracking.auto_check %}checked{% endif %}></label>
         <label class="toggle-field"><span>追踪本地报告</span><input type="checkbox" name="version_tracking_include_reports" value="true" {% if config.version_tracking.include_reports %}checked{% endif %}></label>
-        <label class="toggle-field"><span>追踪阅读反馈</span><input type="checkbox" name="version_tracking_include_feedback" value="true" {% if config.version_tracking.include_feedback %}checked{% endif %}></label>
+        <label class="toggle-field"><span>追踪收藏论文</span><input type="checkbox" name="version_tracking_include_library" value="true" {% if config.version_tracking.include_library %}checked{% endif %}></label>
         <label class="toggle-field"><span>追踪 Zotero 文献</span><input type="checkbox" name="version_tracking_include_zotero" value="true" {% if config.version_tracking.include_zotero %}checked{% endif %}></label>
         <label class="toggle-field"><span>生成 PDF 差异报告</span><input type="checkbox" name="version_tracking_analyze_pdf_diff" value="true" {% if config.version_tracking.analyze_pdf_diff %}checked{% endif %}></label>
       </div>

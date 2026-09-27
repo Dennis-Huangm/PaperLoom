@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import hashlib
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,26 +132,44 @@ class ZoteroClient:
             )
             self._create_summary_note(item_key, paper, profile_name)
         attachments_added = 0
+        revision_label = f" · v{paper['version']}" if paper.get("version") else ""
         if self.config.attach_report and report_path and report_path.exists():
             attachments_added += int(
                 self._create_linked_attachment(
                     item_key,
                     report_path,
-                    "PaperLoom 阅读报告",
+                    f"PaperLoom 阅读报告 · {profile_name}{revision_label}",
                     "text/html",
                 )
             )
         if self.config.attach_pdf and pdf_path and pdf_path.exists():
             if self.config.pdf_attachment_mode == "linked_file":
                 added = self._create_linked_attachment(
-                    item_key, pdf_path, "论文 PDF", "application/pdf"
+                    item_key, pdf_path, f"论文 PDF{revision_label}", "application/pdf"
                 )
             else:
                 added = self._create_imported_attachment(
-                    item_key, pdf_path, "论文 PDF", "application/pdf"
+                    item_key, pdf_path, f"论文 PDF{revision_label}", "application/pdf"
                 )
             attachments_added += int(added)
         return ZoteroSaveResult(item_key, created, attachments_added)
+
+    def list_trackable_papers(self) -> list[dict[str, str]]:
+        """Translate Zotero fields into revision-independent arXiv identities."""
+        if not self.status().get("ready"):
+            raise ZoteroUnavailable("Zotero 本地 API 未连接")
+        identity = r"(?:[a-z-]+(?:\.[a-z]{2})?/\d{7}|\d{4}\.\d{4,5})(?:v\d+)?"
+        pattern = re.compile(r"arxiv(?:\.org/(?:abs|pdf)/|[:/\s]+)(" + identity + r")", re.I)
+        papers = {}
+        for wrapper in self._get_items("/users/0/items/top", {"format": "json"}):
+            data = wrapper.get("data", wrapper)
+            archive_id = str(data.get("archiveID") or "").strip()
+            match = pattern.search(" ".join(str(data.get(field) or "") for field in ("archiveID", "extra", "url")))
+            aid = match.group(1) if match else archive_id if re.fullmatch(identity, archive_id, re.I) else ""
+            if aid:
+                aid = re.sub(r"v\d+$", "", aid, flags=re.I)
+                papers[aid] = {"arxiv_id": aid, "title": str(data.get("title") or "")}
+        return list(papers.values())
 
     def list_collections(self) -> list[dict[str, str]]:
         items = self._get_items("/users/0/collections", {"format": "json"})
@@ -499,12 +518,7 @@ class ZoteroClient:
         for child in children:
             data = child.get("data", child)
             if (
-                content_type == "application/pdf"
-                and str(data.get("contentType") or "").casefold() == "application/pdf"
-            ):
-                return False
-            if (
-                str(data.get("filename") or "").casefold() == resolved.name.casefold()
+                str(data.get("contentType") or "").casefold() == content_type.casefold()
                 and str(data.get("md5") or "").casefold() == digest
             ):
                 return False

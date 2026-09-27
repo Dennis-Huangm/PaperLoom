@@ -23,7 +23,7 @@ if (Test-Path -LiteralPath $workRoot) {
 }
 New-Item -ItemType Directory -Force -Path $packageRoot, $wheelRoot, $releaseRoot | Out-Null
 
-$directories = @(".github", "assets", "docs", "scripts", "src", "tests")
+$directories = @(".github", "assets", "docs", "requirements", "scripts", "src", "tests")
 foreach ($name in $directories) {
     $source = Join-Path $projectRoot $name
     if (Test-Path -LiteralPath $source) {

@@ -1,0 +1,322 @@
+{
+  "generated_at": "2026-09-25T04:30:20.072453+00:00",
+  "suite_sha256": "e71dc15819a0dd5a99ca46775483afa30d32c27895278d5ae1537dda4ec82716",
+  "scope": "synthetic offline guard checks, not model accuracy or semantic entailment evaluation",
+  "passed": 8,
+  "scored": 23,
+  "manual_review": 1,
+  "cases": [
+    {
+      "id": "report_correct_short",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "report_invented_number",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_percent_points",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_unit_change",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_unit_alias",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "report_unsupported_no_quote",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 0
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 0
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_scan_no_text",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 0
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 0
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_duplicate_page_quote",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 0
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 0
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_table_row",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_formula_not_experiment",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "report_math_scalar",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "report_formatting_equivalent",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "report_new_revision_old_claim",
+      "type": "report",
+      "actual": {
+        "flagged": false,
+        "citations": 1
+      },
+      "expected": {
+        "flagged": true,
+        "citations": 1
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_supported_number",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "source"
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "compare_invented_number",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_wrong_paper",
+      "type": "comparison",
+      "actual": {
+        "kind": "unknown"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "compare_no_support_span",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_fabricated_support",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_secondary_report",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "inference"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_explicit_inference",
+      "type": "comparison",
+      "actual": {
+        "kind": "inference"
+      },
+      "expected": {
+        "kind": "inference"
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "compare_unsupported_computed_gain",
+      "type": "comparison",
+      "actual": {
+        "kind": "inference"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_unchecked_ranking",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": false
+    },
+    {
+      "id": "compare_missing_dimension",
+      "type": "comparison",
+      "actual": {
+        "kind": "unknown"
+      },
+      "expected": {
+        "kind": "unknown"
+      },
+      "manual_review": null,
+      "passed": true
+    },
+    {
+      "id": "compare_metric_swap_manual",
+      "type": "comparison",
+      "actual": {
+        "kind": "source"
+      },
+      "expected": null,
+      "manual_review": "数值均在摘录中，但指标归属被交换；数值字面检查无法判断语义支持。",
+      "passed": null
+    }
+  ]
+}

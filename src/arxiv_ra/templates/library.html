@@ -3,12 +3,13 @@
 {% block content %}
   <header class="page-heading library-heading">
     <div><p class="section-kicker">SAVED PAPERS</p><h1>我的文献库</h1><p>保存当前研究方向中值得长期跟进的论文，不受每日推荐刷新影响。</p></div>
-    <span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>{{ config.profile_name }} · {{ entries|length }} 篇</span>
+    <div><span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>{{ config.profile_name }} · {{ entries|length }} 篇</span> <a class="button secondary" href="/compare">跨论文比较</a></div>
   </header>
 
   <form class="library-search" method="get">
     <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
-    <input name="q" value="{{ query }}" placeholder="搜索已保存论文的标题、作者或 arXiv ID">
+    <input name="q" value="{{ query }}" placeholder="搜索标题、作者、标签或个人笔记">
+    <select name="reading_status" aria-label="按阅读进度筛选"><option value="">全部进度</option>{% for value, label in reading_statuses.items() %}<option value="{{ value }}" {% if reading_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     {% if query %}<a href="/library" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
     <button type="submit">搜索</button>
   </form>
@@ -26,23 +27,39 @@
       <p class="saved-paper-authors">{% for author in paper.authors[:5] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if paper.authors|length > 5 %} et al.{% endif %}</p>
       <section>
         <strong>摘要精要</strong>
-        <p>{{ paper.abstract_zh or paper.abstract }}</p>
+        <div class="paper-summary">{{ (paper.abstract_zh or paper.abstract)|summary_html|safe }}</div>
       </section>
       <section class="saved-paper-reason">
         <strong>保存价值</strong>
-        <p>{{ paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。' }}</p>
+        <div class="paper-summary">{{ (paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。')|summary_html|safe }}</div>
       </section>
+      <details class="reading-editor" {% if entry.reading.notes or entry.reading.status != 'unread' %}open{% endif %}>
+        <summary>阅读记录 · <span class="reading-summary">{{ reading_statuses[entry.reading.status] }}{% if entry.reading.read_version %} v{{ entry.reading.read_version }}{% endif %}</span></summary>
+        <p class="reading-context">收藏版本：{% if paper.version %}v{{ paper.version }}{% else %}未知{% endif %}。新版同步后保留你的阅读版本与个人结论。</p>
+        <form class="reading-form" action="/api/library/reading" method="post">
+          <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+          <input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}">
+          <input type="hidden" name="expected_updated_at" value="{{ entry.reading.updated_at }}">
+          <div class="reading-fields">
+            <label>阅读进度<select name="reading_status">{% for value, label in reading_statuses.items() %}<option value="{{ value }}" {% if entry.reading.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            <label>阅读修订版<input type="number" name="read_version" min="1" {% if paper.version %}max="{{ paper.version }}"{% endif %} value="{{ entry.reading.read_version or '' }}" placeholder="已读时默认当前版本"></label>
+            <label>标签<input name="tags" value="{{ entry.reading.tags|join(', ') }}" placeholder="方法、可复现、待比较（用逗号分隔）"></label>
+          </div>
+          <label>个人笔记与结论<textarea name="notes" rows="4" maxlength="20000" placeholder="记录你的判断、疑问和下一步实验；与模型报告分别保留。">{{ entry.reading.notes }}</textarea></label>
+          <div class="reading-save"><button class="button secondary" type="submit">保存阅读记录</button><span class="reading-save-status" role="status">{% if entry.reading.completed_at %}读完于 {{ entry.reading.completed_at[:10] }}{% endif %}</span></div>
+        </form>
+      </details>
       <footer>
         <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span>
         {% if entry.report_url %}
         <a href="{{ entry.report_url }}" target="_blank"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
         {% else %}
-        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
+        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
         {% endif %}
         <a href="{{ paper.abs_url }}" target="_blank" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
         <a href="{{ paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
-        <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>Zotero</button></form>
-        <form action="/library/remove" method="post"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
+        <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>Zotero</button></form>
+        <form action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
       </footer>
     </article>
     {% endfor %}

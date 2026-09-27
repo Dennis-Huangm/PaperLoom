@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from arxiv_ra.abstracts import localize_abstracts
 from arxiv_ra.config import AppConfig
 from arxiv_ra.library import PaperLibraryStore
+from arxiv_ra.task_runtime import task_progress, task_warning
 from arxiv_ra.utils import read_json, write_json
 from arxiv_ra.web import (
     JobManager,
@@ -138,7 +139,7 @@ def _full_settings_form() -> dict[str, str]:
         "version_tracking_auto_check": "true",
         "version_tracking_max_tracked": "50",
         "version_tracking_include_reports": "true",
-        "version_tracking_include_feedback": "true",
+        "version_tracking_include_library": "true",
         "version_tracking_include_zotero": "true",
         "version_tracking_analyze_pdf_diff": "true",
         "citations_enabled": "true",
@@ -396,6 +397,60 @@ def test_localized_abstracts_are_generated_once_and_cached(tmp_path: Path, monke
     assert recommendations[0]["paper"]["abstract_zh"].startswith("该论文研究")
     assert "AgenticT2I" in recommendations[0]["paper"]["recommendation_detail"]
     assert len(calls) == 1
+
+
+def test_background_job_surfaces_llm_localization_failure_as_component_warning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class BrokenLLM:
+        enabled = True
+        client = None
+
+        def __init__(self, _config) -> None:
+            pass
+
+        def chat(self, *_args, **_kwargs) -> str:
+            raise ConnectionError("invalid LLM base URL")
+
+    monkeypatch.setattr("arxiv_ra.abstracts.LLMClient", BrokenLLM)
+    manager = JobManager(tmp_path, max_parallel=1)
+    result = tmp_path / "digest.html"
+    warning_published = threading.Event()
+    finish = threading.Event()
+    recommendations = [
+        {
+            "paper": {
+                "arxiv_id": "2609.00099",
+                "title": "Silent fallback",
+                "abstract": "An abstract that should be localized by the LLM.",
+                "recommendation_reason": "keyword fallback",
+            }
+        }
+    ]
+
+    def task() -> Path:
+        localize_abstracts(AppConfig(), tmp_path, recommendations)
+        warning_published.set()
+        finish.wait(2)
+        result.write_text("done", encoding="utf-8")
+        return result
+
+    job = manager.submit("digest", "test", task)
+    assert warning_published.wait(1)
+    running = manager.get(job.id)
+    assert running.status == "running"
+    assert running.warnings[0]["component"] == "LLM 摘要生成"
+    assert "Base URL" in running.warnings[0]["message"]
+
+    finish.set()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and manager.get(job.id).status in {"queued", "running"}:
+        time.sleep(0.01)
+
+    completed = manager.get(job.id)
+    assert completed.status == "succeeded_with_warnings"
+    assert "1 个组件异常" in completed.detail
+    manager.executor.shutdown(wait=True)
 
 
 def test_non_generating_localization_is_fast_and_does_not_write_cache(
@@ -719,7 +774,7 @@ def test_redesigned_ui_uses_research_workspace_and_local_icon_library(tmp_path: 
     assert "primary-nav" in home.text
     assert "vendor/fontawesome/css/all.min.css" in home.text
     assert "app-icon.ico" in home.text
-    assert "20260911-calendar" in home.text
+    assert "20260927-summary" in home.text
     assert "literature-workspace" not in home.text  # empty test data uses the intentional empty state
     assert "paper-grid" not in home.text
     assert "report-table" not in reports.text  # empty report library uses the intentional empty state
@@ -808,6 +863,91 @@ def test_job_manager_runs_in_parallel_and_merges_duplicate_targets(tmp_path: Pat
         time.sleep(0.02)
     assert all(manager.get(job.id).status == "succeeded" for job in (first, second, third))
     manager.executor.shutdown(wait=True)
+
+
+def test_job_manager_reports_progress_and_cooperatively_cancels_running_job(tmp_path: Path) -> None:
+    manager = JobManager(tmp_path, max_parallel=1)
+    progress_sent = threading.Event()
+    continue_work = threading.Event()
+
+    def task() -> Path:
+        task_progress("正在处理第一阶段…", 25)
+        progress_sent.set()
+        continue_work.wait(2)
+        task_progress("不应执行的第二阶段", 75)
+        return tmp_path / "result.html"
+
+    job = manager.submit("report", "arXiv:1", task)
+    assert progress_sent.wait(1)
+    assert manager.get(job.id).progress == 25
+    assert manager.get(job.id).detail == "正在处理第一阶段…"
+    assert manager.cancel(job.id).status == "cancelling"
+    continue_work.set()
+
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and manager.get(job.id).status != "cancelled":
+        time.sleep(0.01)
+    assert manager.get(job.id).status == "cancelled"
+    assert manager.get(job.id).result_url is None
+    manager.executor.shutdown(wait=True)
+
+
+def test_job_manager_cancels_queued_job_without_running_it(tmp_path: Path) -> None:
+    manager = JobManager(tmp_path, max_parallel=1)
+    release = threading.Event()
+    started = threading.Event()
+    manager.submit("report", "running", lambda: (release.wait(2), tmp_path / "done.html")[1])
+    pending = manager.submit(
+        "report",
+        "pending",
+        lambda: (started.set(), tmp_path / "unexpected.html")[1],
+    )
+
+    cancelled = manager.cancel(pending.id)
+    assert cancelled.status == "cancelled"
+    assert started.wait(0.1) is False
+    release.set()
+    manager.executor.shutdown(wait=True)
+
+
+def test_job_cancel_api_and_generate_page_expose_cancel_state(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    app = create_app(config_path)
+    app.state.jobs.set_max_parallel(1)
+    release = threading.Event()
+    started = threading.Event()
+
+    def task() -> Path:
+        task_progress("正在等待外部服务…", 35)
+        task_warning("测试组件", "组件已降级，任务继续运行")
+        started.set()
+        release.wait(2)
+        task_progress("继续处理", 60)
+        return tmp_path / "result.html"
+
+    with TestClient(app) as client:
+        job = app.state.jobs.submit("report", "arXiv:1", task)
+        assert started.wait(1)
+        page = client.get("/generate")
+        assert 'data-cancel-job="' + job.id + '"' in page.text
+        assert "35% · 正在等待外部服务…" in page.text
+        assert "测试组件" in page.text
+        assert "组件已降级，任务继续运行" in page.text
+
+        response = client.post(f"/api/jobs/{job.id}/cancel")
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelling"
+        assert "当前步骤结束后将停止" in response.json()["detail"]
+        release.set()
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            payload = client.get(f"/api/jobs/{job.id}").json()
+            if payload["status"] == "cancelled":
+                break
+            time.sleep(0.01)
+        assert payload["status"] == "cancelled"
 
 
 def test_all_queued_jobs_keep_submission_profile_and_distinct_identity(tmp_path, monkeypatch):

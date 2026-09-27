@@ -1,5 +1,6 @@
 import httpx
 import pytest
+import ssl
 
 from arxiv_ra.arxiv_client import ArxivClient, parse_feed
 
@@ -29,6 +30,44 @@ def test_parse_feed() -> None:
     assert paper.primary_category == "cs.AI"
     assert paper.version == 2
     assert paper.doi == "10.0000/example"
+
+
+def test_search_advertises_standard_https_tls_capability_without_changing_query(monkeypatch):
+    """Model the observed cold-query rejection at the client construction seam."""
+    factory = httpx.Client
+    requests = []
+    def create_client(**kwargs):
+        context = kwargs.get('verify')
+        if context is None:
+            context = httpx.create_ssl_context()
+        assert isinstance(context, ssl.SSLContext)
+        assert context.verify_mode == ssl.CERT_REQUIRED
+        assert context.check_hostname is True
+        def server(request):
+            requests.append(request)
+            # Real 406/cache-MISS and 200/cache-MISS probes are recorded separately.
+            return httpx.Response(200, text=ATOM) if context.post_handshake_auth else httpx.Response(406)
+        return factory(**kwargs, transport=httpx.MockTransport(server))
+    monkeypatch.setattr(httpx, 'Client', create_client)
+    client = ArxivClient(min_interval=0)
+    try:
+        papers = client.search(['cs.CV', 'cs.AI'], 45, 2, ['image generation', 'SVG'])
+    finally:
+        client.client.close()
+    assert len(papers) == 1
+    assert len(requests) == 1
+    query = requests[0].url.params['search_query']
+    assert '(cat:cs.CV OR cat:cs.AI) AND submittedDate:' in query
+    assert '(all:"image generation" OR all:"SVG")' in query
+    assert requests[0].url.params['max_results'] == '2'
+
+
+def test_arxiv_tls_still_rejects_invalid_custom_ca_file(tmp_path, monkeypatch):
+    path = tmp_path / 'invalid-ca.pem'
+    path.write_text('not a certificate', encoding='utf-8')
+    monkeypatch.setenv('SSL_CERT_FILE', str(path))
+    with pytest.raises(ssl.SSLError):
+        ArxivClient()
 
 
 def test_arxiv_client_retries_transient_connection_reset(monkeypatch) -> None:

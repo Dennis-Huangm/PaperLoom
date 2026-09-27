@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}反馈与筛选记录 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">RECOMMENDATION CONTROLS</p><h1>反馈与筛选记录</h1><p>规则只影响当前研究方向。撤销后，下次运行推荐时生效，历史推荐和筛选记录保持原样。</p></div><a class="button secondary" href="/">返回推荐</a></header>
+<section class="feedback-panel"><h2>当前排除规则</h2>
+<p>“仅排除此论文”不新增主题屏蔽规则；“屏蔽主题词”匹配标题或摘要中的任一所填词。排除已收藏的论文会同时移出文献库，撤销时恢复原收藏。历史规则保留原有的相似主题过滤行为，可在这里撤销。已导出到 Obsidian 的历史反馈不会因本地撤销而改写。</p>
+{% for entry in feedback_entries %}
+<article class="feedback-rule"><div><h3>{{ entry.paper.title or entry.arxiv_id }}</h3><p>{{ entry.arxiv_id }} · {% if entry.scope == 'paper' %}仅排除此论文{% elif entry.scope == 'topic' %}排除此论文并屏蔽主题词{% else %}历史相似主题规则{% endif %}</p>{% if entry.terms %}<p>匹配词：{{ entry.terms|join('、') }}</p>{% endif %}</div>
+<form class="feedback-undo-form" action="/api/feedback/undo" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ entry.arxiv_id }}"><input type="hidden" name="expected_updated_at" value="{{ entry.updated_at or '' }}"><button class="button secondary" type="submit">撤销此规则</button></form></article>
+{% else %}<p>当前没有排除规则。</p>{% endfor %}</section>
+<section class="feedback-panel"><h2>每次推荐的筛选结果</h2><p>只记录当次检索返回的候选。未被检索源返回的论文无法在这里解释；分数与规则为当时快照。</p>
+{% if audit_runs %}<form method="get" class="audit-picker"><label for="audit-run">选择运行记录（最近 100 次）</label><select name="audit" id="audit-run">{% for run in audit_runs %}<option value="{{ run.id }}" {% if run.id == selected_audit %}selected{% endif %}>{{ run.label }}</option>{% endfor %}</select><button class="button secondary" type="submit">查看</button></form>
+<p>{{ (selection_audit.created_at or '')[:19]|replace('T', ' ') }} · 共 {{ selection_audit.get('items', [])|length }} 篇候选</p>
+{% for item in selection_audit.get('items', []) %}<details class="audit-row"><summary>{{ '入选' if item.selected else '未入选' }} · {{ item.paper.title }} · {{ item.paper.arxiv_id }}</summary>
+<ul>{% for reason in item.reasons %}<li>{{ reason.reason }}{% if reason.terms %}：{{ reason.terms|join('、') }}{% endif %}{% if reason.rule_id %}（规则来源 {{ reason.rule_id }}）{% endif %}</li>{% else %}<li>满足筛选条件并进入本次推荐名额。</li>{% endfor %}</ul>
+<p>词法分 {{ item.paper.lexical_score }} · 模型分 {{ item.paper.llm_score if item.paper.llm_score is not none else '未评分' }} · 反馈分 {{ item.paper.feedback_score }} · 综合分 {{ item.paper.final_score }}</p></details>{% endfor %}
+{% else %}<p>暂无筛选快照。升级后运行一次推荐即可查看。</p>{% endif %}</section>
+{% endblock %}

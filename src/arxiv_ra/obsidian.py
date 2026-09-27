@@ -16,7 +16,10 @@ from .feedback import FeedbackStore
 from .library import PaperLibraryStore
 from .research_clients import ResearchClients
 from .storage import read_recommendations
+from .report_store import matching_report, profile_matches, quality_rank
+from .report_presentation import compact_report
 from .utils import atomic_write_text, read_json, write_json
+from .task_runtime import task_checkpoint, task_progress, task_warning
 
 
 MANAGED_START = "<!-- ARXIV_RA_MANAGED_START -->"
@@ -96,16 +99,42 @@ class ObsidianExporter:
     @_serialized_sync
     def sync_all(self) -> Path:
         self._require_enabled()
+        task_progress("正在扫描本地推荐、报告和周报…", 6)
         feedback = FeedbackStore(self.output_root, self.config.profile_id).all()
-        for date_dir in sorted(self.output_root.glob("????-??-??")):
+        date_dirs = sorted(self.output_root.glob("????-??-??"))
+        def report_order(path: Path):
+            payload = read_json(path, {}) or {}
+            return (bool(payload.get("profile_id")),
+                    int((payload.get("paper") or {}).get("version") or 0),
+                    quality_rank(payload),
+                    path.stat().st_mtime_ns, str(path))
+
+        report_paths = sorted(self.output_root.glob("????-??-??/reports/*/metadata.json"), key=report_order)
+        weekly_paths = sorted(self.output_root.glob("weekly/*/metadata.json"),
+                              key=lambda path: str((read_json(path, {}) or {}).get("generated_at") or ""))
+        total = len(date_dirs) + len(report_paths) + len(weekly_paths)
+        completed = 0
+        for date_dir in date_dirs:
+            task_progress(
+                f"正在同步每日推荐：{date_dir.name}",
+                12 + round(70 * completed / max(total, 1)),
+            )
             recommendations = read_recommendations(
                 self.output_root, date_dir.name, self.config.profile_id
             )
             if recommendations and self.settings.sync_daily:
                 self.sync_daily(date_dir.name, recommendations, feedback=feedback, rebuild=False)
+            completed += 1
         if self.settings.sync_reports:
-            for metadata_path in sorted(self.output_root.glob("????-??-??/reports/*/metadata.json")):
+            for metadata_path in report_paths:
+                task_progress(
+                    f"正在同步阅读报告（{completed + 1}/{total}）…",
+                    12 + round(70 * completed / max(total, 1)),
+                )
                 payload = read_json(metadata_path, {}) or {}
+                if not profile_matches(payload, self.config.profile_id):
+                    completed += 1
+                    continue
                 report_path = metadata_path.parent / "report.md"
                 if report_path.exists():
                     self.sync_report(
@@ -115,15 +144,25 @@ class ObsidianExporter:
                         feedback=feedback,
                         rebuild=False,
                     )
+                completed += 1
         if self.settings.sync_weekly:
-            for metadata_path in sorted(self.output_root.glob("weekly/*/metadata.json")):
+            for metadata_path in weekly_paths:
+                task_progress(
+                    f"正在同步研究周报（{completed + 1}/{total}）…",
+                    12 + round(70 * completed / max(total, 1)),
+                )
                 report_path = metadata_path.parent / "report.md"
-                if report_path.exists():
+                payload = read_json(metadata_path, {}) or {}
+                if report_path.exists() and profile_matches(payload, self.config.profile_id):
                     self.sync_weekly(
-                        read_json(metadata_path, {}) or {}, report_path, rebuild=False
+                        payload, report_path, rebuild=False
                     )
+                completed += 1
+        task_progress("正在更新研究方向和知识库索引…", 88)
         self._sync_profile()
-        return self.rebuild_indexes()
+        result = self.rebuild_indexes()
+        task_checkpoint()
+        return result
 
     @_serialized_sync
     def sync_daily(
@@ -143,6 +182,9 @@ class ObsidianExporter:
             for item in recommendations
             if str(item.get("profile_id") or "") in {"", self.config.profile_id}
         ]
+        # A daily aggregate can include several revisions. Leave each paper's
+        # current note on the highest known revision, independent of batch order.
+        recommendations.sort(key=lambda item: int((item.get("paper") or {}).get("version") or 0))
         paper_links: list[tuple[dict[str, Any], str, dict[str, Any] | None]] = []
         for item in recommendations:
             paper = item.get("paper") or {}
@@ -266,7 +308,7 @@ class ObsidianExporter:
         manifest = self._manifest()
         for paper in metadata.get("papers") or []:
             arxiv_id = str(paper.get("arxiv_id") or "")
-            item = (manifest.get("papers") or {}).get(arxiv_id)
+            item = self._paper_entry(manifest, arxiv_id)
             if item:
                 related.append(f"- [[{item['note']}|{paper.get('title') or arxiv_id}]]")
         if related:
@@ -289,7 +331,11 @@ class ObsidianExporter:
             body,
             "\n## 我的周总结\n\n",
         )
-        manifest.setdefault("weekly", {})[week_id] = self._vault_relative(path)
+        weekly_entries = manifest.setdefault("weekly", {})
+        # Replace the old single-week key only when it points to this same note.
+        if weekly_entries.get(week_id) == self._vault_relative(path):
+            weekly_entries.pop(week_id)
+        weekly_entries[f"{self.config.profile_id or 'default'}::{week_id}"] = self._vault_relative(path)
         self._save_manifest(manifest)
         if rebuild:
             self._sync_profile()
@@ -302,10 +348,11 @@ class ObsidianExporter:
         paper: dict[str, Any],
         feedback: dict[str, Any],
         verified: dict[str, Any] | None = None,
+        *, paper_dir: Path | None = None,
     ) -> Path:
         self._require_enabled()
         path = self._sync_paper_note(
-            paper, verified or {}, feedback, report_markdown="", report_dir=None
+            paper, verified or {}, feedback, report_markdown="", report_dir=paper_dir
         )
         self.rebuild_indexes()
         return path
@@ -415,13 +462,8 @@ class ObsidianExporter:
         year = date[:4]
         path = self._paper_path(arxiv_id, title, year)
         if not report_markdown:
-            report_candidates = sorted(
-                self.output_root.glob(
-                    f"????-??-??/reports/{arxiv_id.replace('/', '-')}-*/report.md"
-                )
-            )
-            if report_candidates:
-                source_report = report_candidates[-1]
+            source_report = matching_report(self.output_root, self.config.profile_id, paper)
+            if source_report:
                 report_markdown = source_report.read_text(encoding="utf-8")
                 report_dir = source_report.parent
                 metadata = read_json(source_report.parent / "metadata.json", {}) or {}
@@ -469,18 +511,29 @@ class ObsidianExporter:
                 ]
             )
         if report_markdown:
-            report_body = re.sub(r"(?m)^#\s+.*?\n", "", report_markdown, count=1).strip()
+            report_body = re.sub(r"(?m)^#\s+.*?\n", "", compact_report(report_markdown), count=1).strip()
             report_body = self._strip_redundant_abstract(
                 report_body, str(paper.get("abstract") or "")
             )
             report_body = self._to_obsidian_math(report_body)
             if report_dir and self.settings.copy_figures:
-                report_body = self._copy_and_rewrite_images(report_body, report_dir, arxiv_id)
+                report_body = self._copy_and_rewrite_images(report_body, report_dir, arxiv_id, paper.get("version"))
+            if report_dir and "](evidence.json)" in report_body:
+                evidence = report_dir / "evidence.json"
+                if evidence.is_file():
+                    destination = self._attachment_folder(arxiv_id, paper.get("version")) / evidence.name
+                    self._copy_if_changed(evidence, destination)
+                    reference = self._vault_relative(destination, keep_suffix=True)
+                    report_body = re.sub(r"\[([^\]\n]+)\]\(evidence\.json\)",
+                                         lambda m: self._wikilink_reference(reference, m[1]), report_body)
+                else:
+                    report_body = re.sub(r"\[([^\]\n]+)\]\(evidence\.json\)",
+                                         r"\1（原报告未保存详情文件）", report_body)
             body.extend(["## 完整阅读报告", "", report_body, ""])
         if report_dir and self.settings.copy_pdf:
             pdf = report_dir / "paper.pdf"
             if pdf.exists():
-                destination = self._attachment_folder(arxiv_id) / pdf.name
+                destination = self._attachment_folder(arxiv_id, paper.get("version")) / pdf.name
                 self._copy_if_changed(pdf, destination)
                 body.extend(["## 本地附件", "", f"![[{self._vault_relative(destination, keep_suffix=True)}]]", ""])
         path = self._write_managed(
@@ -493,6 +546,8 @@ class ObsidianExporter:
                 "year": int(year) if year.isdigit() else None,
                 "venue": venue,
                 "profile": self.config.profile_name,
+                "profile_id": self.config.profile_id or "default",
+                "version": paper.get("version"),
                 "status": status,
                 "categories": paper.get("categories") or [paper.get("primary_category")],
                 "concepts": concepts,
@@ -504,13 +559,20 @@ class ObsidianExporter:
             "\n## 我的笔记\n\n> [!note] 这里的内容由你维护，重新同步时不会覆盖。\n\n",
         )
         manifest = self._manifest()
-        manifest.setdefault("papers", {})[arxiv_id] = {
+        entries = manifest.setdefault("papers", {})
+        legacy = entries.get(arxiv_id) or {}
+        if self._entry_belongs_to_profile(legacy):
+            entries.pop(arxiv_id, None)
+        entries[self._paper_key(arxiv_id)] = {
             "note": self._vault_relative(path),
             "title": title,
             "year": year,
             "venue": venue,
             "status": status,
             "profile": self.config.profile_name,
+            "profile_id": self.config.profile_id or "default",
+            "arxiv_id": arxiv_id,
+            "version": paper.get("version"),
             "concepts": concepts,
         }
         self._save_manifest(manifest)
@@ -539,7 +601,7 @@ class ObsidianExporter:
         return path
 
     def _copy_and_rewrite_images(
-        self, markdown: str, source_dir: Path, arxiv_id: str
+        self, markdown: str, source_dir: Path, arxiv_id: str, version: int | None = None
     ) -> str:
         pattern = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
@@ -554,7 +616,7 @@ class ObsidianExporter:
                 return match.group(0)
             if not source.is_file():
                 return match.group(0)
-            destination = self._attachment_folder(arxiv_id) / source.name
+            destination = self._attachment_folder(arxiv_id, version) / source.name
             self._copy_if_changed(source, destination)
             return f"![[{self._vault_relative(destination, keep_suffix=True)}]]"
 
@@ -613,7 +675,8 @@ class ObsidianExporter:
         )
         signature = hashlib.sha256(signature_source.encode("utf-8")).hexdigest()
         cache = self._summary_cache()
-        cached = cache.get(arxiv_id) or {}
+        cache_key = f"{self._paper_key(arxiv_id)}::v{paper.get('version') or 'unknown'}"
+        cached = cache.get(cache_key) or {}
         if cached.get("signature") == signature and cached.get("summary"):
             return str(cached["summary"])
 
@@ -637,13 +700,18 @@ class ObsidianExporter:
                     )
                 )
                 source = "llm-summary"
-            except Exception:
+            except Exception as exc:
+                task_warning(
+                    "LLM Obsidian 摘要",
+                    "论文笔记摘要生成失败，已使用抽取式摘要回退。"
+                    f"请检查 LLM Base URL、模型名和服务状态（{type(exc).__name__}: {exc}）。",
+                )
                 summary = ""
         if not summary:
             summary = self._fallback_summary(str(paper.get("abstract") or ""))
             source = "extractive-fallback"
         summary = summary[:800].strip()
-        cache[arxiv_id] = {
+        cache[cache_key] = {
             "signature": signature,
             "summary": summary,
             "source": source,
@@ -723,12 +791,25 @@ class ObsidianExporter:
         path = self._safe_target(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tail = default_tail
+        prefix = ""
         if path.exists():
             existing = path.read_text(encoding="utf-8")
-            if MANAGED_START in existing and MANAGED_END in existing:
-                tail = existing.split(MANAGED_END, 1)[1]
-            else:
-                path = self._alternate_path(path)
+            if existing.count(MANAGED_START) != 1 or existing.count(MANAGED_END) != 1:
+                raise ObsidianError(f"托管标记缺失或重复，已保留原文件：{path.name}")
+            prefix, remainder = existing.split(MANAGED_START, 1)
+            if MANAGED_END not in remainder:
+                raise ObsidianError(f"托管标记顺序错误，已保留原文件：{path.name}")
+            tail = remainder.split(MANAGED_END, 1)[1]
+            front = re.match(r"\A---\n(.*?)\n---(?:\n|$)", prefix, re.S)
+            if front:
+                try:
+                    old_fields = yaml.safe_load(front.group(1)) or {}
+                except yaml.YAMLError as exc:
+                    raise ObsidianError(f"笔记属性无法解析，已保留原文件：{path.name}") from exc
+                if not isinstance(old_fields, dict):
+                    raise ObsidianError(f"笔记属性格式错误，已保留原文件：{path.name}")
+                frontmatter = {**old_fields, **frontmatter}
+                prefix = prefix[front.end():]
         yaml_text = yaml.safe_dump(
             frontmatter,
             allow_unicode=True,
@@ -736,7 +817,7 @@ class ObsidianExporter:
             default_flow_style=False,
         ).strip()
         content = (
-            f"---\n{yaml_text}\n---\n{MANAGED_START}\n"
+            f"---\n{yaml_text}\n---\n{prefix}{MANAGED_START}\n"
             f"{managed_body.rstrip()}\n{MANAGED_END}{tail}"
         )
         if path.exists() and path.read_text(encoding="utf-8") == content:
@@ -793,8 +874,24 @@ class ObsidianExporter:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def _paper_key(self, arxiv_id: str) -> str:
+        return f"{self.config.profile_id or 'default'}::{arxiv_id}"
+
+    def _entry_belongs_to_profile(self, entry: dict) -> bool:
+        if entry.get("profile_id"):
+            return entry["profile_id"] == (self.config.profile_id or "default")
+        return bool(entry.get("profile")) and entry["profile"] == self.config.profile_name
+
+    def _paper_entry(self, manifest: dict, arxiv_id: str) -> dict:
+        entries = manifest.get("papers") or {}
+        own = entries.get(self._paper_key(arxiv_id))
+        if own:
+            return own
+        legacy = entries.get(arxiv_id) or {}
+        return legacy if self._entry_belongs_to_profile(legacy) else {}
+
     def _paper_path(self, arxiv_id: str, title: str, year: str = "") -> Path:
-        existing = (self._manifest().get("papers") or {}).get(arxiv_id)
+        existing = self._paper_entry(self._manifest(), arxiv_id)
         if existing and existing.get("note"):
             vault, _root = self._paths(create=True)
             candidate = (vault / f"{existing['note']}.md").resolve()
@@ -812,9 +909,12 @@ class ObsidianExporter:
             return destination
         # A same-name managed paper from another arXiv record uses the year, never the ID.
         existing_text = destination.read_text(encoding="utf-8")
-        if re.search(rf"(?m)^arxiv_id:\s*['\"]?{re.escape(arxiv_id)}['\"]?\s*$", existing_text):
+        owner = re.search(r"(?m)^profile_id:\s*([^\n]+)", existing_text)
+        same_profile = not owner or owner.group(1).strip(" '\"") == (self.config.profile_id or "default")
+        if same_profile and re.search(rf"(?m)^arxiv_id:\s*['\"]?{re.escape(arxiv_id)}['\"]?\s*$", existing_text):
             return destination
-        suffix = f" ({year})" if year else " (paper)"
+        # A readable name may collide across identically named profiles or papers.
+        suffix = f" ({self.config.profile_id or 'default'}-{arxiv_id.replace('/', '-')})"
         return self._managed_destination(destination.with_name(f"{note_name}{suffix}.md"))
 
     @classmethod
@@ -844,8 +944,9 @@ class ObsidianExporter:
             self._folder("concepts") / f"{self._safe_name(concept)}.md"
         )
 
-    def _attachment_folder(self, arxiv_id: str) -> Path:
-        path = self._folder("attachments") / self._safe_name(arxiv_id.replace("/", "-"))
+    def _attachment_folder(self, arxiv_id: str, version: int | None = None) -> Path:
+        path = (self._folder("attachments") / (self.config.profile_id or "default")
+                / self._safe_name(arxiv_id.replace("/", "-")) / f"v{version or 'unknown'}")
         path = self._safe_target(path)
         path.mkdir(parents=True, exist_ok=True)
         return path
@@ -928,7 +1029,7 @@ class ObsidianExporter:
     @staticmethod
     def _copy_if_changed(source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists() and source.stat().st_size == destination.stat().st_size:
+        if destination.exists() and source.read_bytes() == destination.read_bytes():
             return
         temporary = destination.with_name(f".{destination.name}.tmp")
         shutil.copy2(source, temporary)

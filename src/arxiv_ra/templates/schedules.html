@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}多研究方向调度 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">RESEARCH SCHEDULES</p><h1>多研究方向调度</h1><p>每个方向独立安排每日任务，界面切换方向不会改变这些计划。</p></div><a class="button secondary" href="/profiles">返回研究方向</a></header>
+{% if saved %}<p class="notice success" role="status">计划已保存。新设置从保存后的时段开始生效。</p>{% endif %}
+{% if schedule_error or schedule.last_error %}<p class="notice" role="alert">{{ schedule_error or schedule.last_error }}</p>{% endif %}
+{% if schedule.errors %}<section class="feedback-panel"><h2>计划异常</h2><ul>{% for profile_id,error in schedule.errors.items() %}<li>{{ profile_id }}：{{ error }}</li>{% endfor %}</ul></section>{% endif %}
+<section class="feedback-panel"><h2>自动调度总开关：{% if schedule.enabled and not schedule.restored_paused %}已启用{% else %}已暂停{% endif %}</h2>
+<p>运行一次该方向的每日检索流程，并按现有配置生成报告、周报、检查版本或同步。可能调用付费模型及已启用的外部集成；邮件还需在各方向计划中明确勾选。</p>
+{% if schedule.restored_paused %}<p>这是恢复副本，自动调度已暂停。检查配置后点击启用，才会允许后续时段运行。</p>{% endif %}
+<form method="post" action="/schedules/enabled"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="enabled" value="{% if schedule.enabled and not schedule.restored_paused %}false{% else %}true{% endif %}"><button class="button primary" {% if schedule_error %}disabled{% endif %}>{% if schedule.enabled and not schedule.restored_paused %}暂停后续调度{% else %}启用自动调度{% endif %}</button></form>
+<p>GUI 运行时每 30 秒检查；关闭 GUI 后可使用 <code>paperloom schedule --once</code> 配合系统定时入口，或运行 <code>paperloom schedule</code> 保持调度进程。机器需处于运行状态。</p>
+<p>已安装旧版每日 run 定时任务时，请用安装脚本的 <code>-MultiProfile</code> 选项更新同名任务，或暂停旧入口，避免重复触发。计划时间是入队时段，实际启动时间取决于队列。</p>
+<p>错过时段后两小时内可补触发；更早时段不补跑。失败、中断或取消不自动重试，已排队/运行的任务不受暂停影响，可到任务页取消。任务恢复时不会发送邮件。</p>
+</section>
+{% for profile in profiles %}{% set plan = plans_by_id.get(profile.id, {}) %}
+<section class="feedback-panel"><h2>{{ profile.name }}</h2><p>{{ profile.id }}{% if plan.next_run %} · 下次时段：{{ plan.next_run }}{% else %} · 暂无待运行时段{% endif %}</p>
+{% if plan.error or schedule.errors.get(profile.id) %}<p role="alert">{{ plan.error or schedule.errors.get(profile.id) }}</p>{% endif %}
+<form class="search-filters" method="post" action="/schedules/profile/{{ profile.id }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+<label>方向开关<select name="enabled"><option value="false" {% if not plan.enabled %}selected{% endif %}>暂停</option><option value="true" {% if plan.enabled %}selected{% endif %}>参与调度</option></select></label>
+<label>当地运行时间<input type="time" name="time" value="{{ plan.time or '08:00' }}" required></label>
+<label>时区<input name="timezone" value="{{ plan.timezone or config.timezone }}" placeholder="Asia/Shanghai" required></label>
+<fieldset class="schedule-weekdays"><legend>运行星期</legend>{% for value,label in weekdays.items() %}<label><input type="checkbox" name="weekdays" value="{{ value }}" {% if not plan or value in plan.weekdays %}checked{% endif %}>{{ label }}</label>{% endfor %}</fieldset>
+<label class="schedule-email"><span><input type="checkbox" name="send_email" value="true" {% if plan.send_email %}checked{% endif %}> 发送推荐邮件</span><small>还需全局邮件配置已启用</small></label>
+<button class="button secondary" {% if schedule_error %}disabled{% endif %}>保存此方向计划</button></form>
+<p>一天最多自动登记一次，修改时间不会让已运行的当天计划再次执行。多方向共享现有任务并行数限制。</p></section>
+{% endfor %}
+<section class="feedback-panel"><h2>最近 100 个调度时段</h2><p>完整记录保留在本地。具体进度、警告、结果和手动恢复入口见 <a href="/generate">任务页</a>。</p>
+{% for item in schedule.history %}<article class="feedback-rule"><div><h3>{{ item.profile_id }} · {{ item.date }} · {{ schedule_statuses.get(item.status, item.status) }}</h3><p>{{ item.scheduled_at }} · {{ item.detail }}</p>{% if item.job_id %}<p>任务 {{ item.job_id }}</p>{% endif %}</div>{% if item.result_url %}<a class="button secondary" href="{{ item.result_url }}">打开结果</a>{% endif %}</article>{% else %}<p>尚无调度记录。仅启用总开关和方向后，保存之后的时段才会触发。</p>{% endfor %}
+</section>
+{% endblock %}

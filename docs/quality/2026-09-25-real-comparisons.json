@@ -1,0 +1,101 @@
+{
+  "run": {
+    "requested_model": "gemini-3.8-flash-high",
+    "temperature": 0.1,
+    "endpoint": "http://52.141.63.238:8317/v1",
+    "connection_test": {
+      "reply": "OK",
+      "response_model": "gemini-3.8-flash",
+      "elapsed_seconds": 7.41
+    },
+    "request_limit": 2,
+    "steps": [
+      {
+        "keys": [
+          "2502.19453v1",
+          "2506.15903v1"
+        ],
+        "path": "library/comparisons/2026-09-25-quality-evaluation-2be9b3e7a373/report.html",
+        "status": "model_assisted",
+        "quality_checks": {
+          "version": 1,
+          "accepted_cells": 6,
+          "rejected_cells": 8,
+          "unknown_cells": 8,
+          "semantic_support": "not_assessed",
+          "numeric_scope": "literal_values_and_known_units_in_primary_support"
+        },
+        "reviewed_path": "library/comparisons/2026-09-25-quality-evaluation-2be9b3e7a373/report-reviewed.html"
+      },
+      {
+        "keys": [
+          "2509.13399v3",
+          "2609.03806v1"
+        ],
+        "path": "library/comparisons/2026-09-25-quality-evaluation-9216c15cf918/report.html",
+        "status": "model_assisted",
+        "quality_checks": {
+          "version": 1,
+          "accepted_cells": 8,
+          "rejected_cells": 6,
+          "unknown_cells": 6,
+          "semantic_support": "not_assessed",
+          "numeric_scope": "literal_values_and_known_units_in_primary_support"
+        },
+        "reviewed_path": "library/comparisons/2026-09-25-quality-evaluation-9216c15cf918/report-reviewed.html"
+      }
+    ],
+    "started_at": "2026-09-25T06:14:22.187890+00:00",
+    "requests_used": 2,
+    "requests_blocked": 0,
+    "response_models": [
+      "gemini-3.8-flash",
+      "gemini-3.8-flash"
+    ],
+    "finished_at": "2026-09-25T06:14:49.924059+00:00",
+    "all_original_files_unchanged": true
+  },
+  "replay": [
+    {
+      "group": 1,
+      "raw_response_sha256": "d15e1d6064fb70591a25a804070b98114dbad8b5aa5ed10801e3e6a845efb839",
+      "accepted": 6,
+      "rejected": 8,
+      "reasons": {
+        "numeric_without_primary_support": 3,
+        "numeric_mismatch": 3,
+        "invalid_support": 2
+      },
+      "changes": [
+        {
+          "paper": "P1",
+          "dimension": "核心方法",
+          "before_basis": "primary_excerpt",
+          "after_basis": "mixed_sources",
+          "kind": "inference"
+        },
+        {
+          "paper": "P2",
+          "dimension": "核心方法",
+          "before_basis": "primary_excerpt",
+          "after_basis": "mixed_sources",
+          "kind": "inference"
+        }
+      ],
+      "scope": "offline replay of saved model response, no new generation"
+    },
+    {
+      "group": 2,
+      "raw_response_sha256": "e9f3b1a328781abd1fbd800ffec08dbd0e04ead98b0129ed040a122d83f20feb",
+      "accepted": 8,
+      "rejected": 6,
+      "reasons": {
+        "invalid_support": 1,
+        "numeric_mismatch": 4,
+        "numeric_without_primary_support": 1
+      },
+      "changes": [],
+      "scope": "offline replay of saved model response, no new generation"
+    }
+  ]
+}

@@ -17,6 +17,7 @@ from . import __version__
 from .config import AppConfig
 from .rate_limit import shared_rate_limit
 from .utils import write_json
+from .task_runtime import task_checkpoint, task_progress, task_warning
 
 
 class CitationExplorer:
@@ -33,6 +34,7 @@ class CitationExplorer:
         self.client.close()
 
     def generate(self, arxiv_id: str) -> Path:
+        task_progress("正在读取已有关系图缓存…", 5)
         folder = self.output_root / "citations" / f"{arxiv_id.replace('/', '-')}-{self.config.profile_id or 'default'}"
         existing_path = folder / "graph.json"
         try:
@@ -42,31 +44,47 @@ class CitationExplorer:
         paper_id = f"ARXIV:{arxiv_id}"
         fields = "paperId,title,abstract,year,venue,citationCount,externalIds,url,authors"
         try:
+            task_progress("正在查询目标论文信息…", 12)
             seed = self._get(
                 f"https://api.semanticscholar.org/graph/v1/paper/{quote(paper_id, safe=':')}",
                 {"fields": fields},
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            task_warning(
+                "Semantic Scholar 论文信息",
+                f"服务请求失败，正在尝试缓存数据：{type(exc).__name__}: {exc}",
+            )
             seed = existing.get("seed") or {}
         if not seed or not seed.get("paperId"):
             raise LookupError(f"Semantic Scholar 未找到 arXiv:{arxiv_id}")
         try:
+            task_progress("正在查询参考文献…", 27)
             references_payload = self._get(
                 f"https://api.semanticscholar.org/graph/v1/paper/{seed['paperId']}/references",
                 {"fields": fields, "limit": self.config.citations.max_references},
             )
             references = self._nodes(references_payload, "citedPaper")
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            task_warning(
+                "Semantic Scholar 参考文献",
+                f"服务请求失败，已使用缓存或空结果：{type(exc).__name__}: {exc}",
+            )
             references = existing.get("references") or []
         try:
+            task_progress("正在查询引用该论文的工作…", 42)
             citations_payload = self._get(
                 f"https://api.semanticscholar.org/graph/v1/paper/{seed['paperId']}/citations",
                 {"fields": fields, "limit": self.config.citations.max_citations},
             )
             citations = self._nodes(citations_payload, "citingPaper")
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            task_warning(
+                "Semantic Scholar 引用数据",
+                f"服务请求失败，已使用缓存或空结果：{type(exc).__name__}: {exc}",
+            )
             citations = existing.get("citations") or []
         try:
+            task_progress("正在查询语义相似论文…", 57)
             similar_payload = self._get(
                 f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{seed['paperId']}",
                 {"fields": fields, "limit": self.config.citations.max_similar, "from": "all-cs"},
@@ -75,7 +93,11 @@ class CitationExplorer:
                 item for item in (similar_payload or {}).get("recommendedPapers", [])
                 if item and item.get("title")
             ]
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            task_warning(
+                "Semantic Scholar 相似论文",
+                f"服务请求失败，已使用缓存或空结果：{type(exc).__name__}: {exc}",
+            )
             similar = existing.get("similar") or []
         graph = {
             "arxiv_id": arxiv_id,
@@ -85,6 +107,7 @@ class CitationExplorer:
             "similar": similar,
         }
         graph["nodes"] = self._combined_nodes(graph)
+        task_progress(f"已找到 {len(graph['nodes'])} 个节点，正在补充交叉引用…", 70)
         graph["citation_edges"] = self._cross_edges(graph)
         if not any(edge.get("kind") == "cross-citation" for edge in graph["citation_edges"]):
             node_ids = {str(node.get("paperId") or "") for node in graph["nodes"]}
@@ -98,11 +121,14 @@ class CitationExplorer:
                     and pair not in known
                 ):
                     graph["citation_edges"].append(edge)
+        task_progress("正在计算论文间的内容相似度…", 86)
         graph["edges"] = self._similarity_edges(graph["nodes"])
         folder.mkdir(parents=True, exist_ok=True)
         write_json(folder / "graph.json", graph)
         destination = folder / "index.html"
+        task_progress("正在渲染交互式关系图…", 95)
         destination.write_text(self._render(graph), encoding="utf-8")
+        task_checkpoint()
         return destination
 
     def _get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -195,8 +221,11 @@ class CitationExplorer:
                     target = str((reference or {}).get("paperId") or "")
                     if source in node_ids and target in node_ids:
                         add(source, target, "cross-citation")
-        except Exception:
-            pass
+        except Exception as exc:
+            task_warning(
+                "Semantic Scholar 交叉引用",
+                f"交叉引用补全失败，关系图仍会使用已有边：{type(exc).__name__}: {exc}",
+            )
         return list(edges.values())
 
     @staticmethod

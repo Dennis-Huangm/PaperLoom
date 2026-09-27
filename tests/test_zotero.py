@@ -297,6 +297,7 @@ def test_local_client_rejects_non_local_api_url() -> None:
 
 
 def test_existing_pdf_attachment_prevents_duplicate_import(tmp_path: Path, monkeypatch) -> None:
+    import hashlib
     monkeypatch.setenv("ZOTERO_LOCAL_API_KEY", "secret")
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-new-copy")
@@ -312,7 +313,7 @@ def test_existing_pdf_attachment_prevents_duplicate_import(tmp_path: Path, monke
                             "itemType": "attachment",
                             "contentType": "application/pdf",
                             "filename": "different-name.pdf",
-                            "md5": "different-hash",
+                            "md5": hashlib.md5(pdf.read_bytes()).hexdigest(),
                         }
                     }
                 ],

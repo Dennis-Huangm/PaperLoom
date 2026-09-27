@@ -47,6 +47,26 @@ def _exporter(tmp_path: Path, **overrides) -> ObsidianExporter:
     return ObsidianExporter(config, tmp_path)
 
 
+@pytest.mark.parametrize('has_evidence', [True, False])
+def test_report_audit_is_compact_and_details_link_survives_export(tmp_path, has_evidence):
+    exporter = _exporter(tmp_path, copy_pdf=False)
+    report = tmp_path / 'report.md'
+    report.write_text('# Test\n\n## 关键结果\n**有效内容**\n\n## 原文依据与覆盖\n'
+                      '已定位 1 条摘录。\n\n### 原文 1\n> Repeated source', encoding='utf-8')
+    if has_evidence:
+        write_json(tmp_path / 'evidence.json', {'citations': [{'quote': 'Repeated source'}]})
+    note = exporter.sync_report(_paper(), {}, report)
+    text = note.read_text(encoding='utf-8')
+    assert '**有效内容**' in text and 'Repeated source' not in text
+    assert '](evidence.json)' not in text
+    if has_evidence:
+        attachments = list((tmp_path / 'vault').rglob('evidence.json'))
+        assert len(attachments) == 1 and read_json(attachments[0]) == read_json(tmp_path / 'evidence.json')
+        assert 'evidence.json|' in text
+    else:
+        assert '原报告未保存详情文件' in text
+
+
 def test_sync_builds_daily_paper_concept_and_indexes(tmp_path: Path) -> None:
     exporter = _exporter(tmp_path)
     recommendation = {
@@ -59,7 +79,7 @@ def test_sync_builds_daily_paper_concept_and_indexes(tmp_path: Path) -> None:
 
     root = tmp_path / "vault" / "arXiv Research Assistant"
     manifest = read_json(root / ".arxiv-ra-manifest.json", {})
-    paper_note = tmp_path / "vault" / f"{manifest['papers']['2407.05600']['note']}.md"
+    paper_note = tmp_path / "vault" / f"{manifest['papers']['agentict2i::2407.05600']['note']}.md"
     assert daily.exists()
     assert paper_note.exists()
     assert (root / "Home" / "Research Hub.md").exists()
@@ -102,8 +122,8 @@ def test_full_sync_reads_active_profiles_same_day_recommendations(
         / ".arxiv-ra-manifest.json",
         {},
     )
-    assert "2407.05600" in manifest["papers"]
-    assert "2608.00002" not in manifest["papers"]
+    assert "agentict2i::2407.05600" in manifest["papers"]
+    assert "agentict2i::2608.00002" not in manifest["papers"]
 
 
 def test_report_sync_copies_images_and_preserves_user_notes(tmp_path: Path) -> None:
@@ -123,12 +143,12 @@ def test_report_sync_copies_images_and_preserves_user_notes(tmp_path: Path) -> N
 
     note = exporter.sync_report(_paper(), {"venue": "NeurIPS 2024"}, report)
     first = note.read_text(encoding="utf-8")
-    assert "![[arXiv Research Assistant/Attachments/2407.05600/method-figure-01.png]]" in first
+    assert "![[arXiv Research Assistant/Attachments/agentict2i/2407.05600/vunknown/method-figure-01.png]]" in first
     assert "完整报告内容" in first
     assert "## 精炼摘要" in first
     assert "An agentic image generation system with visual feedback." not in first
     assert "摘要级主要内容" not in first
-    assert (tmp_path / "vault" / "arXiv Research Assistant" / "Attachments" / "2407.05600" / "method-figure-01.png").exists()
+    assert (tmp_path / "vault" / "arXiv Research Assistant" / "Attachments" / "agentict2i" / "2407.05600" / "vunknown" / "method-figure-01.png").exists()
     assert "[[arXiv Research Assistant/Topics/agentic image generation\\|agentic image generation]]" in first
 
     note.write_text(first + "\n我的永久补充。\n", encoding="utf-8")

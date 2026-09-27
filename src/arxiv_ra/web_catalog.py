@@ -10,6 +10,10 @@ from urllib.parse import quote
 from .config import AppConfig
 from .storage import read_recommendations
 from .utils import read_json
+from .library import PaperLibraryStore
+from .feedback import FeedbackStore
+from .report_store import profile_matches, quality_rank
+from .version_sync import STEP_LABELS, STATUS_LABELS
 
 
 DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -109,6 +113,12 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "arxiv_id": paper.get("arxiv_id", ""),
                 "version": paper.get("version"),
                 "profile_id": payload.get("profile_id", ""),
+                "report_quality": payload.get("report_quality", "unknown"),
+                "evidence": payload.get("evidence") or {},
+                "model": payload.get("model", ""),
+                "errors": payload.get("errors") or [],
+                "parsed_pages": payload.get("parsed_pages"),
+                "generated_at": payload.get("generated_at", ""),
                 "title": paper.get("title", metadata_path.parent.name),
                 "authors": [
                     item.get("name", "") for item in (paper.get("authors") or [])
@@ -116,6 +126,7 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "venue": verified.get("venue") or "会议/期刊未核实",
                 "venue_status": verified.get("venue_status", "unverified"),
                 "report_url": artifact_url(report_path, output_root),
+                "report_id": report_path.relative_to(output_root).as_posix(),
                 "method_figure_count": len(
                     list(metadata_path.parent.glob("method-figure-*"))
                 ),
@@ -127,8 +138,21 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "pdf_path": metadata_path.parent / "paper.pdf",
             }
         )
-    reports.sort(key=lambda item: (item["date"], item["updated_at"]), reverse=True)
+    reports.sort(key=lambda item: (item["date"], item["generated_at"] or item["updated_at"]), reverse=True)
     return reports
+
+
+def preferred_report_index(reports: list[dict], profile_id: str) -> dict[tuple, dict]:
+    selected = {}
+    for report in reports:
+        if not profile_matches(report, profile_id):
+            continue
+        key = (report["arxiv_id"], report.get("version"))
+        previous = selected.get(key)
+        rank = lambda item: (bool(item.get("profile_id")), quality_rank(item))
+        if previous is None or rank(report) > rank(previous):
+            selected[key] = report
+    return selected
 
 
 def weekly_library(output_root: Path, profile_id: str = "") -> list[dict[str, Any]]:
@@ -150,11 +174,13 @@ def weekly_library(output_root: Path, profile_id: str = "") -> list[dict[str, An
                 "week_id": payload.get("week_id") or metadata_path.parent.name,
                 "profile_name": payload.get("profile_name") or "默认方向",
                 "paper_count": payload.get("paper_count", 0),
+                "activity_counts": payload.get("activity_counts") or {},
+                "includes_personal_notes": payload.get("includes_personal_notes", False),
                 "generated_at": payload.get("generated_at", ""),
                 "report_url": report_url,
             }
         )
-    items.sort(key=lambda item: item["week_id"], reverse=True)
+    items.sort(key=lambda item: (item["week_id"], item["generated_at"]), reverse=True)
     return items
 
 
@@ -163,7 +189,59 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
     payload = _safe_json(output_root / f"version-state-{suffix}.json", {}) or {}
     if not isinstance(payload, dict):
         payload = {}
-    items = list((payload.get("items") or {}).values())
+    by_id = {aid: dict(item) for aid, item in (payload.get("items") or {}).items()
+             if item.get("tracked", True)}
+    for item in by_id.values():
+        # These describe files and current reading state, not the last check.
+        for field in ("saved_version", "report_version", "local_version"):
+            item.pop(field, None)
+
+    def entry(aid, title=""):
+        item = by_id.setdefault(aid, {"arxiv_id": aid, "title": title or aid, "sources": []})
+        item.setdefault("checked_at", "")
+        item.setdefault("sources", [])
+        return item
+
+    for aid, saved in PaperLibraryStore(output_root, profile_id).all().items():
+        paper = saved.get("paper") or {}
+        item = entry(aid, paper.get("title", ""))
+        item["saved_version"] = paper.get("version")
+        if "文献库" not in item["sources"]:
+            item["sources"].append("文献库")
+    for report in report_library(output_root):
+        if not profile_matches(report, profile_id):
+            continue
+        item = entry(report["arxiv_id"], report["title"])
+        if "本地报告" not in item["sources"]:
+            item["sources"].append("本地报告")
+        item["report_version"] = max(int(item.get("report_version") or 0), int(report.get("version") or 0)) or None
+        if report["pdf_path"].is_file():
+            item["local_version"] = max(int(item.get("local_version") or 0), int(report.get("version") or 0)) or None
+    for state_path in (output_root / "papers" / suffix).glob("*/sync.json"):
+        sync = _safe_json(state_path, {}) or {}
+        if not sync.get("arxiv_id"):
+            continue
+        item = entry(sync["arxiv_id"], sync.get("title", ""))
+        item["latest_version"] = max(int(item.get("latest_version") or 0), int(sync.get("latest_version") or 0)) or None
+        item["checked_at"] = max(item.get("checked_at") or "", sync.get("latest_checked_at") or "")
+        item["sync_error"] = sync.get("latest_error", "")
+        item["sync_url"] = artifact_url(state_path.with_name("index.html"), output_root)
+        item["sync_target"] = sync.get("last_target")
+        operation = (sync.get("operations") or {}).get(str(sync.get("last_target")), {})
+        item["sync_status"] = STATUS_LABELS.get(operation.get("status"), "尚未同步")
+        item["retry_available"] = operation.get("status") in {"failed", "partial", "running", "interrupted"}
+        active_steps = {"download", "library"} | {name for name, enabled in operation.get("options", {}).items() if enabled}
+        item["sync_steps"] = [{"label": STEP_LABELS.get(name, name),
+                               "status": STATUS_LABELS.get(step.get("status"), "待处理"), "error": step.get("error", "")}
+                              for name, step in operation.get("steps", {}).items() if name in active_steps]
+        for path in state_path.parent.glob("v*/metadata.json"):
+            paper = (_safe_json(path, {}) or {}).get("paper") or {}
+            if path.with_name("paper.pdf").is_file():
+                item["local_version"] = max(int(item.get("local_version") or 0), int(paper.get("version") or 0)) or None
+                if "已同步文件" not in item["sources"]:
+                    item["sources"].append("已同步文件")
+    dismissed = FeedbackStore(output_root, profile_id).all()
+    items = [entry(aid) for aid in list(by_id) if aid not in dismissed]
     events: list[dict[str, Any]] = []
     for item in items:
         for event in item.get("events") or []:
@@ -183,7 +261,8 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
             )
     events.sort(key=lambda item: item.get("detected_at", ""), reverse=True)
     items.sort(key=lambda item: item.get("title", "").casefold())
-    return {"checked_at": payload.get("checked_at", ""), "items": items, "events": events}
+    return {"checked_at": payload.get("checked_at", ""), "items": items, "events": events,
+            "coverage": payload.get("coverage") or {}}
 
 
 def citation_library(output_root: Path) -> list[dict[str, Any]]:

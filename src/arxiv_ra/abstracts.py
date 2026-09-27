@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import threading
 from pathlib import Path
@@ -9,10 +10,12 @@ from typing import Any
 from .config import AppConfig
 from .llm import LLMClient
 from .utils import extract_json_object, normalize_space, read_json, write_json
+from .task_runtime import task_warning
+from .report_store import matching_report
 
 
 _CACHE_LOCK = threading.Lock()
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 
 def _cache_key(config: AppConfig, arxiv_id: str) -> str:
@@ -29,18 +32,18 @@ def _signature(config: AppConfig, paper: dict[str, Any]) -> str:
             "|".join(config.discovery.positive_keywords),
             str(paper.get("title", "")),
             str(paper.get("abstract", "")),
+            str(paper.get("version")),
+            config.llm.model,
+            config.llm.base_url_env,
+            os.getenv(config.llm.base_url_env, ""),
         ]
     )
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def _report_section(output_root: Path, arxiv_id: str, heading: str) -> str:
-    candidates = sorted(
-        output_root.glob(
-            f"????-??-??/reports/{arxiv_id.replace('/', '-')}-*/report.md"
-        ),
-        reverse=True,
-    )
+def _report_section(output_root: Path, profile_id: str, paper: dict, heading: str) -> str:
+    report = matching_report(output_root, profile_id, paper)
+    candidates = [report] if report else []
     for path in candidates:
         markdown = path.read_text(encoding="utf-8")
         match = re.search(
@@ -90,6 +93,7 @@ def localize_abstracts(
             and cached.get("signature") == _signature(config, paper)
             and cached.get("abstract_zh")
             and cached.get("recommendation_detail")
+            and (not generate or cached.get("source") == "llm-localization")
         ):
             paper["abstract_zh"] = str(cached["abstract_zh"])
             paper["recommendation_detail"] = str(
@@ -97,8 +101,8 @@ def localize_abstracts(
             )
         elif (
             paper.get("abstract")
-            or _report_section(output_root, arxiv_id, "一句话总结")
-            or _report_section(output_root, arxiv_id, "为什么值得阅读")
+            or _report_section(output_root, config.profile_id, paper, "一句话总结")
+            or _report_section(output_root, config.profile_id, paper, "为什么值得阅读")
         ):
             missing.append(paper)
 
@@ -142,7 +146,18 @@ def localize_abstracts(
                     and item.get("abstract_zh")
                     and item.get("recommendation_detail")
                 }
-            except Exception:
+                if len(translated) < len(llm_missing):
+                    task_warning(
+                        "LLM 摘要生成",
+                        f"模型只返回了 {len(translated)}/{len(llm_missing)} 篇论文的有效摘要，"
+                        "缺失部分已使用抽取式结果回退。",
+                    )
+            except Exception as exc:
+                task_warning(
+                    "LLM 摘要生成",
+                    "中文摘要和推荐依据生成失败，已使用原始摘要或关键词结果回退。"
+                    f"请检查 LLM Base URL、模型名和服务状态（{type(exc).__name__}: {exc}）。",
+                )
                 translated = {}
             finally:
                 client = getattr(llm, "client", None)
@@ -154,7 +169,7 @@ def localize_abstracts(
         arxiv_id = str(paper.get("arxiv_id") or "")
         generated = translated.get(arxiv_id) or {}
         abstract_zh = str(generated.get("abstract_zh") or "") or _clip(
-            _report_section(output_root, arxiv_id, "一句话总结"), 220
+            _report_section(output_root, config.profile_id, paper, "一句话总结"), 220
         )
         if not abstract_zh:
             abstract_zh = _clip(
@@ -167,7 +182,7 @@ def localize_abstracts(
             )
         recommendation_detail = str(
             generated.get("recommendation_detail") or ""
-        ) or _clip(_report_section(output_root, arxiv_id, "为什么值得阅读"), 180)
+        ) or _clip(_report_section(output_root, config.profile_id, paper, "为什么值得阅读"), 180)
         if not recommendation_detail:
             recommendation_detail = _clip(
                 str(paper.get("recommendation_reason") or abstract_zh), 180

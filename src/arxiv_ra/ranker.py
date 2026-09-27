@@ -28,7 +28,7 @@ def matched_concept_groups(paper: Paper, discovery: DiscoveryConfig) -> int:
     )
 
 
-def score_paper(paper: Paper, discovery: DiscoveryConfig, ranking: RankingConfig) -> float:
+def ranking_details(paper: Paper, discovery: DiscoveryConfig, ranking: RankingConfig) -> dict:
     text = f"{paper.title} {paper.abstract}"
     positive = sum(min(_phrase_count(text, keyword), 3) for keyword in discovery.positive_keywords)
     negative = sum(min(_phrase_count(text, keyword), 3) for keyword in discovery.negative_keywords)
@@ -40,19 +40,31 @@ def score_paper(paper: Paper, discovery: DiscoveryConfig, ranking: RankingConfig
     group_bonus = group_hits * 4.0
     if discovery.concept_groups and group_hits == len(discovery.concept_groups):
         group_bonus += 8.0
-    return round(
-        ranking.category_weight * category_hits
-        + ranking.keyword_weight * (positive + title_bonus)
-        - ranking.negative_weight * negative
-        + ranking.recency_weight * recency
-        + group_bonus,
-        4,
-    )
+    components = {"类别": ranking.category_weight * category_hits,
+                  "关键词与标题": ranking.keyword_weight * (positive + title_bonus),
+                  "负向关键词": -ranking.negative_weight * negative,
+                  "时效": ranking.recency_weight * recency, "概念组": group_bonus}
+    return {"components": components, "lexical_score": round(sum(components.values()), 4),
+            "positive_keywords": [k for k in discovery.positive_keywords if _phrase_count(text, k)],
+            "negative_keywords": [k for k in discovery.negative_keywords if _phrase_count(text, k)],
+            "categories": [c for c in paper.categories if c in discovery.arxiv_categories],
+            "concept_groups": [[k for k in g if _phrase_count(text, k)] for g in discovery.concept_groups]}
+
+
+def score_paper(paper: Paper, discovery: DiscoveryConfig, ranking: RankingConfig) -> float:
+    return ranking_details(paper, discovery, ranking)["lexical_score"]
+
+
+def finish_explanation(paper: Paper) -> None:
+    paper.ranking_explanation.update(
+        llm_score=paper.llm_score, feedback_score=paper.feedback_score, final_score=paper.final_score,
+        formula="词法分 + 反馈分" if paper.llm_score is None else "35% × 词法分（限 0–10）+ 65% × 模型分 + 反馈分")
 
 
 def rank_papers(
     papers: list[Paper], discovery: DiscoveryConfig, ranking: RankingConfig
 ) -> list[Paper]:
     for paper in papers:
-        paper.lexical_score = score_paper(paper, discovery, ranking)
+        paper.ranking_explanation = ranking_details(paper, discovery, ranking)
+        paper.lexical_score = paper.ranking_explanation["lexical_score"]
     return sorted(papers, key=lambda paper: (paper.final_score, paper.published_sort_key), reverse=True)

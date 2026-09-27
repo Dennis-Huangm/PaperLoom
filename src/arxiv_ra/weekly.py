@@ -4,15 +4,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+import uuid
 
 from .config import AppConfig
-from .feedback import FeedbackStore
-from .library import PaperLibraryStore
+from .report_store import matching_report
 from .research_clients import ResearchClients
 from .obsidian import ObsidianExporter
 from .render import render_report
 from .storage import read_recommendations
 from .utils import read_json, write_json
+from .task_runtime import task_checkpoint, task_progress, task_warning
+from .activity import collect_activity, activity_markdown
+from .reading_state import ReadingStateStore
 
 
 class WeeklySynthesizer:
@@ -31,30 +34,47 @@ class WeeklySynthesizer:
         if self._owns_clients:
             self.clients.close()
 
-    def generate(self, now: datetime | None = None) -> Path:
+    def generate(self, now: datetime | None = None, *, include_notes: bool = False) -> Path:
+        task_progress("正在汇总本周推荐和阅读记录…", 8)
         now = now or datetime.now(ZoneInfo(self.config.timezone))
+        zone = ZoneInfo(self.config.timezone)
+        now = now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)
+        self._period_end = now
+        self._report_sources = []
         iso_year, iso_week, _ = now.isocalendar()
         week_id = f"{iso_year}-W{iso_week:02d}"
-        destination = self.output_root / "weekly" / f"{week_id}-{self.config.profile_id or 'default'}"
+        destination = self.output_root / "weekly" / f"{week_id}-{self.config.profile_id or 'default'}-{uuid.uuid4().hex[:12]}"
         destination.mkdir(parents=True, exist_ok=True)
-        papers = self._collect(now)
-        feedback = FeedbackStore(self.output_root, self.config.profile_id).all()
-        library = PaperLibraryStore(self.output_root, self.config.profile_id).all()
+        state = ReadingStateStore(self.output_root, self.config.profile_id).snapshot()
+        activity = collect_activity(self.output_root, self.config.profile_id, now, self.config.weekly.days, state)
+        papers = self._with_activity(self._collect(now), activity)
+        task_progress(f"已汇总 {len(papers)} 篇论文，正在读取阅读偏好…", 24)
+        feedback, library = state["feedback"], state["library"]
+        task_progress("正在归纳主题、方法和开放问题…", 38)
         markdown = self._generate_markdown(week_id, papers, feedback, library)
+        markdown += "\n\n" + activity_markdown(activity, include_notes)
+        task_progress("周报内容已生成，正在保存并渲染…", 78)
         report_path = destination / "report.md"
         report_path.write_text(markdown, encoding="utf-8")
         html_path = destination / "report.html"
         render_report(markdown, html_path, f"{self.config.profile_name} · {week_id} 研究周报")
         metadata_payload = {
             "week_id": week_id,
+            "title": f"{self.config.profile_name} · {week_id} 研究活动周报",
             "profile_id": self.config.profile_id,
             "profile_name": self.config.profile_name,
-            "generated_at": now.isoformat(),
+            # A recovered historical period can be generated much later. Keep
+            # ordering/export time separate from the frozen activity cutoff.
+            "generated_at": datetime.now(zone).isoformat(),
             "paper_count": len(papers),
+            "activity_counts": activity["counts"],
+            "period_start": activity["start"], "period_end": activity["end"],
+            "includes_personal_notes": include_notes,
             "papers": [
                 {
                     "arxiv_id": (item.get("paper") or {}).get("arxiv_id"),
                     "title": (item.get("paper") or {}).get("title"),
+                    "version": (item.get("paper") or {}).get("version"),
                     "preference": (
                         "relevant"
                         if (item.get("paper") or {}).get("arxiv_id", "") in library
@@ -65,21 +85,56 @@ class WeeklySynthesizer:
             ],
         }
         write_json(destination / "metadata.json", metadata_payload)
+        # Only explicit opt-in retains private note text in the weekly artifact.
+        public_activity = {**activity, "events": [
+            {k: v for k, v in e.items() if include_notes or k not in {"notes", "tags"}}
+            for e in activity["events"]]}
+        write_json(destination / "activity.json", public_activity)
+        write_json(destination / "sources.json", {"papers": papers, "report_excerpts": self._report_sources})
         if (
             self.config.obsidian.enabled
             and self.config.obsidian.auto_sync
             and self.config.obsidian.sync_weekly
         ):
             try:
+                task_progress("正在同步研究周报到 Obsidian…", 92)
                 ObsidianExporter(self.config, self.project_root, clients=self.clients).sync_weekly(
                     metadata_payload, report_path
                 )
             except Exception as exc:
+                task_warning(
+                    "Obsidian 同步",
+                    f"周报同步失败：{type(exc).__name__}: {exc}",
+                )
                 (destination / "obsidian-sync-error.txt").write_text(
                     f"Obsidian 周报同步失败：{type(exc).__name__}: {exc}",
                     encoding="utf-8",
                 )
+        task_checkpoint()
         return html_path
+
+    def _with_activity(self, papers: list[dict], activity: dict) -> list[dict]:
+        # Active research comes before passive recommendations when the input
+        # limit is reached; the complete event list is still shown in the appendix.
+        active = {}
+        for event in activity["events"]:
+            if event["kind"] not in {"saved", "restored", "reading", "notes", "report", "version", "library_version"}:
+                continue
+            paper = dict(event["paper"])
+            if event["kind"] in {"reading", "notes"} and event.get("read_version"):
+                if paper.get("version") != event["read_version"]:
+                    # The saved v3 abstract cannot serve as v1 reading evidence.
+                    paper = {k: v for k, v in paper.items() if k in {"arxiv_id", "title", "primary_category"}}
+                paper["version"] = event["read_version"]
+            for candidate in [*papers, *active.values()]:
+                old = candidate.get("paper") or {}
+                if old.get("arxiv_id") == paper["arxiv_id"] and old.get("version") == paper.get("version"):
+                    paper = {**old, **paper}
+            active[paper["arxiv_id"]] = {"paper": paper, "verified": {}, "activity_at": event["at"],
+                                         "recommendation_date": "", "activity_kind": event["kind"]}
+        result = sorted(active.values(), key=lambda x: x["activity_at"], reverse=True)
+        result.extend(item for item in papers if item["paper"]["arxiv_id"] not in active)
+        return result[:self.config.weekly.max_papers]
 
     def _collect(self, now: datetime) -> list[dict[str, Any]]:
         start = now.date() - timedelta(days=max(1, self.config.weekly.days) - 1)
@@ -99,6 +154,12 @@ class WeeklySynthesizer:
                 if arxiv_id:
                     copy = dict(item)
                     copy["recommendation_date"] = date_dir.name
+                    previous = by_id.get(arxiv_id)
+                    if previous and (
+                        previous["recommendation_date"],
+                        int((previous.get("paper") or {}).get("version") or 0),
+                    ) > (date_dir.name, int(paper.get("version") or 0)):
+                        continue
                     by_id[arxiv_id] = copy
         papers = list(by_id.values())
         papers.sort(
@@ -107,13 +168,15 @@ class WeeklySynthesizer:
         )
         return papers[: self.config.weekly.max_papers]
 
-    def _report_excerpt(self, arxiv_id: str) -> str:
+    def _report_excerpt(self, paper: dict[str, Any]) -> str:
         if not self.config.weekly.include_deep_reports:
             return ""
-        paths = sorted(self.output_root.glob(f"????-??-??/reports/{arxiv_id.replace('/', '-')}-*/report.md"))
-        if not paths:
-            return ""
-        return paths[-1].read_text(encoding="utf-8")[:3500]
+        path = matching_report(self.output_root, self.config.profile_id, paper, before=getattr(self, "_period_end", None))
+        excerpt = path.read_text(encoding="utf-8")[:3500] if path else ""
+        if path and hasattr(self, "_report_sources"):
+            self._report_sources.append({"arxiv_id": paper.get("arxiv_id"), "version": paper.get("version"),
+                "report_id": path.relative_to(self.output_root).as_posix(), "excerpt": excerpt})
+        return excerpt
 
     def _generate_markdown(
         self,
@@ -125,12 +188,13 @@ class WeeklySynthesizer:
         if not papers:
             return (
                 f"# {self.config.profile_name} · {week_id} 研究周报\n\n"
-                "## 本周概览\n\n本周没有新的推荐论文。\n"
+                "## 本周概览\n\n本期没有可用于论文综述的推荐或活动论文；研究活动见下方记录。\n"
             )
         if not self.clients.llm.enabled:
             return self._fallback_markdown(week_id, papers, feedback, library)
         blocks: list[str] = []
         for index, item in enumerate(papers, start=1):
+            task_checkpoint()
             paper = item.get("paper") or {}
             verified = item.get("verified") or {}
             arxiv_id = str(paper.get("arxiv_id") or "")
@@ -141,12 +205,14 @@ class WeeklySynthesizer:
                 else feedback_item.get("label", "未标记")
             )
             detailed = index <= 8
-            report_excerpt = self._report_excerpt(arxiv_id) if detailed else ""
+            report_excerpt = self._report_excerpt(paper) if detailed else ""
             blocks.append(
                 f"""[{index}] arXiv:{arxiv_id}
+修订版：{paper.get('version') or '未知'}
 标题：{paper.get('title', '')}
 类别：{paper.get('primary_category', '')}
 推荐日期：{item.get('recommendation_date', '')}
+研究活动：{item.get('activity_kind', '')} {item.get('activity_at', '')}
 推荐分数：{paper.get('final_score', '')}
 推荐偏好：{preference}
 会议/期刊：{verified.get('venue') or '未核实'}
@@ -174,13 +240,18 @@ class WeeklySynthesizer:
 ## 本周必读
 
 要求：
-1. 每个事实性判断都点名对应论文或 arXiv ID；
+1. 每个事实性判断都点名对应论文、arXiv ID 和给定修订版；
 2. 区分论文明确结论与跨论文推断；
 3. “本周必读”优先考虑用户加入文献库的论文，并降低已标记“不相关”的论文；
-4. 使用 `[论文标题](https://arxiv.org/abs/ID)` 链接；
+4. 使用 `[论文标题](https://arxiv.org/abs/IDv版本号)` 链接，未知版本不添加后缀；生成报告不等于用户读完，个人活动与论文事实分开；
 5. 没有证据支持的分歧或趋势明确写“证据不足”。""",
             )
         except Exception as exc:
+            task_warning(
+                "LLM 周报生成",
+                "模型调用失败，已回退到结构化汇总。"
+                f"请检查 LLM Base URL、模型名和服务状态（{type(exc).__name__}: {exc}）。",
+            )
             fallback = self._fallback_markdown(week_id, papers, feedback, library)
             return fallback + f"\n> LLM 周报生成失败，已回退到结构化汇总：{type(exc).__name__}\n"
 
@@ -200,7 +271,7 @@ class WeeklySynthesizer:
             "",
             "## 本周概览",
             "",
-            f"本周共收录 {len(papers)} 篇推荐论文，分布在 {len(categories)} 个主要类别。",
+            f"本期综合推荐与研究活动，共收录 {len(papers)} 篇论文，分布在 {len(categories)} 个主要类别。",
             "",
             "## 主题与趋势",
             "",
@@ -210,7 +281,7 @@ class WeeklySynthesizer:
             for item in items:
                 paper = item.get("paper") or {}
                 lines.append(
-                    f"- [{paper.get('title', '')}]({paper.get('abs_url', '')})（arXiv:{paper.get('arxiv_id', '')}）"
+                    self._paper_link(paper)
                 )
         lines.extend(["", "## 方法簇", "", "未启用 LLM，暂按 arXiv 类别分组。", "", "## 结论分歧与证据", "", "证据不足。", "", "## 开放问题", "", "需要结合完整阅读报告进一步归纳。", "", "## 本周必读", ""])
         prioritized = sorted(
@@ -236,5 +307,13 @@ class WeeklySynthesizer:
         )[:5]
         for item in prioritized:
             paper = item.get("paper") or {}
-            lines.append(f"- [{paper.get('title', '')}]({paper.get('abs_url', '')})")
+            lines.append(self._paper_link(paper))
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _paper_link(paper):
+        from .activity import literal
+        from urllib.parse import quote
+        aid = str(paper.get("arxiv_id") or "")
+        key = aid + (f"v{paper['version']}" if paper.get("version") else "")
+        return f"- [{literal(paper.get('title') or aid)}](https://arxiv.org/abs/{quote(key, safe='/')})（{literal(key)}）"
