@@ -58,6 +58,8 @@
     <section class="form-section" id="discovery">
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
       <label>研究主题描述<textarea name="interest_description" rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
+      <label class="check-row"><input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}><span>根据最近 5 篇收藏微调推荐</span></label>
+      <p>保留基础搜索，自动归纳当前方向最近收藏的标题与摘要，补充定向搜索并辅助精排。样本变化后下次推荐生效；关闭后恢复基础搜索与排序，主题屏蔽仍生效。归纳结果可复用；启用时会增加定向检索请求。</p>
       <div class="form-columns">
         <label>检索来源模式<select name="discovery_provider"><option value="hybrid" {% if config.discovery.provider == 'hybrid' %}selected{% endif %}>协作：arXiv + alphaXiv</option><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>备用：arXiv 失败后使用 alphaXiv</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>协作模式每次主动进行 alphaXiv 语义发现，使用其助手额度；arXiv 补全正式论文数据。</small></label>
         <label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label>

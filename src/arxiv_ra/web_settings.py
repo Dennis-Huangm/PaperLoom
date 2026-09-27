@@ -159,6 +159,7 @@ def build_config_update(form: Any) -> dict[str, Any]:
             "seed_papers": seeds,
             "concept_groups": concept_groups,
             "minimum_concept_groups": minimum_concept_groups,
+            "recent_library_enabled": "recent_library_enabled" in form,
         },
         "ranking": {
             "category_weight": _float_value(form, "category_weight", 0, 100),

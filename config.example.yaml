@@ -12,6 +12,8 @@ discovery:
   alphaxiv_difficulty: 5
   alphaxiv_max_candidates: 15
   alphaxiv_minimum_concept_groups: 1
+  # Derive supplemental queries from the latest 5 saved papers in this direction.
+  recent_library_enabled: true
   lookback_days: 2
   max_candidates: 300
   prefilter_count: 30

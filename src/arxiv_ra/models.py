@@ -38,6 +38,7 @@ class Paper:
     abstract_kind: str = "full"
     resolution_note: str = ""
     ranking_explanation: dict[str, Any] = field(default_factory=dict)
+    discovery_routes: list[str] = field(default_factory=list)
 
     @property
     def source_label(self) -> str:
@@ -62,6 +63,9 @@ class Paper:
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
+        # Preserve fingerprints of older paper snapshots used by report resume.
+        if not self.discovery_routes:
+            value.pop("discovery_routes", None)
         value["published"] = self.published.isoformat() if self.published else ""
         value["updated"] = self.updated.isoformat() if self.updated else ""
         value["final_score"] = self.final_score
@@ -116,6 +120,7 @@ class Paper:
             abstract_kind=str(value.get("abstract_kind") or ("full" if partial == "complete" else "preview")),
             resolution_note=str(value.get("resolution_note") or ""),
             ranking_explanation=dict(value.get("ranking_explanation") or {}),
+            discovery_routes=list(value.get("discovery_routes") or []),
         )
 
 

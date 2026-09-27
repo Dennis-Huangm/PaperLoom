@@ -584,6 +584,23 @@ if (dataNode) {
     if (info.feedback_matches?.length) line(`偏好命中：${info.feedback_matches.map(m => `${m.term} (${m.weight > 0 ? '+' : ''}${m.weight})`).join('、')}；累加后 × 0.28，限 −3 至 +3。`);
   };
 
+  const showRecentInterest = (paper) => {
+    const container = document.querySelector('#inspector-interest');
+    if (!container) return;
+    container.replaceChildren();
+    const line = (value) => { const p = document.createElement('p'); p.textContent = value; container.append(p); };
+    const interest = paper.ranking_explanation?.recent_interest;
+    if (!interest) { line('历史推荐未记录收藏引导依据。'); return; }
+    const statuses = {ready: '已使用近期收藏关注点', disabled: '本次未启用收藏引导', no_samples: '当前方向暂无收藏，使用基础检索', no_focus: '未归纳出方向内的具体关注点，使用基础检索', model_unavailable: '模型未配置，使用基础检索和本地偏好排序', failed: '关注点归纳失败，已回退到基础检索和本地偏好排序'};
+    line(statuses[interest.status] || '使用基础检索');
+    if (interest.focus) line(`关注点：${interest.focus}`);
+    if (interest.query_terms?.length) line(`补充检索词：${interest.query_terms.join('、')}`);
+    if (interest.cached) line('本次复用了相同方向与收藏样本的归纳结果。');
+    for (const sample of interest.samples || []) line(`参考收藏：${sample.title || sample.arxiv_id} · ${sample.arxiv_id}`);
+    if (paper.discovery_routes?.length) line(`发现路径：${paper.discovery_routes.map(route => route === 'recent' ? '近期收藏定向搜索' : '基础搜索').join('、')}`);
+    line('以上记录属于本次推荐；之后新增或移除收藏不会改写历史依据。');
+  };
+
   const setLibraryUI = (saved) => {
     const button = document.querySelector('#inspector-library-button');
     const label = document.querySelector('#inspector-library-label');
@@ -607,6 +624,7 @@ if (dataNode) {
     });
     const paper = item.paper;
     showRanking(paper);
+    showRecentInterest(paper);
     document.querySelector('#feedback-terms').value = (item.feedback?.scope === 'topic' ? item.feedback.terms : []).join(', ');
     const verified = item.verified || {};
     setText('#inspector-position', `${index + 1} / ${papers.length}`);

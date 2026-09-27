@@ -8,6 +8,7 @@ from typing import Any
 from .models import Paper
 from .reading_state import ReadingStateStore
 from .ranker import _phrase_count
+from .recent_interest import RECENT_LIBRARY_LIMIT, recent_library_entries
 
 
 VERDICTS = {
@@ -19,7 +20,7 @@ VERDICT_WEIGHTS = {
 }
 
 LIBRARY_WEIGHT = 0.8
-DEFAULT_LIBRARY_SIGNAL_LIMIT = 30
+DEFAULT_LIBRARY_SIGNAL_LIMIT = RECENT_LIBRARY_LIMIT
 
 STOPWORDS = {
     "the", "a", "an", "and", "or", "for", "from", "with", "without", "via",
@@ -97,11 +98,7 @@ class FeedbackStore:
             weight = VERDICT_WEIGHTS.get(str(entry.get("verdict") or ""), 0.0)
             for term in entry.get("terms") or []:
                 scores[str(term)] = scores.get(str(term), 0.0) + weight
-        recent_library = sorted(
-            (library_entries or {}).values(),
-            key=lambda entry: str(entry.get("saved_at") or ""),
-            reverse=True,
-        )[: max(0, library_limit)]
+        recent_library = recent_library_entries(library_entries or {}, library_limit)
         for entry in recent_library:
             title = str((entry.get("paper") or {}).get("title") or "")
             for term in _paper_terms(title):
