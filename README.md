@@ -74,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File scripts\run.ps1 doctor
 powershell -ExecutionPolicy Bypass -File scripts\start_gui.ps1
 ```
 
-浏览器入口为 **http://127.0.0.1:8000**。安装脚本、GUI、日常命令与 Windows 计划任务统一使用项目 `.venv`。安装可加 `-WithDocling` 启用可选 PDF 解析器、`-Dev` 安装测试依赖，或用 `-Python "D:\path\to\python.exe"` 指定基础解释器。不要删除创建虚拟环境所依赖的基础 Python。
+浏览器入口为 http://127.0.0.1:8000。安装脚本、GUI、日常命令与 Windows 计划任务统一使用项目 `.venv`。安装可加 `-WithDocling` 启用可选 PDF 解析器、`-Dev` 安装测试依赖，或用 `-Python "D:\path\to\python.exe"` 指定基础解释器。不要删除创建虚拟环境所依赖的基础 Python。
 
 ### Linux / macOS
 
