@@ -153,10 +153,20 @@ def render_recommendations(
         authors = ", ".join(author.name for author in paper.authors[:6])
         venue = verified.venue or "会议/期刊未核实"
         reason = paper.recommendation_reason or "依据研究类别、关键词和发布时间完成自动筛选。"
+        interest = paper.ranking_explanation.get("recent_interest") or {}
+        guidance = ""
+        if interest.get("status") == "ready":
+            samples = "；".join(f"{s.get('title') or s.get('arxiv_id')} · {s.get('arxiv_id')}"
+                               for s in interest.get("samples", []))
+            guidance = ("<details><summary>本次推荐的收藏引导</summary><p>关注点："
+                        + html.escape(interest.get("focus", "")) + "</p><p>补充检索词："
+                        + html.escape("、".join(interest.get("query_terms", [])))
+                        + "</p><p>参考收藏：" + html.escape(samples) + "</p></details>")
         cards.append(
             f"""<main class='paper'><div><h2><a href='{html.escape(paper.abs_url)}'>{html.escape(paper.title)}</a></h2>
 <div class='meta'>{html.escape(authors)} · {html.escape(venue)} · arXiv:{html.escape(paper.arxiv_id)}</div>
 <p><strong>推荐理由：</strong>{html.escape(reason)}</p>
+{guidance}
 <p><strong>{"摘要" if paper.abstract_kind == "full" else "摘要预览（待补全）"}：</strong>{html.escape(paper.abstract[:900])}</p>
 <a href='{html.escape(paper.abs_url)}'>摘要页</a> · <a href='{html.escape(paper.pdf_url)}'>PDF</a></div>
 <div class='score'>{paper.final_score:.1f}</div></main>"""

@@ -99,6 +99,7 @@
         <p id="inspector-source">{{ selected.paper.source_label or '历史记录，来源待核实' }}</p>
         <div id="inspector-reason" class="paper-summary">{{ (selected.paper.recommendation_detail or selected.paper.recommendation_reason)|summary_html|safe }}</div>
         <details><summary>查看匹配词与分数构成</summary><div id="inspector-ranking"></div></details>
+        <details><summary>本次推荐的收藏引导</summary><div id="inspector-interest"></div></details>
         <details class="topic-feedback"><summary>屏蔽主题词</summary><label for="feedback-terms">明确填写词或短语，以逗号分隔</label><input id="feedback-terms" maxlength="810" placeholder="例如 medical segmentation"><p>同时排除此论文，后续屏蔽标题或摘要中命中任一词的论文。</p><button class="button secondary" type="button" data-feedback="not_relevant" data-scope="topic">应用主题屏蔽</button></details>
       </section>
 

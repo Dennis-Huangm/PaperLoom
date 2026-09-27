@@ -14,6 +14,8 @@ from .arxiv_client import offline_demo_papers
 from .config import AppConfig
 from .emailer import send_digest
 from .feedback import FeedbackStore
+from .recent_interest import (RecentInterest, build_recent_interest, direction_description,
+                              prefilter_candidates, RECENT_LIBRARY_LIMIT)
 from .evidence import attach_evidence
 from .library import PaperLibraryStore
 from .models import Paper, ReportArtifact, VerifiedMetadata
@@ -107,12 +109,20 @@ class DailyPipeline:
         return digest_path
 
     def _rank_candidates(self, run_dir: Path, demo: bool, force: bool = False):
-        papers = offline_demo_papers() if demo else self._discover_papers(run_dir, force=force)
-        ranked = rank_papers(papers, self.config.discovery, self.config.ranking)
         feedback_store = FeedbackStore(self.output_root, self.config.profile_id)
         preferences = feedback_store.state.snapshot()
+        self._recent_interest = RecentInterest() if demo else build_recent_interest(
+            self.config, preferences["library"], self.clients.llm, self.output_root)
+        if self._recent_interest.status in {"failed", "model_unavailable"}:
+            task_warning("近期收藏引导", "无法归纳近期收藏关注点，本次继续使用基础检索和本地偏好排序。")
+        papers = offline_demo_papers() if demo else self._discover_papers(run_dir, force=force)
+        ranked = rank_papers(papers, self.config.discovery, self.config.ranking)
         feedback_entries = preferences["feedback"]
-        feedback_store.apply(ranked, preferences["library"], feedback_entries=feedback_entries)
+        feedback_store.apply(ranked, preferences["library"],
+                             library_limit=RECENT_LIBRARY_LIMIT if self.config.discovery.recent_library_enabled else 0,
+                             feedback_entries=feedback_entries)
+        for paper in ranked:
+            paper.ranking_explanation["recent_interest"] = self._recent_interest.to_dict()
         ranked.sort(key=lambda item: (item.final_score, item.published_sort_key), reverse=True)
         minimum_groups = self.config.discovery.minimum_concept_groups
         processed_ids = set() if force or demo else self._processed_ids()
@@ -131,8 +141,11 @@ class DailyPipeline:
                 self._selection_audit.append({"paper": paper.to_dict(), "reasons": reasons})
             else:
                 eligible.append(paper)
-        candidates = eligible[: self.config.discovery.prefilter_count]
-        for paper in eligible[self.config.discovery.prefilter_count:]:
+        candidates = prefilter_candidates(eligible, self.config.discovery.prefilter_count)
+        candidate_ids = {paper.arxiv_id for paper in candidates}
+        for paper in eligible:
+            if paper.arxiv_id in candidate_ids:
+                continue
             finish_explanation(paper)
             self._selection_audit.append({"paper": paper.to_dict(), "reasons": [{"reason": "超出预筛数量"}]})
         if self.config.ranking.llm_rerank and self.clients.llm.enabled:
@@ -192,7 +205,8 @@ class DailyPipeline:
         self._discovery_result = None
         service = DiscoveryService(self.config.discovery, self.clients.arxiv, self.clients.alphaxiv, self.output_root)
         try:
-            self._discovery_result = service.discover(set() if force else self._processed_ids())
+            self._discovery_result = service.discover(set() if force else self._processed_ids(),
+                                                     recent_interest=getattr(self, "_recent_interest", None))
         except RuntimeError as exc:
             result = getattr(exc, "discovery_result", None)
             if result:
@@ -595,11 +609,5 @@ class DailyPipeline:
         return ReportArtifact(paper, report_path, main_figure, metadata, report)
 
     def _interest_description(self) -> str:
-        discovery = self.config.discovery
-        return (
-            f"研究主题描述：{discovery.interest_description or '未提供'}。"
-            f"关注 arXiv 类别：{', '.join(discovery.arxiv_categories)}。"
-            f"重点关键词：{', '.join(discovery.positive_keywords)}。"
-            f"降低优先级：{', '.join(discovery.negative_keywords)}。"
-            f"种子论文：{', '.join(discovery.seed_papers) or '未提供'}。"
-        )
+        interest = getattr(self, "_recent_interest", RecentInterest())
+        return direction_description(self.config) + "\n" + interest.prompt()

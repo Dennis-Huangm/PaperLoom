@@ -32,6 +32,7 @@ class DiscoveryConfig:
     seed_papers: list[str] = field(default_factory=list)
     concept_groups: list[list[str]] = field(default_factory=list)
     minimum_concept_groups: int = 0
+    recent_library_enabled: bool = True
 
     def __post_init__(self) -> None:
         if self.provider not in {"auto", "arxiv", "hybrid"}:
