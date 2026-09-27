@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}检索草稿 · PaperLoom{% endblock %}
+{% block content %}
+<header class="page-heading"><div><p class="section-kicker">RESEARCH DRAFT</p><h1>{{ draft.name }}</h1><p>先检查研究主题和条件，再按需试搜或启用。</p></div><a href="/profiles">返回研究方向</a></header>
+<section class="form-section"><h2>检索草稿 · 第 {{ draft.revision }} 版</h2>
+<p>{{ {'ready':'可启用','needs_input':'需要补全主题线索','failed':'生成失败，可编辑后重试'}[draft.status] }}</p>
+{% for message in draft.diagnostics %}<p class="notice">{{ message }}</p>{% endfor %}
+<form method="post" action="/profiles/drafts/{{ draft.id }}/edit" class="settings-form">
+<input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}">
+<label>系统理解的研究主题<textarea name="description" rows="3" maxlength="4000" required>{{ draft.description }}</textarea></label>
+<p>主题线索帮助发现论文，偏好影响排序。只有已确认的必要条件和明确排除条件会阻止论文入选。仅在背景中提及一个词不等于属于该主题。</p>
+{% for c in draft.plan.conditions %}
+<fieldset class="draft-condition"><legend>{{ condition_kinds[c.kind] }} · {{ {'user':'用户指定','model':'模型建议','legacy':'历史配置'}[c.origin] }}</legend>
+<div class="form-columns">
+<label>条件<input name="text-{{ c.id }}" value="{{ c.text }}" maxlength="200" required></label>
+<label>用途<select name="kind-{{ c.id }}">{% for kind, label in condition_kinds.items() %}<option value="{{ kind }}" {% if kind == c.kind %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>同义表达（每行一个）<textarea name="aliases-{{ c.id }}" rows="2">{{ c.aliases|join('\n') }}</textarea></label>
+</div>
+<p>{{ c.evidence }}</p>
+<label class="check-row"><input type="checkbox" name="confirmed-{{ c.id }}" {% if c.confirmed %}checked{% endif %}><span>采用此条件{% if not c.confirmed %}（待确认）{% endif %}</span></label>
+<label class="check-row"><input type="checkbox" name="delete-{{ c.id }}"><span>删除，重新生成时也不恢复</span></label>
+</fieldset>
+{% endfor %}
+<div class="form-columns"><label>新增条件<input name="new_text" maxlength="200" placeholder="例如：机器人控制"></label><label>用途<select name="new_kind">{% for kind, label in condition_kinds.items() %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select></label></div>
+<details><summary>高级检索配置</summary>
+<label>arXiv 类别（每行一个）<textarea name="categories" rows="3">{{ draft.discovery.arxiv_categories|join('\n') }}</textarea></label>
+<p>基础检索总候选预算 {{ draft.discovery.max_candidates }}；核心分支至少保留一半，其他分支共享剩余额度。</p>
+{% for b in draft.plan.branches %}<p><strong>{{ b.label }}</strong>：{% for group in b.groups %}({{ group|join(' 或 ') }}){% if not loop.last %} 且 {% endif %}{% endfor %}</p>{% endfor %}
+</details>
+<button type="submit" class="button primary">保存草稿</button>
+</form>
+<div class="draft-actions">
+{% for action, label in [('regenerate','重新生成建议'),('activate','保存并启用')] %}
+<form method="post" action="/profiles/drafts/{{ draft.id }}/{{ action }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button type="submit" class="button secondary" {% if action == 'activate' and draft.status != 'ready' %}disabled{% endif %}>{{ label }}</button></form>
+{% endfor %}
+{% for action, label in [('preview','试搜'),('references','检查参考论文')] %}
+<form class="job-form" method="post" action="/profiles/drafts/{{ draft.id }}/{{ action }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button type="submit" class="button secondary" {% if draft.status != 'ready' or (action == 'references' and not draft.references) %}disabled{% endif %}>{{ label }}</button></form>
+{% endfor %}
+</div><p>操作使用已保存的草稿。可以跳过试搜直接启用；修改条件后请先保存。后台任务完成后刷新查看结果。</p>
+</section>
+{% if draft.references %}<section class="form-section"><h2>参考依据</h2>{% for ref in draft.references %}<p>arXiv:{{ ref.arxiv_id }} · {{ ref.title or '未解析' }}{% if not ref.abstract %} · 缺少摘要{% endif %}</p>{% endfor %}</section>{% endif %}
+{% for key, label in [('preview','试搜结果'),('reference_check','参考论文主题检查')] %}
+{% set result = draft.get(key) %}{% if result %}
+<section class="form-section"><h2>{{ label }}</h2>
+{% if result.revision != draft.revision %}<p class="notice">结果已过期：来自第 {{ result.revision }} 版，请重新检查。</p>{% endif %}
+<p>{{ {'ok':'检查完成','partial':'部分来源不可用','empty':'未检索到论文','filtered':'筛选后没有符合条件的论文','uncertain':'硬约束无法验证','failed':'检索失败'}[result.status] }} · {{ result.created_at or '' }}</p>
+{% if result.error %}<p class="notice">{{ result.error }}</p>{% endif %}
+{% for warning in result.warnings or [] %}<p class="notice">{{ warning }}</p>{% endfor %}
+{% if result.counts %}<p>取回 {{ result.counts.retrieved }} 篇，评估 {{ result.counts.evaluated }} 篇，符合条件 {{ result.counts.eligible }} 篇，无法判断 {{ result.counts.uncertain }} 篇。每类最多展示 10 篇样本。</p>{% endif %}
+{% for source, state in result.sources.items() %}<p>{{ source }}：{{ state.status }} · {{ state.count }} 篇{% if state.at_limit %} · 已触及额度上限，并非全部匹配结果{% endif %}{% if state.error %} · {{ state.error }}{% endif %}</p>{% endfor %}
+<h3>符合条件的样本</h3>{% for p in result.selected %}<article><a href="{{ p.abs_url }}" target="_blank" rel="noopener">{{ p.title }}</a><p>{{ p.recommendation_reason }}</p><small>检索路线：{{ p.discovery_routes|join('、') }}</small>{% for c in p.ranking_explanation.get('conditions', []) %}<p>{{ c.text }} · {{ c.verdict }} · {{ c.quote }} · {{ c.reason }}</p>{% endfor %}</article>{% else %}<p>暂无</p>{% endfor %}
+<h3>被过滤或待判断的样本</h3>{% for row in result.rejected %}<article><strong>{{ row.paper.title }}</strong>{% for reason in row.reasons %}<p>{{ reason.reason }}{% if reason.condition %} · {{ reason.condition.quote }} · {{ reason.condition.reason }}{% endif %}</p>{% endfor %}</article>{% else %}<p>暂无</p>{% endfor %}
+{% if key == 'reference_check' %}<p>主题检查忽略日期和历史推荐状态；结果不代表在线召回率。</p>{% endif %}
+</section>{% endif %}{% endfor %}
+{% endblock %}

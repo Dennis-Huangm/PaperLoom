@@ -11,7 +11,7 @@
   <div class="profile-layout">
     <section class="profile-create-card">
       <p class="section-kicker">CREATE WITH AI</p>
-      <h2>创建新检索档案</h2>
+      <h2>创建检索草稿</h2>
       <p class="profile-intro">系统会读取参考论文的标题、摘要与 arXiv 类别，再结合关键词生成检索词、概念组和排序配置。</p>
       <form method="post" action="/profiles/create" class="profile-form"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <label>方向名称<input name="name" placeholder="例如：具身智能中的世界模型" maxlength="80" required></label>
@@ -19,15 +19,17 @@
         <label>重点关键词<textarea name="keywords" rows="5" placeholder="每行一个，或使用逗号分隔&#10;world model&#10;embodied agent&#10;video prediction"></textarea></label>
         <label>参考论文 arXiv ID<textarea name="reference_ids" rows="5" placeholder="每行一个，例如：&#10;2407.05600"></textarea><small>最多分析前 12 篇；关键词和参考论文至少填写一项。</small></label>
         <label>不感兴趣的方向（可选）<textarea name="negative_keywords" rows="3" placeholder="survey, medical imaging"></textarea></label>
+        <label>必要条件（可选）<textarea name="required" rows="2" placeholder="只有满足这些要求才允许推荐，每行一个"></textarea></label>
+        <label>明确排除条件（可选）<textarea name="excluded" rows="2" placeholder="以这些主题为研究对象的论文不推荐，每行一个"></textarea></label>
         <div class="profile-form-footer">
           <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
-          <label class="check-row compact-check"><input type="checkbox" name="activate" value="true" checked><span><strong>创建后立即启用</strong><small>后续任务使用该方向</small></span></label>
-          <button class="button primary" type="submit"><i class="fas fa-magic" aria-hidden="true"></i>生成并保存</button>
+          <button class="button primary" type="submit"><i class="fas fa-magic" aria-hidden="true"></i>生成草稿</button>
         </div>
       </form>
     </section>
 
     <section class="profile-library">
+      {% if drafts %}<h2>待检查的草稿</h2>{% for draft in drafts %}<article class="profile-card"><a href="/profiles/drafts/{{ draft.id }}">{{ draft.name }}</a><p>第 {{ draft.revision }} 版 · {{ {'ready':'可启用','needs_input':'需要补全','failed':'生成失败'}[draft.status] }}</p></article>{% endfor %}{% endif %}
       <header><div><p class="section-kicker">SAVED PROFILES</p><h2>已保存方向</h2></div><span>{{ profiles|length }} 个档案</span></header>
       <div class="profile-list">
         {% for profile in profiles %}
@@ -38,6 +40,7 @@
             <form method="post" action="/profiles/{{ profile.id }}/activate"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button subtle" type="submit">切换到此方向</button></form>{% endif %}
           </div>
           <p>{{ profile.description or '尚未填写方向描述。' }}</p>
+          <form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="button subtle">复制为新草稿</button></form>
           <div class="profile-tags">{% for keyword in profile.keywords[:8] %}<span>{{ keyword }}</span>{% endfor %}</div>
           {% if profile.references %}<div class="profile-references"><strong>参考论文</strong>{% for paper in profile.references[:4] %}<span>arXiv:{{ paper.arxiv_id }} · {{ paper.title }}</span>{% endfor %}</div>{% endif %}
           <footer><span><i class="far fa-calendar" aria-hidden="true"></i>回溯 {{ profile.lookback_days }} 天</span><span><i class="far fa-file-alt" aria-hidden="true"></i>每日 {{ profile.recommendation_count }} 篇</span><code>{{ profile.path }}</code></footer>

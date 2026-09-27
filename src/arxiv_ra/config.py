@@ -33,8 +33,11 @@ class DiscoveryConfig:
     concept_groups: list[list[str]] = field(default_factory=list)
     minimum_concept_groups: int = 0
     recent_library_enabled: bool = True
+    search_plan: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.search_plan, dict) or (self.search_plan and self.search_plan.get("version") != 2):
+            raise ValueError("不支持的研究方向检索计划版本")
         if self.provider not in {"auto", "arxiv", "hybrid"}:
             raise ValueError("无效的检索来源模式")
         if not 1 <= self.alphaxiv_max_candidates <= 15:

@@ -134,3 +134,7 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 .paper-summary .katex-display { width: max-content; min-width: 100%; }
 .paper-summary > :first-child { margin-top: 0; }
 .paper-summary > :last-child { margin-bottom: 0; }
+/* Research drafts reuse the settings form controls and preserve narrow layouts. */
+.draft-condition { border: 1px solid var(--border, #d9dee7); border-radius: 12px; padding: 18px; margin: 16px 0; min-width: 0; }
+.draft-condition legend { padding: 0 8px; font-weight: 600; }
+.draft-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }

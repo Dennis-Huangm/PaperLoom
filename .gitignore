@@ -22,3 +22,6 @@ docs/*
 !docs/USAGE.md
 !docs/ARCHITECTURE.md
 !docs/RELEASE_CHECKLIST.md
+!docs/specs/
+docs/specs/*
+!docs/specs/research-profile-generation.md

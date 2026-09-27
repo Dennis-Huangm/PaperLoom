@@ -33,6 +33,7 @@ from .paper_data import local_paper_item, base_id, requested_version
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .pipeline import DailyPipeline
 from .profiles import ProfileGenerator, ProfileManager
+from .web_profiles import register_profile_routes
 from .utils import read_json
 from .weekly import WeeklySynthesizer
 from .activity import collect_activity
@@ -365,6 +366,9 @@ def create_app(config_path: Path | str) -> FastAPI:
             collection_key=collection_key or None,
         )
         return result.to_dict()
+
+    generate_profile_draft = register_profile_routes(
+        app, profiles, current_config, templates, context, jobs, project_root)
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, date: str = "") -> HTMLResponse:
@@ -830,6 +834,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                 request,
                 "profiles",
                 profiles=profiles.list(),
+                drafts=profiles.drafts(),
                 saved=saved,
                 switched=switched,
             ),
@@ -838,49 +843,15 @@ def create_app(config_path: Path | str) -> FastAPI:
     @app.post("/profiles/create")
     async def create_profile(request: Request) -> RedirectResponse:
         form = await request.form()
-        name = str(form.get("name", "")).strip()
-        description = str(form.get("description", "")).strip()
-        keywords = _list_field(str(form.get("keywords", "")))
-        negative_keywords = _list_field(str(form.get("negative_keywords", "")))
-        reference_ids = _list_field(str(form.get("reference_ids", "")))
-        if not name:
-            raise HTTPException(status_code=400, detail="请输入研究方向名称")
-        if not keywords and not reference_ids:
-            raise HTTPException(status_code=400, detail="关键词和参考论文至少填写一项")
-        invalid_ids = [item for item in reference_ids if not ARXIV_ID_RE.match(item)]
-        if invalid_ids:
-            raise HTTPException(
-                status_code=400,
-                detail=f"无效的 arXiv ID：{', '.join(invalid_ids)}",
-            )
         try:
-            recommendation_count = _int_value(form, "recommendation_count", 1, 50)
-            profile_id = profiles.unique_id(name)
-            with ProfileGenerator(current_config()) as generator:
-                payload = await run_in_threadpool(
-                    generator.generate,
-                    profile_id,
-                    name,
-                    keywords,
-                    negative_keywords,
-                    reference_ids,
-                    description,
-                    recommendation_count,
-                )
-            profiles.save(payload)
-            if "activate" in form:
-                profiles.activate(profile_id)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"研究方向生成失败：{type(exc).__name__}: {exc}",
-            ) from exc
-        return RedirectResponse(
-            f"/profiles?saved={quote(profile_id)}",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+            data = {key: str(form.get(key, "")).strip() for key in ("name", "description")}
+            for key in ("keywords", "negative_keywords", "reference_ids", "required", "excluded"):
+                data[key] = _list_field(str(form.get(key, "")))
+            data["recommendation_count"] = _int_value(form, "recommendation_count", 1, 50)
+            draft = await generate_profile_draft(data)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse(f"/profiles/drafts/{draft['id']}", status_code=303)
 
     @app.post("/profiles/{profile_id}/activate")
     def activate_profile(profile_id: str) -> RedirectResponse:
@@ -925,14 +896,25 @@ def create_app(config_path: Path | str) -> FastAPI:
     @app.post("/settings/config")
     async def update_settings(request: Request) -> RedirectResponse:
         form = await request.form()
+        current = current_config()
+        protected = ("interest_description", "arxiv_categories", "arxiv_query_terms", "positive_keywords",
+                     "negative_keywords", "seed_papers", "concept_groups", "minimum_concept_groups")
+        if current.discovery.search_plan.get("version") == 2:
+            form = dict(form)
+            for key in protected:
+                value = getattr(current.discovery, key)
+                form[key] = "\n".join(value) if isinstance(value, list) else str(value)
         try:
             values = build_config_update(form)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         discovery = values.pop("discovery")
         ranking = values.pop("ranking")
+        if current.discovery.search_plan.get("version") == 2:
+            discovery["search_plan"] = current.discovery.search_plan
+            for key in protected:
+                discovery[key] = getattr(current.discovery, key)
         save_config_settings(config_path, values)
-        current = current_config()
         if current.profile_id:
             profile = profiles.get(current.profile_id)
             profile.update(discovery=discovery, ranking=ranking)

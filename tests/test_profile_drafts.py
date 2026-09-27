@@ -1,0 +1,183 @@
+import json
+import time
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
+
+from arxiv_ra.research_clients import ResearchClients
+from arxiv_ra.web import create_app
+from test_profile_plan_discovery import paper
+
+
+@pytest.fixture
+def workspace(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\ndiscovery:\n  interest_description: original\n  arxiv_categories: [cs.CV]\n", encoding="utf-8")
+    model = SimpleNamespace(enabled=True, chat=lambda *a, **kw: json.dumps({
+        "interest_description": "Robot world models", "arxiv_categories": ["cs.RO"],
+        "arxiv_query_terms": ["world model"], "positive_keywords": [],
+        "negative_keywords": [], "concept_groups": [["robot"], ["video"]],
+        "minimum_concept_groups": 2,
+    }))
+    monkeypatch.setattr(ResearchClients, "llm", property(lambda self: model))
+    monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
+    app = create_app(config)
+    with TestClient(app) as client:
+        yield client, model, tmp_path
+
+
+def test_generate_draft_preserves_user_intent_without_activating(workspace):
+    client, _, root = workspace
+    active = (root / "profiles" / "active.txt").read_text()
+    response = client.post("/api/profile-drafts", json={
+        "name": "Robots", "keywords": ["world model", "robot"],
+        "negative_keywords": ["survey"], "required": ["用于机器人控制"],
+    })
+    assert response.status_code == 201
+    draft = response.json()
+    assert draft["status"] == "ready"
+    assert draft["revision"] == 1
+    assert {(c["kind"], c["text"]) for c in draft["plan"]["conditions"] if c["origin"] == "user"} == {
+        ("topic", "world model"), ("topic", "robot"), ("demote", "survey"), ("required", "用于机器人控制")}
+    assert draft["discovery"]["minimum_concept_groups"] == 0
+    assert (root / "profiles" / "active.txt").read_text() == active
+    assert not (root / "profiles" / f'{draft["id"]}.yaml').exists()
+    page = client.get(f'/profiles/drafts/{draft["id"]}')
+    assert page.status_code == 200
+    assert "必要条件" in page.text and "survey" in page.text
+
+
+def test_edit_activate_and_reject_stale_revision(workspace):
+    client, _, root = workspace
+    draft = client.post("/api/profile-drafts", json={"name": "Editable", "keywords": ["world model"]}).json()
+    conditions = draft["plan"]["conditions"]
+    conditions[0]["aliases"] = ["world model", "world models"]
+    saved = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={
+        "revision": 1, "conditions": conditions}).json()
+    assert saved["revision"] == 2
+    stale = client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1})
+    assert stale.status_code == 409
+    response = client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 2})
+    assert response.status_code == 200
+    assert (root / "profiles" / "active.txt").read_text().strip() == draft["id"]
+    # Same revision is safe to retry and does not duplicate the formal profile.
+    assert client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 2}).status_code == 200
+
+
+def test_regeneration_keeps_edits_and_deleted_suggestions(workspace):
+    client, model, _ = workspace
+    model.chat = lambda *a, **kw: json.dumps({"positive_keywords": ["video prediction"], "conditions": [
+        {"kind": "required", "text": "simulation", "basis": "input", "evidence": "可能的场景"}]})
+    draft = client.post("/api/profile-drafts", json={"name": "Keep edits", "keywords": ["world model"]}).json()
+    assert any(c["kind"] == "required" and not c["confirmed"] for c in draft["plan"]["conditions"])
+    keep = [c for c in draft["plan"]["conditions"] if c["origin"] == "user"]
+    keep[0]["aliases"].append("world models")
+    saved = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={"revision": 1, "conditions": keep}).json()
+    regenerated = client.post(f'/api/profile-drafts/{draft["id"]}/regenerate', json={"revision": saved["revision"]})
+    assert regenerated.status_code == 200
+    assert regenerated.json()["plan"]["conditions"] == saved["plan"]["conditions"]
+
+
+@pytest.mark.parametrize("reply", ['not json', '{"positive_keywords":[{}]}', '{"arxiv_categories":["cs.FAKE"]}',
+    '{"conditions":[{"kind":"topic","text":"robot","basis":"9999.12345","evidence":"unknown"}]}'])
+def test_invalid_generation_is_visible_and_cannot_activate(workspace, reply):
+    client, model, _ = workspace
+    model.chat = lambda *a, **kw: reply
+    response = client.post("/api/profile-drafts", json={"name": "Invalid", "keywords": ["robot"]})
+    assert response.status_code == 201
+    draft = response.json()
+    assert draft["status"] == "failed"
+    assert draft["diagnostics"]
+    assert client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1}).status_code == 400
+
+
+def test_preview_shares_constraints_and_has_no_recommendation_side_effects(workspace, monkeypatch):
+    client, model, root = workspace
+    draft = client.post("/api/profile-drafts", json={"name": "Preview", "keywords": ["world model"],
+        "excluded": ["medical imaging"]}).json()
+    cid = next(c["id"] for c in draft["plan"]["conditions"] if c["kind"] == "exclude")
+    samples = [paper(abstract="We study robot control, unlike medical imaging."),
+               paper("2609.00002", "Medical imaging", "We study medical imaging.")]
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(
+        search=lambda *a, **kw: samples, get_many=lambda ids: [])))
+    model.chat = lambda *a, **kw: json.dumps({"papers": [
+        {"id": samples[0].arxiv_id, "score": 9, "conditions": [{"id": cid, "verdict": "not_satisfied", "quote": "We study robot control", "reason": "研究对象是机器人"}]},
+        {"id": samples[1].arxiv_id, "score": 8, "conditions": [{"id": cid, "verdict": "satisfied", "quote": "We study medical imaging", "reason": "研究对象是医学影像"}]}]})
+    active = (root / "profiles" / "active.txt").read_text()
+    response = client.post(f'/api/profile-drafts/{draft["id"]}/preview', json={"revision": 1})
+    assert response.status_code == 202
+    for _ in range(100):
+        preview = client.get(f'/api/profile-drafts/{draft["id"]}').json().get("preview")
+        if preview:
+            break
+        time.sleep(.02)
+    assert preview["status"] == "ok"
+    assert [p["arxiv_id"] for p in preview["selected"]] == ["2609.00001"]
+    assert preview["rejected"][0]["paper"]["arxiv_id"] == "2609.00002"
+    assert (root / "profiles" / "active.txt").read_text() == active
+    assert not list((root / "run").rglob("recommendations*.json"))
+    assert not list((root / "run").glob("state-*.json"))
+    assert not list((root / "run").glob("reading-state-*.json"))
+    # The same external responses must give the same hard-constraint outcome in a real daily run.
+    from arxiv_ra.config import load_config
+    from arxiv_ra.pipeline import DailyPipeline
+    from arxiv_ra.models import VerifiedMetadata
+    monkeypatch.setattr(ResearchClients, "verifier", property(lambda self: SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))))
+    monkeypatch.setattr("arxiv_ra.abstracts.LLMClient", lambda cfg: SimpleNamespace(enabled=False))
+    client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1})
+    with DailyPipeline(load_config(root / "config.yaml"), root) as pipeline:
+        pipeline.run(deliver=False)
+    recommendations = next((root / "run").glob(f'*/recommendations-{draft["id"]}.json'))
+    assert [item["paper"]["arxiv_id"] for item in json.loads(recommendations.read_text(encoding="utf-8"))] == ["2609.00001"]
+
+
+def test_copy_legacy_and_save_settings_preserve_versioned_intent(workspace):
+    from arxiv_ra.config import load_config
+    from test_web import _full_settings_form
+    client, _, root = workspace
+    original = (root / "profiles" / "original.yaml").read_bytes()
+    copied = client.post("/profiles/original/copy", follow_redirects=False)
+    assert copied.status_code == 303
+    draft_id = copied.headers["location"].rsplit("/", 1)[-1]
+    assert (root / "profiles" / "original.yaml").read_bytes() == original
+    # A legacy category-only profile remains a draft until a topic is supplied.
+    draft = client.get(f"/api/profile-drafts/{draft_id}").json()
+    assert draft["status"] == "needs_input"
+    created = client.post("/api/profile-drafts", json={"name": "New", "keywords": ["world model"], "required": ["robot control"]}).json()
+    client.post(f'/api/profile-drafts/{created["id"]}/activate', json={"revision": 1})
+    before = load_config(root / "config.yaml").discovery.search_plan
+    response = client.post("/settings/config", data=_full_settings_form(), follow_redirects=False)
+    assert response.status_code == 303
+    config = load_config(root / "config.yaml")
+    assert config.discovery.search_plan == before
+    assert config.discovery.minimum_concept_groups == 0
+
+
+def test_reference_only_without_model_stays_incomplete(workspace, monkeypatch):
+    client, model, _ = workspace
+    model.enabled = False
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(get=lambda aid: paper(aid))))
+    draft = client.post("/api/profile-drafts", json={"name": "References", "reference_ids": ["2401.00001"]}).json()
+    assert draft["status"] == "needs_input"
+    assert draft["references"][0]["title"]
+    assert client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1}).status_code == 400
+
+
+def test_unknown_hard_condition_and_controlled_word_variants(workspace, monkeypatch):
+    client, model, _ = workspace
+    draft = client.post("/api/profile-drafts", json={"name": "Unknown", "keywords": ["world-model"],
+        "required": ["real robot experiments"]}).json()
+    model.enabled = False
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(search=lambda *a, **kw: [paper()])))
+    client.post(f'/api/profile-drafts/{draft["id"]}/preview', json={"revision": 1})
+    for _ in range(100):
+        preview = client.get(f'/api/profile-drafts/{draft["id"]}').json().get("preview")
+        if preview:
+            break
+        time.sleep(.02)
+    assert preview["status"] == "uncertain"
+    assert not preview["selected"]
+    excluded = preview["rejected"][0]
+    assert excluded["reasons"][0]["condition"]["verdict"] == "unknown"
+    assert "world-model" in excluded["paper"]["ranking_explanation"]["positive_keywords"]

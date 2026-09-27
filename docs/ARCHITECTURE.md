@@ -54,6 +54,18 @@ DailyPipeline and feature orchestrators
   execution scopes close created clients on both success and failure.
 - History/feedback filtering precedes prefilter truncation. Semantic candidates
   have an explicit concept-group threshold; shared files never control ranking.
+- Version 2 profile plans distinguish topic clues, preferences and confirmed hard
+  conditions. `profile_plan` validates intent and compiles its discovery settings;
+  `profiles` persists revisioned drafts separately from formal profiles. Legacy
+  profiles retain their original concept-group rules until explicitly copied.
+- `web_profiles` owns draft HTTP routes. `profile_preview` runs bounded, read-only
+  discovery using the same `plan_selection` evidence evaluator as `DailyPipeline`.
+  Preview jobs cannot write recommendation/read-state artifacts. Semantic hard
+  conditions require grounded title/abstract evidence; unknown conditions never
+  qualify for final recommendation. Structured category conditions use metadata.
+- Structured query branches share the existing base arXiv budget, reserving at
+  least half for core retrieval. Discovery retains branch provenance during merge;
+  recent-interest requests retain their independent supplemental allowance.
 
 ## Persistent data contract
 

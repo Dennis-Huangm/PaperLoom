@@ -57,7 +57,8 @@
 
     <section class="form-section" id="discovery">
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
-      <label>研究主题描述<textarea name="interest_description" rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
+      {% if config.discovery.search_plan %}<p class="notice">此方向使用已确认的检索计划。主题与条件请在<a href="/profiles">研究方向</a>中复制为草稿后修改；这里可调整运行预算和排序参数。</p>{% endif %}
+      <label>研究主题描述<textarea name="interest_description" {% if config.discovery.search_plan %}readonly{% endif %} rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
       <label class="check-row"><input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}><span>根据最近 5 篇收藏微调推荐</span></label>
       <p>保留基础搜索，自动归纳当前方向最近收藏的标题与摘要，补充定向搜索并辅助精排。样本变化后下次推荐生效；关闭后恢复基础搜索与排序，主题屏蔽仍生效。归纳结果可复用；启用时会增加定向检索请求。</p>
       <div class="form-columns">
@@ -68,12 +69,12 @@
         <label>alphaXiv 候选上限<input type="number" name="alphaxiv_max_candidates" min="1" max="15" value="{{ config.discovery.alphaxiv_max_candidates }}"><small>单次最多保留 15 篇，独立于 arXiv 候选预算。</small></label>
         <label>语义候选最低概念组数<input type="number" name="alphaxiv_minimum_concept_groups" min="0" max="100" value="{{ config.discovery.alphaxiv_minimum_concept_groups }}"><small>仅用于 alphaXiv 召回的论文，不超过下方通用门槛；0 表示不要求精确词匹配。</small></label>
         <label class="toggle-field"><span>启用 alphaXiv 检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
-        <label>arXiv 类别<textarea name="arxiv_categories" rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
-        <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
-        <label>重点关键词<textarea name="positive_keywords" rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
-        <label>不感兴趣的方向<textarea name="negative_keywords" rows="12">{{ config.discovery.negative_keywords|join('\n') }}</textarea></label>
-        <label>种子论文 arXiv ID<textarea name="seed_papers" rows="7">{{ config.discovery.seed_papers|join('\n') }}</textarea></label>
-        <label>概念组<textarea name="concept_groups" rows="7">{% for group in config.discovery.concept_groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea><small>每行一组，组内用英文逗号分隔。</small></label>
+        <label>arXiv 类别<textarea name="arxiv_categories" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
+        <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
+        <label>重点关键词<textarea name="positive_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
+        <label>不感兴趣的方向<textarea name="negative_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="12">{{ config.discovery.negative_keywords|join('\n') }}</textarea></label>
+        <label>种子论文 arXiv ID<textarea name="seed_papers" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.seed_papers|join('\n') }}</textarea></label>
+        <label>概念组<textarea name="concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{% for group in config.discovery.concept_groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea><small>每行一组，组内用英文逗号分隔。</small></label>
       </div>
       <div class="config-grid six">
         <label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ config.discovery.lookback_days }}"></label>
@@ -81,7 +82,7 @@
         <label>LLM 预筛数量<input type="number" name="prefilter_count" min="1" max="5000" value="{{ config.discovery.prefilter_count }}"></label>
         <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
         <label>最低总分<input type="number" name="min_score" min="0" max="100" step="0.1" value="{{ config.discovery.min_score }}"></label>
-        <label>至少命中概念组<input type="number" name="minimum_concept_groups" min="0" max="20" value="{{ config.discovery.minimum_concept_groups }}"></label>
+        <label>至少命中概念组<input type="number" name="minimum_concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} min="0" max="20" value="{{ config.discovery.minimum_concept_groups }}"></label>
       </div>
     </section>
 

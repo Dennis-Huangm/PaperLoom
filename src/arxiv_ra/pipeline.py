@@ -22,6 +22,7 @@ from .models import Paper, ReportArtifact, VerifiedMetadata
 from .reading_state import _locked
 from .obsidian import ObsidianExporter
 from .ranker import matched_concept_groups, rank_papers, finish_explanation
+from .plan_selection import evaluate_plan, selectable
 from .render import render_recommendations, render_report
 from .report import finalize_report_structure
 from .research_clients import ResearchClients
@@ -124,7 +125,8 @@ class DailyPipeline:
         for paper in ranked:
             paper.ranking_explanation["recent_interest"] = self._recent_interest.to_dict()
         ranked.sort(key=lambda item: (item.final_score, item.published_sort_key), reverse=True)
-        minimum_groups = self.config.discovery.minimum_concept_groups
+        new_plan = self.config.discovery.search_plan.get("version") == 2
+        minimum_groups = 0 if new_plan else self.config.discovery.minimum_concept_groups
         processed_ids = set() if force or demo else self._processed_ids()
         eligible = []
         self._selection_audit = []
@@ -148,7 +150,12 @@ class DailyPipeline:
                 continue
             finish_explanation(paper)
             self._selection_audit.append({"paper": paper.to_dict(), "reasons": [{"reason": "超出预筛数量"}]})
-        if self.config.ranking.llm_rerank and self.clients.llm.enabled:
+        if new_plan:
+            candidates, rejected = evaluate_plan(candidates, self.config, self.clients.llm, self._interest_description())
+            self._selection_audit.extend(rejected)
+            if rejected:
+                task_warning("研究条件", f"{len(rejected)} 篇候选不满足或无法验证明确条件，已保留筛选依据。")
+        elif self.config.ranking.llm_rerank and self.clients.llm.enabled:
             try:
                 self.clients.llm.rerank(candidates, self._interest_description())
                 scored = sum(paper.llm_score is not None for paper in candidates)
@@ -249,11 +256,7 @@ class DailyPipeline:
         selected = [
             paper
             for paper in candidates
-            if paper.final_score >= self.config.discovery.min_score
-            and (
-                paper.llm_score is None
-                or paper.llm_score >= self.config.ranking.llm_min_score
-            )
+            if selectable(paper, self.config)
             and (force or paper.arxiv_id not in processed)
         ][: self.config.discovery.recommendation_count]
         processed.update(paper.arxiv_id for paper in selected)

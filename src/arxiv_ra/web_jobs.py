@@ -37,6 +37,7 @@ class JobContext:
 
 
 JOB_LABELS = {
+    "profile-preview": "研究方向试搜",
     "search-index": "更新本地搜索索引",
     "report": "生成完整阅读报告",
     "digest": "刷新每日推荐",

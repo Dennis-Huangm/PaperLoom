@@ -59,9 +59,39 @@ class DiscoveryService:
         started = time.monotonic()
         arxiv_error = None
         try:
-            arxiv_papers = self.arxiv.search(config.arxiv_categories, config.lookback_days,
-                                            config.max_candidates, config.arxiv_query_terms)
-            result.sources["arxiv"] = {"status": "ok", "count": len(arxiv_papers)}
+            if config.search_plan.get("version") == 2:
+                from .profile_plan import branch_budgets
+                branches = branch_budgets(config.search_plan.get("branches", []), config.max_candidates)
+                if not branches:
+                    raise ValueError("检索计划缺少主题查询分支")
+                failures = []
+                successes = 0
+                for branch_index, (branch, limit) in enumerate(branches):
+                    started_branch = time.monotonic()
+                    try:
+                        batch = self.arxiv.search(config.arxiv_categories, config.lookback_days, limit,
+                                                  query_groups=branch["groups"])
+                        result.sources[f"arxiv:{branch['id']}"] = {"status": "ok", "count": len(batch),
+                            "limit": limit, "at_limit": len(batch) >= limit}
+                        successes += 1
+                        arxiv_papers.extend(replace(p, discovery_routes=list(dict.fromkeys(
+                            [*p.discovery_routes, "base", f"base:{branch['id']}"]))) for p in batch[:limit])
+                    except Exception as exc:
+                        failures.append(str(exc))
+                        result.sources[f"arxiv:{branch['id']}"] = {"status": "failed", "count": 0, "limit": limit, "error": str(exc)}
+                    result.sources[f"arxiv:{branch['id']}"]["seconds"] = round(time.monotonic() - started_branch, 3)
+                    if failures:
+                        # A provider failure has already exhausted its retries: skip remaining calls.
+                        for remaining, cap in branches[branch_index + 1:]:
+                            result.sources[f"arxiv:{remaining['id']}"] = {"status": "skipped", "count": 0, "limit": cap}
+                        break
+                if not successes:
+                    raise RuntimeError("；".join(failures))
+                result.sources["arxiv"] = {"status": "partial" if failures else "ok", "count": len(arxiv_papers)}
+            else:
+                arxiv_papers = self.arxiv.search(config.arxiv_categories, config.lookback_days,
+                                                config.max_candidates, config.arxiv_query_terms)
+                result.sources["arxiv"] = {"status": "ok", "count": len(arxiv_papers)}
         except Exception as exc:
             arxiv_error = exc
             result.sources["arxiv"] = {"status": "failed", "error": str(exc), "count": 0}
@@ -138,11 +168,11 @@ class DiscoveryService:
                     best = paper if prefer_live else previous
                     merged[aid] = replace(best, arxiv_id=aid,
                         discovery_sources=list(dict.fromkeys([*previous.discovery_sources, source])),
-                        discovery_routes=list(dict.fromkeys([*previous.discovery_routes, route])))
+                        discovery_routes=list(dict.fromkeys([*previous.discovery_routes, *paper.discovery_routes, route])))
                 else:
                     cached = self.resolver.cached(aid, fresh_only=arxiv_error is None) if source == "alphaxiv" else None
                     merged[aid] = replace(cached or paper, arxiv_id=aid,
-                                          discovery_sources=[source], discovery_routes=[route])
+                                          discovery_sources=[source], discovery_routes=list(dict.fromkeys([*paper.discovery_routes, route])))
                 if source == "arxiv":
                     self.resolver.remember(merged[aid])
 

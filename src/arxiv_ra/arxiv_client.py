@@ -158,13 +158,23 @@ class ArxivClient:
         lookback_days: int,
         max_results: int,
         query_terms: list[str] | None = None,
+        *, query_groups: list[list[str]] | None = None,
     ) -> list[Paper]:
         now = datetime.now(timezone.utc)
         start = now - timedelta(days=lookback_days)
         category_query = " OR ".join(f"cat:{category}" for category in categories)
         date_query = f"submittedDate:[{start:%Y%m%d%H%M} TO {now:%Y%m%d%H%M}]"
         search_query = f"({category_query}) AND {date_query}"
-        if query_terms:
+        if query_groups is not None:
+            if not query_groups or any(not group for group in query_groups):
+                raise ValueError("结构化查询必须包含非空概念组")
+            groups = []
+            for group in query_groups:
+                if any(not isinstance(term, str) or not term.strip() or re.search(r'["\\\[\]():]', term) for term in group):
+                    raise ValueError("查询短语不接受原始查询语法")
+                groups.append("(" + " OR ".join(f'all:"{term}"' for term in group) + ")")
+            search_query += " AND (" + " AND ".join(groups) + ")"
+        elif query_terms:
             safe_terms = [term.replace('"', "") for term in query_terms if term.strip()]
             term_query = " OR ".join(f'all:"{term}"' for term in safe_terms)
             if term_query:

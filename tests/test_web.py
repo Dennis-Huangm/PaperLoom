@@ -1105,26 +1105,13 @@ def test_gui_creates_profile_from_keywords_and_references(tmp_path: Path, monkey
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
 
-    def fake_generate(self, profile_id, name, keywords, negative_keywords, reference_ids, description, recommendation_count):
-        return {
-            "id": profile_id,
-            "name": name,
-            "description": description,
-            "source": {
-                "keywords": keywords,
-                "negative_keywords": negative_keywords,
-                "reference_papers": [{"arxiv_id": item, "title": "Reference"} for item in reference_ids],
-            },
-            "discovery": {
-                "interest_description": description,
-                "arxiv_categories": ["cs.RO"],
-                "positive_keywords": keywords,
-                "recommendation_count": recommendation_count,
-            },
-            "ranking": {},
-        }
-
-    monkeypatch.setattr("arxiv_ra.web.ProfileGenerator.generate", fake_generate)
+    from types import SimpleNamespace
+    from arxiv_ra.research_clients import ResearchClients
+    from arxiv_ra.models import Paper
+    reference = Paper("2407.05600", "Reference", [], "Robot world models", ["cs.RO"], "cs.RO", None, None, "", "")
+    monkeypatch.setattr(ResearchClients, "llm", property(lambda self: SimpleNamespace(enabled=False)))
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(get=lambda aid: reference)))
+    monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
     app = create_app(config_path)
 
     with TestClient(app) as client:
@@ -1143,10 +1130,11 @@ def test_gui_creates_profile_from_keywords_and_references(tmp_path: Path, monkey
         )
 
     assert response.status_code == 303
-    saved = yaml.safe_load((tmp_path / "profiles" / "robot-agents.yaml").read_text(encoding="utf-8"))
+    saved = yaml.safe_load((tmp_path / "profiles" / "drafts" / "robot-agents.yaml").read_text(encoding="utf-8"))
     assert saved["source"]["keywords"] == ["robot agent", "world model"]
     assert saved["source"]["reference_papers"][0]["arxiv_id"] == "2407.05600"
-    assert (tmp_path / "profiles" / "active.txt").read_text(encoding="utf-8").strip() == "robot-agents"
+    assert (tmp_path / "profiles" / "active.txt").read_text(encoding="utf-8").strip() != "robot-agents"
+    assert saved["status"] == "ready"
 
 
 def test_gui_updates_credentials_without_rendering_existing_values(tmp_path: Path, monkeypatch) -> None:

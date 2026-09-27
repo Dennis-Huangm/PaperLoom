@@ -38,6 +38,9 @@ def direction_description(config) -> str:
         f"研究轴线（同组词为同义或相关表达）：{json.dumps(discovery.concept_groups, ensure_ascii=False)}。"
         f"基础候选最低命中研究轴线数：{discovery.minimum_concept_groups}。"
         f"种子论文：{', '.join(discovery.seed_papers) or '未提供'}。"
+        + ("已确认研究条件：" + json.dumps([c for c in discovery.search_plan.get("conditions", [])
+                                           if c.get("confirmed")], ensure_ascii=False)
+           if discovery.search_plan.get("version") == 2 else "")
     )
 
 
