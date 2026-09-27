@@ -23,7 +23,12 @@
 - [ ] Prepare `.venv` with `scripts\setup_environment.ps1 -Dev`, then run
       `scripts\build_release.ps1`; do not hand-copy the source tree.
 - [ ] Match `pyproject.toml`, `arxiv_ra.__version__`, build default and release notes.
-- [ ] Build with the project `.venv`; verify all source files and packaged assets.
+- [ ] Build with the project `.venv`; verify runtime source and packaged assets.
+- [ ] Keep tests and evaluation tools in Git, excluding them from the user ZIP.
+- [ ] Use the explicit documentation/script allowlist; exclude local review logs.
+- [ ] Check README screenshot assets and all relative documentation links.
+- [ ] For a local packaging check use `-OutputDirectory work/package-preview`;
+      do not replace an already published release or move its tag for doc edits.
 - [ ] Build wheel without network-dependent build isolation when necessary.
 - [ ] Install the wheel into a clean or disposable environment.
 - [ ] Run `paperloom --version` and `paperloom doctor`; verify the legacy

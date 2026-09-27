@@ -18,7 +18,7 @@ run/
 release/
 *.whl
 *-source.zip
-docs/qa/*
-!docs/qa/ui/
-docs/qa/ui/*
-!docs/qa/ui/*.md
+docs/*
+!docs/USAGE.md
+!docs/ARCHITECTURE.md
+!docs/RELEASE_CHECKLIST.md

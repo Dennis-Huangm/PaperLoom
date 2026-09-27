@@ -1,6 +1,7 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.4.0"
+    [string]$Version = "1.4.0",
+    [string]$OutputDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +17,7 @@ if ($LASTEXITCODE -ne 0 -or $actualVersion -ne $Version) {
 $workRoot = Join-Path $projectRoot "work\release-build-$Version"
 $packageRoot = Join-Path $workRoot "paperloom-$Version"
 $wheelRoot = Join-Path $workRoot "wheel"
-$releaseRoot = Join-Path $projectRoot "release\v$Version"
+$releaseRoot = if ($OutputDirectory) { [System.IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory)) } else { Join-Path $projectRoot "release\v$Version" }
 
 function Assert-InProject([string]$Path) {
     $fullPath = [System.IO.Path]::GetFullPath($Path)
@@ -32,12 +33,26 @@ if (Test-Path -LiteralPath $workRoot) {
 }
 New-Item -ItemType Directory -Force -Path $packageRoot, $wheelRoot, $releaseRoot | Out-Null
 
-$directories = @(".github", "assets", "docs", "requirements", "scripts", "src", "tests")
+$directories = @(".github", "assets", "requirements", "src")
 foreach ($name in $directories) {
     $source = Join-Path $projectRoot $name
     if (Test-Path -LiteralPath $source) {
         Copy-Item -LiteralPath $source -Destination $packageRoot -Recurse
     }
+}
+
+# User source distribution: keep runtime entry points and maintained documentation.
+# Tests and evaluation tools remain available in the Git repository.
+$selectedFiles = @(
+    "docs/USAGE.md", "docs/ARCHITECTURE.md", "docs/RELEASE_CHECKLIST.md",
+    "scripts/setup_environment.ps1", "scripts/run.ps1", "scripts/start_gui.ps1",
+    "scripts/install_windows_task.ps1", "scripts/build_release.ps1"
+)
+foreach ($relative in $selectedFiles) {
+    $source = Join-Path $projectRoot $relative
+    $destination = Join-Path $packageRoot $relative
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination
 }
 
 $files = @(
@@ -61,16 +76,6 @@ if (-not (Test-Path -LiteralPath $currentReleaseNotes)) {
     throw "Release notes not found: $currentReleaseNotes"
 }
 Copy-Item -LiteralPath $currentReleaseNotes -Destination $packageRoot
-
-$qaArtifacts = Join-Path $packageRoot "docs\qa"
-if (Test-Path -LiteralPath $qaArtifacts) {
-    Get-ChildItem -LiteralPath $qaArtifacts -File -Recurse -Force |
-        Where-Object { $_.Extension -ne ".md" } |
-        ForEach-Object {
-            Assert-InProject $_.FullName
-            Remove-Item -LiteralPath $_.FullName -Force
-        }
-}
 
 Get-ChildItem -LiteralPath $packageRoot -Directory -Recurse -Force |
     Where-Object { $_.Name -in @("__pycache__", ".pytest_cache") -or $_.Name -like "*.egg-info" } |
@@ -119,6 +124,8 @@ $requiredFiles = @(
     "config.example.yaml",
     "src/arxiv_ra/__init__.py",
     "src/arxiv_ra/cli.py",
+    "docs/USAGE.md",
+    "scripts/start_gui.ps1",
     "RELEASE_NOTES_v$Version.md"
 )
 foreach ($requiredFile in $requiredFiles) {
@@ -128,7 +135,9 @@ foreach ($requiredFile in $requiredFiles) {
 }
 $forbidden = $entries | Where-Object {
     $_ -match '(^|/)(\.env|config\.yaml)(/|$)' -or
-    $_ -match '(^|/)(profiles|run|work|build|release|backups|\.git)(/|$)' -or
+    $_ -match '(^|/)(profiles|run|work|build|release|backups|tests|\.git)(/|$)' -or
+    $_ -match '/docs/(qa|quality)/' -or
+    $_ -match '/scripts/evaluate_[^/]+\.py$' -or
     $_ -match '(^|/)[^/]+\.egg-info(/|$)' -or
     $_ -match '(^|/)(__pycache__|\.pytest_cache)(/|$)' -or
     $_ -match '\.(pyc|pyo)$'

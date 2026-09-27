@@ -667,6 +667,10 @@ python -m compileall -q src tests
 python -m pip check
 ```
 
-UI QA captures and notes live under `docs/qa/ui/`; build products live under
-`release/<version>/`. Temporary build and test output belongs in ignored `work/`,
-`build/`, or `dist/` directories.
+Keep tests and reproducible fixtures in the Git repository. User source packages
+omit tests and evaluation scripts; contributors should clone the repository.
+Only maintained user and architecture documentation belongs in `docs/`.
+UI QA captures, dated reviews, local evaluation results and planning notes belong
+in ignored `work/`. Selected public UI screenshots live in `assets/screenshots/`.
+Build products live under `release/<version>/`; temporary output belongs in
+ignored `work/`, `build/`, or `dist/` directories.
