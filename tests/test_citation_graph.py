@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import httpx
+import pytest
 
 from arxiv_ra.citation_graph import CitationExplorer
 from arxiv_ra.config import AppConfig, CitationConfig
@@ -387,7 +388,8 @@ def test_tiny_candidate_cap_queries_each_source_and_merges_aliases(tmp_path: Pat
     assert set(graph['nodes'][1]['roles']) == {'reference', 'citation', 'similar'}
 
 
-def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize('all_unknown', [False, True])
+def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_path: Path, monkeypatch, all_unknown):
     import json
     from arxiv_ra.config import DiscoveryConfig, LLMConfig
     from arxiv_ra.profile_plan import condition
@@ -408,7 +410,7 @@ def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_
             inputs = json.loads(json.loads(request.content)['messages'][1]['content'].split('数据：')[1])
             rows = []
             for p in inputs['papers']:
-                pid = p['id']; verdict = 'not_satisfied' if pid == 'FAIL' else 'unknown' if pid == 'UNKNOWN' else 'satisfied'
+                pid = p['id']; verdict = 'unknown' if all_unknown else 'not_satisfied' if pid == 'FAIL' else 'unknown' if pid == 'UNKNOWN' else 'satisfied'
                 rows.append({'id':pid,'score':8,'reason':'fixture','conditions':[{'id':requirement['id'],'verdict':verdict,'quote':abstracts[pid] if verdict != 'unknown' else '', 'reason':'grounded fixture'}]})
             return httpx.Response(200, json={'id':'fixture','object':'chat.completion','created':0,'model':'fixture',
               'choices':[{'index':0,'message':{'role':'assistant','content':json.dumps({'papers':rows})},'finish_reason':'stop'}]}, request=request)
@@ -423,9 +425,11 @@ def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_
     with CitationExplorer(config, tmp_path) as explorer:
         path = explorer.generate('2407.05600')
     graph = read_json(path.parent / 'graph.json')
-    assert {n['paperId'] for n in graph['nodes']} == {'S','PASS'}
-    assert {n['paperId'] for n in graph['pending']} == {'UNKNOWN'}
-    assert graph['excluded_count'] == 1
+    assert {n['paperId'] for n in graph['nodes']} == ({'S'} if all_unknown else {'S','PASS'})
+    assert {n['paperId'] for n in graph['pending']} == ({'PASS','FAIL','UNKNOWN'} if all_unknown else {'UNKNOWN'})
+    assert graph['excluded_count'] == (0 if all_unknown else 1)
+    if all_unknown:
+        assert graph['sources']['conditions']['status'] == 'unknown'
     assert len(model_calls) == 1
     assert graph['budget']['model_requests_used'] == 1
     assert graph['budget']['requests_used'] == 6

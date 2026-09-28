@@ -19,6 +19,7 @@ def assess_conditions(nodes, config, source):
     cross_reserve = math.ceil(min(len(nodes), config.citations.max_nodes) / 50)
     available = max(0, source.limit - source.used - cross_reserve)
     outcomes = {}
+    failures = 0
     def count_request(_count):
         task_checkpoint()
         source.used += 1
@@ -35,6 +36,7 @@ def assess_conditions(nodes, config, source):
                             [], '', None, None, '', '', metadata_status='complete' if n.get('abstract') else 'partial') for n in batch]
             evaluate_plan(papers, config, llm)
             for paper in papers:
+                failures += bool(paper.ranking_explanation.get('condition_error'))
                 checks = paper.ranking_explanation.get('conditions', [])
                 conflict = any(c['kind'] == 'required' and c['verdict'] == 'not_satisfied'
                                or c['kind'] == 'exclude' and c['verdict'] == 'satisfied' for c in checks)
@@ -44,7 +46,9 @@ def assess_conditions(nodes, config, source):
                                            'note': '不符合已核实的方向条件' if conflict else '方向条件缺少可验证依据，待判断' if unknown else ''}
         used = budget.used if budget else 0
     uncertain = sum(o['state'] == 'pending' for o in outcomes.values())
-    state = source.status('partial' if uncertain and uncertain < len(outcomes) else 'unknown' if uncertain and not used else 'failed' if uncertain else 'ok',
+    status = ('failed' if failures and failures == len(outcomes) else 'partial' if failures
+              or 0 < uncertain < len(outcomes) else 'unknown' if uncertain else 'ok')
+    state = source.status(status,
                           fetched_at='', count=len(outcomes), model_requests=used,
                           message=f'{uncertain} 篇条件待判断' if uncertain else '条件均已完成判断')
     return outcomes, used, state
