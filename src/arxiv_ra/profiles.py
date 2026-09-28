@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import shutil
 import uuid
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,7 +18,6 @@ from .reading_state import _locked
 
 
 PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-ARXIV_CATEGORY_RE = re.compile(r"^[a-z-]+(?:\.[A-Za-z-]+)?$")
 
 
 def _atomic_yaml(path: Path, payload: dict[str, Any]) -> None:
@@ -163,6 +161,10 @@ class ProfileManager:
             path = self.root / "drafts" / f"{draft_id}.yaml"
             if path.exists():
                 old = self._read_draft(draft_id)
+                if expected_revision is None and payload.get("request_id") and payload.get("request_id") == old.get("request_id"):
+                    if payload.get("request_fingerprint") != old.get("request_fingerprint"):
+                        raise DraftConflict("同一次创建请求的内容已改变，请刷新后重新创建")
+                    return old
                 if expected_revision != old["revision"]:
                     raise DraftConflict("草稿已更新，请刷新后重试")
                 payload["revision"] = old["revision"] + 1
@@ -182,11 +184,16 @@ class ProfileManager:
             draft = self._read_draft(draft_id)
             if draft["revision"] != revision:
                 raise DraftConflict("草稿已更新，请刷新后启用")
+            if draft.get("activated_revision") == revision and (self.root / f"{draft_id}.yaml").exists():
+                self.activate(draft_id)
+                return draft
             refresh_draft(draft)
             if draft["status"] != "ready":
                 raise ValueError("草稿尚不可启用，请补全主题或修复生成错误")
             self.save(draft)
             self.activate(draft_id)
+            draft["activated_revision"] = revision
+            _atomic_yaml(self.root / "drafts" / f"{draft_id}.yaml", draft)
             return draft
 
     def save_preview(self, draft_id: str, preview: dict, *, references_only=False):
@@ -246,8 +253,9 @@ class ProfileGenerator:
             )
         error = ""
         try:
+            has_evidence = keywords or description.strip() or any(r["title"] and r["abstract"] for r in references)
             intent = description + "\n必要条件：" + "; ".join(required or []) + "\n明确排除：" + "; ".join(excluded or [])
-            generated = self._llm_profile(name, intent, keywords, negative_keywords, references)
+            generated = self._llm_profile(name, intent, keywords, negative_keywords, references) if has_evidence else {}
         except Exception as exc:
             generated, error = {}, f"模型生成失败：{type(exc).__name__}: {exc}"
         draft = new_draft(self.config, profile_id, name, keywords, negative_keywords, references,
@@ -310,35 +318,3 @@ class ProfileGenerator:
         if not isinstance(payload, dict):
             raise ValueError("模型必须返回 JSON 对象")
         return payload
-
-    @staticmethod
-    def _strings(value: Any, fallback: list[str], limit: int) -> list[str]:
-        items = value if isinstance(value, list) else fallback
-        result: list[str] = []
-        for item in items:
-            text = str(item).strip()
-            if text and text.casefold() not in {entry.casefold() for entry in result}:
-                result.append(text)
-        return result[:limit]
-
-    def _categories(
-        self, generated: dict[str, Any], references: list[dict[str, Any]]
-    ) -> list[str]:
-        values = generated.get("arxiv_categories") or [
-            category for item in references for category in item["categories"]
-        ]
-        categories = [str(item) for item in values if ARXIV_CATEGORY_RE.match(str(item))]
-        return list(dict.fromkeys(categories))[:12] or list(self.config.discovery.arxiv_categories)
-
-    @staticmethod
-    def _groups(value: Any, keywords: list[str]) -> list[list[str]]:
-        if isinstance(value, list):
-            groups = []
-            for group in value:
-                if isinstance(group, list):
-                    terms = [str(term).strip() for term in group if str(term).strip()]
-                    if terms:
-                        groups.append(terms[:16])
-            if groups:
-                return groups[:6]
-        return [keywords[:16]] if keywords else []

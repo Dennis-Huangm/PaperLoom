@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from typing import Any
 
 from .profile_plan import HARD_KINDS
@@ -49,9 +48,13 @@ exclude 条件 satisfied 表示论文确实属于被排除主题，not_satisfied
     for paper in papers:
         row = by_id.get(paper.arxiv_id, {})
         score = row.get("score")
+        topic_verdict = "unknown"
         if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score) and 0 <= score <= 10:
             paper.llm_score = float(score)
             paper.recommendation_reason = str(row.get("reason", ""))[:500]
+            topic_verdict = "satisfied" if score >= config.ranking.llm_min_score else "not_satisfied"
+        paper.ranking_explanation["topic"] = {"verdict": topic_verdict,
+            "reason": paper.recommendation_reason if topic_verdict != "unknown" else "缺少有效的主题相关性判断"}
         checks, reasons = [], []
         supplied = row.get("conditions", [])
         supplied = supplied if isinstance(supplied, list) else []

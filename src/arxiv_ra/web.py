@@ -32,7 +32,7 @@ from .models import Paper
 from .paper_data import local_paper_item, base_id, requested_version
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .pipeline import DailyPipeline
-from .profiles import ProfileGenerator, ProfileManager
+from .profiles import ProfileManager
 from .web_profiles import register_profile_routes
 from .utils import read_json
 from .weekly import WeeklySynthesizer
@@ -835,6 +835,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                 "profiles",
                 profiles=profiles.list(),
                 drafts=profiles.drafts(),
+                draft_request_id=uuid.uuid4().hex,
                 saved=saved,
                 switched=switched,
             ),
@@ -845,6 +846,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         form = await request.form()
         try:
             data = {key: str(form.get(key, "")).strip() for key in ("name", "description")}
+            data["request_id"] = str(form.get("request_id", ""))
             for key in ("keywords", "negative_keywords", "reference_ids", "required", "excluded"):
                 data[key] = _list_field(str(form.get(key, "")))
             data["recommendation_count"] = _int_value(form, "recommendation_count", 1, 50)

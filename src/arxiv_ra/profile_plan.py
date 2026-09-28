@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import asdict
 
-from .config import DiscoveryConfig
+from .config import DiscoveryConfig, RankingConfig
 from .arxiv_categories import ARXIV_CATEGORIES
 
 KINDS = {"topic": "主题线索", "prefer": "提高优先级", "demote": "降低优先级",
@@ -124,6 +124,75 @@ def branch_budgets(branches, budget):
     return [(branches[0], core)] + [(b, rest + (i < extra)) for i, b in enumerate(branches[1:])]
 
 
+def _reconcile_branches(draft):
+    topic = [a for c in draft["plan"]["conditions"] if c["kind"] == "topic" and c["confirmed"]
+             for a in c["aliases"]]
+    try:
+        validate_branches(draft["plan"].get("branches", []), topic)
+    except ValueError:
+        draft["plan"]["branches"] = []
+        draft["diagnostics"].append("主题线索已改变，原查询分支失去锚点；已重新建立基础查询，请检查。")
+
+
+def edit_draft(draft, changes):
+    """Apply user edits without losing provenance or resurrecting deleted suggestions."""
+    draft = copy.deepcopy(draft)
+    old = {c["id"]: c for c in draft["plan"]["conditions"]}
+    items = validate_conditions(changes.get("conditions", draft["plan"]["conditions"]))
+    suppressed = set(draft.get("suppressed", []))
+    for item in items:
+        previous = old.get(item["id"])
+        if previous is None or any(item.get(k) != previous.get(k) for k in ("text", "kind", "aliases", "confirmed")):
+            item.update(origin="user", evidence="用户编辑")
+            # Preserve the original suggestion's identity after renaming it.
+            if previous:
+                suppressed.add(condition(previous["kind"], previous["text"])["id"])
+        else:
+            item.update(origin=previous["origin"], evidence=previous["evidence"])
+    removed = [c for c in old.values() if c["id"] not in {i["id"] for i in items}]
+    suppressed.update(c["id"] for c in removed)
+    suppressed.update(condition(c["kind"], c["text"])["id"] for c in removed)
+    draft["suppressed"] = sorted(suppressed)
+    draft["plan"]["conditions"] = items
+    if "description" in changes:
+        if not isinstance(changes["description"], str) or not 0 < len(changes["description"].strip()) <= 4000:
+            raise ValueError("研究主题必须是 1–4000 字")
+        draft["discovery"]["interest_description"] = changes["description"].strip()
+    if "categories" in changes:
+        draft["discovery"]["arxiv_categories"] = categories(changes["categories"])
+    for key, upper in (("max_candidates", 5000), ("lookback_days", 365)):
+        if key in changes:
+            if type(changes[key]) is not int or not 1 <= changes[key] <= upper:
+                raise ValueError(f"{key} 必须在 1–{upper} 之间")
+            draft["discovery"][key] = changes[key]
+    if "branches" in changes:
+        topic = [a for c in items if c["kind"] == "topic" and c["confirmed"] for a in c["aliases"]]
+        branches = validate_branches(changes["branches"], topic)
+        if branches != draft["plan"].get("branches"):
+            draft["plan"].update(branches=branches, branches_user_edited=True)
+    draft["generation_error"] = ""
+    _reconcile_branches(draft)
+    return refresh_draft(draft)
+
+
+def merge_regenerated_draft(draft, fresh):
+    preserved = [c for c in draft["plan"]["conditions"] if c["origin"] != "model"]
+    blocked = set(draft.get("suppressed", [])) | {c["id"] for c in preserved}
+    blocked.update(condition(c["kind"], c["text"])["id"] for c in preserved)
+    fresh["plan"]["conditions"] = preserved + [c for c in fresh["plan"]["conditions"] if c["id"] not in blocked]
+    fresh.update(source=draft["source"], suppressed=draft.get("suppressed", []),
+                 preview=draft.get("preview"), reference_check=draft.get("reference_check"),
+                 ranking=copy.deepcopy(draft["ranking"]))
+    fresh["discovery"]["interest_description"] = draft["description"]
+    fresh["discovery"]["arxiv_categories"] = draft["discovery"]["arxiv_categories"]
+    for key in ("max_candidates", "lookback_days"):
+        fresh["discovery"][key] = draft["discovery"][key]
+    if draft["plan"].get("branches_user_edited"):
+        fresh["plan"].update(branches=copy.deepcopy(draft["plan"]["branches"]), branches_user_edited=True)
+    _reconcile_branches(fresh)
+    return refresh_draft(fresh)
+
+
 def new_draft(config, profile_id, name, keywords, negative, references, description, generated,
               *, required=(), excluded=(), error="", count=None):
     conditions = [condition(kind, text) for kind, values in
@@ -181,7 +250,7 @@ def new_draft(config, profile_id, name, keywords, negative, references, descript
              "source": {"keywords": keywords, "negative_keywords": negative,
                         "reference_papers": [{"arxiv_id": r["arxiv_id"], "title": r["title"]} for r in references]},
              "plan": {"version": 2, "conditions": conditions, "branches": generated.get("branches", []) if isinstance(generated, dict) else []},
-             "discovery": discovery, "ranking": asdict(config.ranking)}
+             "discovery": discovery, "ranking": asdict(RankingConfig())}
     if error:
         diagnostics.append(error)
     try:

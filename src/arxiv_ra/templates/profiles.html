@@ -14,6 +14,7 @@
       <h2>创建检索草稿</h2>
       <p class="profile-intro">系统会读取参考论文的标题、摘要与 arXiv 类别，再结合关键词生成检索词、概念组和排序配置。</p>
       <form method="post" action="/profiles/create" class="profile-form"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+        <input type="hidden" name="request_id" value="{{ draft_request_id }}">
         <label>方向名称<input name="name" placeholder="例如：具身智能中的世界模型" maxlength="80" required></label>
         <label>一句话描述（可选）<textarea name="description" rows="3" placeholder="你具体想解决什么问题，关注哪些方法或场景"></textarea></label>
         <label>重点关键词<textarea name="keywords" rows="5" placeholder="每行一个，或使用逗号分隔&#10;world model&#10;embodied agent&#10;video prediction"></textarea></label>

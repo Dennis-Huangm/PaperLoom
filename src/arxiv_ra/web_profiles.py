@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import re
 from dataclasses import asdict
 from typing import Any
@@ -10,7 +12,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from .profiles import ProfileGenerator, DraftConflict
-from .profile_plan import KINDS, strings, refresh_draft, validate_conditions, condition, categories, new_draft
+from .profile_plan import KINDS, strings, refresh_draft, condition, new_draft, edit_draft, merge_regenerated_draft
 from .profile_preview import preview_profile
 
 
@@ -38,10 +40,25 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
             raise ValueError("描述最多 4000 字")
         if not keywords and not references and not description.strip():
             raise ValueError("请至少提供主题线索、描述或参考论文")
+        request_id = data.get("request_id", "")
+        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{0,100}", request_id):
+            raise ValueError("创建请求标识无效")
+        fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        draft_id = "draft-" + hashlib.sha256(request_id.encode()).hexdigest()[:24] if request_id else profiles.unique_id(name)
+        if request_id:
+            try:
+                existing = profiles.draft(draft_id)
+            except KeyError:
+                pass
+            else:
+                if existing.get("request_fingerprint") != fingerprint:
+                    raise DraftConflict("同一次创建请求的内容已改变，请刷新后重新创建")
+                return existing
         with ProfileGenerator(current_config()) as generator:
-            draft = await run_in_threadpool(generator.generate, profiles.unique_id(name), name,
+            draft = await run_in_threadpool(generator.generate, draft_id, name,
                 keywords, negative, references, description, count,
                 required=strings(data.get("required", [])), excluded=strings(data.get("excluded", [])))
+        draft.update(request_id=request_id, request_fingerprint=fingerprint)
         return profiles.save_draft(draft)
 
     @app.post("/api/profile-drafts")
@@ -51,6 +68,8 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
             if not isinstance(data, dict):
                 raise ValueError("请输入草稿对象")
             draft = await generate(data)
+        except DraftConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return JSONResponse(draft, status_code=201)
@@ -96,7 +115,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         return templates.TemplateResponse(request, "profile_draft.html", context(request, "profiles",
             draft=get_draft(draft_id), condition_kinds=KINDS))
 
-    async def mutation_data(request, draft):
+    async def mutation_data(request, draft, action):
         data: dict[str, Any]
         if "application/json" in request.headers.get("content-type", ""):
             data = await request.json()
@@ -105,7 +124,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
             return data
         form = await request.form()
         data = {"revision": int(str(form.get("revision", "0")))}
-        if "edit" in request.url.path:
+        if action == "edit":
             items = []
             for c in draft["plan"]["conditions"]:
                 prefix = c["id"]
@@ -120,45 +139,25 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
                 items.append(condition(kind, str(form["new_text"]).strip()))
             data.update(conditions=items, description=str(form.get("description", "")),
                         categories=[s.strip() for s in str(form.get("categories", "")).splitlines() if s.strip()])
+            if "branch-core" in form:
+                data["branches"] = [{"id": key, "groups": [[t.strip() for t in line.split(",") if t.strip()]
+                    for line in str(form.get(f"branch-{key}", "")).splitlines() if line.strip()]}
+                    for key in ("core", "context", "adjacent") if str(form.get(f"branch-{key}", "")).strip()]
+            for key in ("max_candidates", "lookback_days"):
+                if key in form:
+                    data[key] = int(str(form[key]))
         return data
-
-    def edit(draft, data):
-        if type(data.get("revision")) is not int or draft["revision"] != data["revision"]:
-            raise DraftConflict("草稿已更新，请刷新后保存")
-        old = {c["id"]: c for c in draft["plan"]["conditions"]}
-        items = validate_conditions(data.get("conditions", draft["plan"]["conditions"]))
-        for item in items:
-            previous = old.get(item["id"])
-            if previous is None or any(item.get(k) != previous.get(k) for k in ("text", "kind", "aliases", "confirmed")):
-                item.update(origin="user", evidence="用户编辑")
-            else:
-                item.update(origin=previous["origin"], evidence=previous["evidence"])
-        suppressed = set(draft.get("suppressed", []))
-        suppressed.update(c["id"] for c in old.values() if c["id"] not in {i["id"] for i in items})
-        draft["suppressed"] = sorted(suppressed)
-        draft["plan"]["conditions"] = items
-        if items != list(old.values()):
-            draft["plan"]["branches"] = []
-        if "description" in data:
-            if not isinstance(data["description"], str) or not 0 < len(data["description"].strip()) <= 4000:
-                raise ValueError("研究主题必须是 1–4000 字")
-            draft["discovery"]["interest_description"] = data["description"].strip()
-        if "categories" in data:
-            draft["discovery"]["arxiv_categories"] = categories(data["categories"])
-        draft["generation_error"] = ""
-        refresh_draft(draft)
-        return profiles.save_draft(draft, expected_revision=data["revision"])
 
     @app.post("/api/profile-drafts/{draft_id}/{action}")
     @app.post("/profiles/drafts/{draft_id}/{action}")
     async def mutate_draft(request: Request, draft_id: str, action: str):
         draft = get_draft(draft_id)
         try:
-            data = await mutation_data(request, draft)
+            data = await mutation_data(request, draft, action)
             if type(data.get("revision")) is not int or data["revision"] != draft["revision"]:
                 raise DraftConflict("草稿已更新，请刷新后重试")
             if action == "edit":
-                result = edit(draft, data)
+                result = profiles.save_draft(edit_draft(draft, data), expected_revision=data["revision"])
             elif action == "activate":
                 result = profiles.activate_draft(draft_id, data["revision"])
             elif action == "regenerate":
@@ -168,15 +167,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
                     fresh = await run_in_threadpool(generator.generate, draft_id, draft["name"],
                         [], [], [r["arxiv_id"] for r in draft["references"]], intent,
                         draft["discovery"]["recommendation_count"])
-                preserved = [c for c in draft["plan"]["conditions"] if c["origin"] != "model"]
-                blocked = set(draft.get("suppressed", [])) | {c["id"] for c in preserved}
-                fresh["plan"]["conditions"] = preserved + [c for c in fresh["plan"]["conditions"] if c["id"] not in blocked]
-                fresh.update(source=draft["source"], suppressed=draft.get("suppressed", []),
-                             preview=draft.get("preview"), reference_check=draft.get("reference_check"))
-                fresh["discovery"]["interest_description"] = draft["description"]
-                fresh["discovery"]["arxiv_categories"] = draft["discovery"]["arxiv_categories"]
-                fresh["plan"]["branches"] = []
-                result = profiles.save_draft(refresh_draft(fresh), expected_revision=data["revision"])
+                result = profiles.save_draft(merge_regenerated_draft(draft, fresh), expected_revision=data["revision"])
             elif action in {"preview", "references"}:
                 if draft["status"] != "ready":
                     raise ValueError("请先补全草稿再检查")

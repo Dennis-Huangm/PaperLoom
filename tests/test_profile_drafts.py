@@ -152,6 +152,10 @@ def test_copy_legacy_and_save_settings_preserve_versioned_intent(workspace):
     config = load_config(root / "config.yaml")
     assert config.discovery.search_plan == before
     assert config.discovery.minimum_concept_groups == 0
+    # Retrying an already completed activation cannot undo later settings changes.
+    recommendation_count = config.discovery.recommendation_count
+    assert client.post(f'/api/profile-drafts/{created["id"]}/activate', json={"revision": 1}).status_code == 200
+    assert load_config(root / "config.yaml").discovery.recommendation_count == recommendation_count
 
 
 def test_reference_only_without_model_stays_incomplete(workspace, monkeypatch):
@@ -181,3 +185,92 @@ def test_unknown_hard_condition_and_controlled_word_variants(workspace, monkeypa
     excluded = preview["rejected"][0]
     assert excluded["reasons"][0]["condition"]["verdict"] == "unknown"
     assert "world-model" in excluded["paper"]["ranking_explanation"]["positive_keywords"]
+
+
+def test_reference_check_ignores_date_and_old_results_are_marked_stale(workspace, monkeypatch):
+    client, model, _ = workspace
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(get=lambda aid: paper(aid))))
+    draft = client.post("/api/profile-drafts", json={"name": "Classic", "keywords": ["world model"],
+        "reference_ids": ["1401.00001"], "required": ["cs.RO"]}).json()
+    model.enabled = False
+    assert client.post(f'/api/profile-drafts/{draft["id"]}/references', json={"revision": 1}).status_code == 202
+    for _ in range(100):
+        result = client.get(f'/api/profile-drafts/{draft["id"]}').json().get("reference_check")
+        if result:
+            break
+        time.sleep(.02)
+    assert result["counts"]["retrieved"] == 1
+    assert result["status"] == "uncertain"
+    assert not result["selected"]
+    assert result["reference_verdicts"][0]["verdict"] == "unknown"
+    checks = result["rejected"][0]["paper"]["ranking_explanation"]["conditions"]
+    assert checks[0]["field"] == "categories"
+    edited = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={"revision": 1, "description": "Updated world models"})
+    assert edited.status_code == 200
+    assert "结果已过期" in client.get(f'/profiles/drafts/{draft["id"]}').text
+    assert client.post(f'/api/profile-drafts/{draft["id"]}/preview', json={"revision": 1}).status_code == 409
+
+
+def test_new_direction_uses_application_ranking_defaults(workspace):
+    from test_web import _full_settings_form
+    from arxiv_ra.config import RankingConfig
+    from dataclasses import asdict
+    client, _, _ = workspace
+    settings = _full_settings_form()
+    settings.update(llm_min_score="9.9", keyword_weight="99")
+    assert client.post("/settings/config", data=settings, follow_redirects=False).status_code == 303
+    draft = client.post("/api/profile-drafts", json={"name": "Independent", "keywords": ["robot"]}).json()
+    assert draft["ranking"] == asdict(RankingConfig())
+
+
+def test_preference_edit_and_regeneration_keep_valid_query_branches(workspace):
+    client, model, _ = workspace
+    reply = {"positive_keywords": ["world model"], "branches": [
+        {"id": "core", "groups": [["world model"]]},
+        {"id": "context", "groups": [["world model"], ["robot control"]]}]}
+    model.chat = lambda *a, **kw: json.dumps(reply)
+    draft = client.post("/api/profile-drafts", json={"name": "Branches", "keywords": ["world model"],
+        "negative_keywords": ["survey"]}).json()
+    conditions = draft["plan"]["conditions"]
+    next(c for c in conditions if c["kind"] == "demote")["text"] = "review articles"
+    edited = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={"revision": 1, "conditions": conditions}).json()
+    assert len(edited["plan"]["branches"]) == 2
+    regenerated = client.post(f'/api/profile-drafts/{draft["id"]}/regenerate', json={"revision": 2}).json()
+    assert len(regenerated["plan"]["branches"]) == 2
+
+
+def test_failed_reference_only_does_not_invent_a_theme(workspace, monkeypatch):
+    client, model, _ = workspace
+    def unavailable(aid):
+        raise RuntimeError("offline")
+    monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(get=unavailable)))
+    model.chat = lambda *a, **kw: json.dumps({"positive_keywords": ["invented theme"]})
+    draft = client.post("/api/profile-drafts", json={"name": "References only", "reference_ids": ["2401.00001"]}).json()
+    assert draft["status"] == "needs_input"
+    assert draft["diagnostics"]
+    assert not draft["plan"]["conditions"]
+
+
+def test_create_request_can_be_retried_without_duplicate_drafts(workspace):
+    client, _, root = workspace
+    data = {"name": "Retry", "keywords": ["robot control"], "request_id": "test-retry-1"}
+    first = client.post("/api/profile-drafts", json=data).json()
+    second = client.post("/api/profile-drafts", json=data).json()
+    assert first["id"] == second["id"]
+    assert len(list((root / "profiles" / "drafts").glob("*.yaml"))) == 1
+
+
+def test_advanced_query_edit_is_validated_and_survives_regeneration(workspace):
+    client, _, _ = workspace
+    draft = client.post("/api/profile-drafts", json={"name": "Advanced", "keywords": ["world model"]}).json()
+    url = f'/api/profile-drafts/{draft["id"]}'
+    bad = client.post(url + "/edit", json={"revision": 1, "branches": [{"id": "core", "groups": [["AI"]]}]})
+    assert bad.status_code == 400
+    branches = [{"id": "core", "groups": [["world model"]]},
+                {"id": "context", "groups": [["world model"], ["robot control"]]}]
+    edited = client.post(url + "/edit", json={"revision": 1, "branches": branches, "max_candidates": 20, "lookback_days": 14}).json()
+    assert edited["plan"]["branches_user_edited"]
+    regenerated = client.post(url + "/regenerate", json={"revision": 2}).json()
+    assert regenerated["plan"]["branches"] == edited["plan"]["branches"]
+    assert regenerated["discovery"]["max_candidates"] == 20
+    assert regenerated["discovery"]["lookback_days"] == 14
