@@ -908,15 +908,15 @@ def create_app(config_path: Path | str) -> FastAPI:
                 form[key] = "\n".join(value) if isinstance(value, list) else str(value)
         try:
             values = build_config_update(form)
+            discovery = values.pop("discovery")
+            ranking = values.pop("ranking")
+            save_config_settings(config_path, values)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        discovery = values.pop("discovery")
-        ranking = values.pop("ranking")
         if current.discovery.search_plan.get("version") == 2:
             discovery["search_plan"] = current.discovery.search_plan
             for key in protected:
                 discovery[key] = getattr(current.discovery, key)
-        save_config_settings(config_path, values)
         if current.profile_id:
             profile = profiles.get(current.profile_id)
             profile.update(discovery=discovery, ranking=ranking)

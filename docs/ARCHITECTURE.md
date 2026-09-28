@@ -699,8 +699,11 @@ Recommendations use the upstream `recent` pool; the provider currently offers
 
 `graph_model` merges stable identities, applies profile reading preferences and
 conservative hard-condition evaluation, then selects a diverse, bounded view.
-The default path stays local without hard conditions. `graph_conditions` reuses
-the configured LLM only for explicit conditions when model ranking is enabled,
+The default path stays local without hard conditions. Explicit arXiv category
+conditions use official metadata in batches of at most fifty identities; these
+requests and retries share the graph budget and preserve cross-reference capacity.
+Missing category metadata stays unknown and cannot be replaced by a model guess.
+`graph_conditions` reuses the configured LLM only for semantic hard conditions when model ranking is enabled,
 in batches of twenty, with grounded quotes. The existing model request budget
 counts every attempt against the graph total and preserves cross-reference
 capacity. Unknown conditions remain pending; verified conflicts are excluded. TF-IDF weights use the fixed eligible corpus;

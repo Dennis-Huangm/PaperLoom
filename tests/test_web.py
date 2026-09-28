@@ -723,6 +723,20 @@ def test_save_discovery_settings_preserves_delivery_secrets_mapping(tmp_path: Pa
     assert "password" not in payload["delivery"]
 
 
+def test_invalid_graph_budget_returns_validation_error_without_saving(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("output_dir: run\n", encoding="utf-8")
+    app = create_app(config_path)
+    form = _full_settings_form()
+    form.update(citations_max_candidates="10", citations_max_nodes="50", citations_max_requests="20")
+    original = config_path.read_bytes()
+    with TestClient(app) as client:
+        response = client.post("/settings/config", data=form)
+    assert response.status_code == 400
+    assert "候选额度" in response.json()["detail"]
+    assert config_path.read_bytes() == original
+
+
 def test_hybrid_settings_save_and_roundtrip_through_active_profile(tmp_path: Path) -> None:
     from arxiv_ra.config import load_config
     config_path = tmp_path / "config.yaml"

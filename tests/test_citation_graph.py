@@ -8,6 +8,60 @@ from arxiv_ra.config import AppConfig, CitationConfig
 from arxiv_ra.utils import read_json
 
 
+@pytest.mark.parametrize('kind,http_status,budget', [
+    ('required', 200, 6), ('exclude', 200, 6), ('required', 429, 7), ('required', 200, 5),
+])
+def test_graph_category_conditions_use_bounded_official_metadata(tmp_path, monkeypatch, kind, http_status, budget):
+    import json
+    from arxiv_ra.config import DiscoveryConfig
+    from arxiv_ra.profile_plan import condition
+    config = AppConfig(output_dir=str(tmp_path),
+        citations=CitationConfig(min_interval=0, max_retries=2, max_requests=budget),
+        discovery=DiscoveryConfig(search_plan={'version': 2, 'conditions': [condition(kind, 'cs.RO')]}))
+    monkeypatch.setenv(config.metadata.semantic_scholar_api_key_env, 'fixture-key')
+    calls = []
+    def paper(pid, aid=''):
+        return {'paperId': pid, 'title': 'Robot planning ' + pid, 'abstract': '',
+                'externalIds': {'ArXiv': aid} if aid else {}}
+    def handle(self, request):
+        calls.append(request)
+        if request.url.host == 'export.arxiv.org':
+            assert 'x-api-key' not in request.headers
+            if http_status != 200:
+                return httpx.Response(http_status, headers={'Retry-After': '0'}, request=request)
+            entries = ''.join(f'<entry><id>https://arxiv.org/abs/{aid}v1</id><title>Robot planning</title>'
+                f'<summary></summary><published>2026-01-01T00:00:00Z</published><updated>2026-01-01T00:00:00Z</updated>'
+                f'<category term="{category}"/></entry>' for aid, category in
+                [('2407.05600', 'cs.RO'), ('2407.05601', 'cs.RO'), ('2407.05602', 'cs.CV')])
+            return httpx.Response(200, text=f'<feed xmlns="http://www.w3.org/2005/Atom">{entries}</feed>', request=request)
+        if '/paper/ARXIV:' in request.url.path:
+            return httpx.Response(200, json=paper('S', '2407.05600'), request=request)
+        if '/forpaper/' in request.url.path:
+            return httpx.Response(200, json={'recommendedPapers': [paper('RO', '2407.05601'),
+                paper('CV', '2407.05602'), paper('UNKNOWN')]}, request=request)
+        if request.method == 'POST':
+            return httpx.Response(200, json=[{'paperId': pid, 'references': []}
+                for pid in json.loads(request.content)['ids']], request=request)
+        return httpx.Response(200, json={'data': []}, request=request)
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', handle)
+    with CitationExplorer(config, tmp_path) as explorer:
+        path = explorer.generate('2407.05600')
+    graph = read_json(path.parent / 'graph.json')
+    if http_status == 200 and budget > 5:
+        chosen = 'RO' if kind == 'required' else 'CV'
+        assert {n['paperId'] for n in graph['nodes']} == {'S', chosen}
+        assert {n['paperId'] for n in graph['pending']} == {'UNKNOWN'}
+        assert graph['excluded_count'] == 1
+        check = next(n for n in graph['nodes'] if n['paperId'] == chosen)['condition_checks'][0]
+        assert check['field'] == 'categories'
+    else:
+        assert {n['paperId'] for n in graph['nodes']} == {'S'}
+        assert len(graph['pending']) == 3
+        assert graph['sources']['conditions']['truncated']
+    assert graph['budget']['requests_used'] == len(calls) <= budget
+    assert graph['budget']['model_requests_used'] == 0
+
+
 def test_citation_map_combines_three_relationship_types(tmp_path: Path) -> None:
     config = AppConfig(
         output_dir=str(tmp_path / "run"),

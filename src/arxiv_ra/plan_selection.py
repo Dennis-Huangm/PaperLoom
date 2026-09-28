@@ -67,10 +67,14 @@ exclude 条件 satisfied 表示论文确实属于被排除主题，not_satisfied
                           and quote in getattr(paper, field)), "")
             if not isinstance(verdict, str) or verdict not in {"satisfied", "not_satisfied"} or not field or paper.metadata_status != "complete":
                 verdict, quote, field = "unknown", "", ""
-            if c["text"] in ARXIV_CATEGORIES and paper.categories and paper.metadata_status == "complete":
-                verdict = "satisfied" if c["text"] in paper.categories else "not_satisfied"
-                quote, field = ", ".join(paper.categories), "categories"
-                result = {"reason": "按论文已核实的 arXiv 类别判断"}
+            if c["text"] in ARXIV_CATEGORIES:
+                if paper.categories and paper.metadata_status == "complete":
+                    verdict = "satisfied" if c["text"] in paper.categories else "not_satisfied"
+                    quote, field = ", ".join(paper.categories), "categories"
+                    result = {"reason": "按论文已核实的 arXiv 类别判断"}
+                else:
+                    verdict, quote, field = "unknown", "", ""
+                    result = {"reason": "缺少已核实的 arXiv 类别"}
             check = {"id": c["id"], "kind": c["kind"], "text": c["text"], "verdict": verdict,
                      "quote": quote, "field": field, "reason": str(result.get("reason") or error or "缺少可验证依据")[:500]}
             checks.append(check)

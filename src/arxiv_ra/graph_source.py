@@ -1,15 +1,19 @@
-"""Bounded Semantic Scholar acquisition with per-source freshness."""
+"""Bounded graph and arXiv metadata acquisition with per-source freshness."""
 from __future__ import annotations
 
 import os
 import math
+import re
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import httpx
 
 from . import __version__
+from .arxiv_categories import ARXIV_CATEGORIES
+from .arxiv_client import ArxivClient, parse_feed
 from .graph_store import normalize_paper
 from .graph_model import combine
 from .rate_limit import shared_rate_limit
@@ -34,10 +38,10 @@ class GraphSource:
         self.used = 0
         self.limit = config.citations.max_requests
 
-    def request(self, method, url, params, payload=None, reserve=0):
+    def request(self, method, url, params, payload=None, reserve=0, *, arxiv_client=None):
         headers = {'User-Agent': f'PaperLoom/{__version__}'}
         key = os.getenv(self.config.metadata.semantic_scholar_api_key_env)
-        if key:
+        if key and arxiv_client is None:
             headers['x-api-key'] = key
         for attempt in range(self.config.citations.max_retries + 1):
             task_checkpoint()
@@ -47,11 +51,14 @@ class GraphSource:
             delay = min(2 ** attempt, 30)
             try:
                 # Release the shared service lock before backoff or cancellation.
-                with shared_rate_limit('semantic-scholar', self.config.citations.min_interval, task_checkpoint):
+                service = 'arxiv-api' if arxiv_client is not None else 'semantic-scholar'
+                interval = 3.0 if arxiv_client is not None else self.config.citations.min_interval
+                with shared_rate_limit(service, interval, task_checkpoint):
                     task_checkpoint()
-                    response = self.client.request(method, url, params=params, json=payload, headers=headers)
+                    client = arxiv_client if arxiv_client is not None else self.client
+                    response = client.request(method, url, params=params, json=payload, headers=headers)
                 response.raise_for_status()
-                return response.json()
+                return parse_feed(response.text) if arxiv_client is not None else response.json()
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code != 429 and exc.response.status_code < 500:
                     raise
@@ -75,6 +82,40 @@ class GraphSource:
     @staticmethod
     def status(status='ok', **values):
         return {'status': status, 'attempted_at': now(), 'fetched_at': '', 'truncated': False, **values}
+
+    def categories(self, nodes, reserve):
+        """Hydrate exact arXiv identities without bypassing the graph request budget."""
+        ids = {}
+        for node in nodes:
+            aid = node.get('externalIds', {}).get('ArXiv', '')
+            if re.fullmatch(r'(?:[a-z-]+(?:\.[A-Z]{2})?/\d{7}|\d{4}\.\d{4,5})(?:v\d+)?', aid, re.I):
+                ids.setdefault(re.sub(r'v\d+$', '', aid), []).append(node['paperId'])
+        found = {}
+        failures = 0
+        truncated = False
+        # Reuse the official client's TLS configuration, but own retries and counting here.
+        arxiv = ArxivClient(timeout=30, max_retries=0)
+        try:
+            keys = list(ids)
+            for start in range(0, len(keys), 50):
+                batch = keys[start:start + 50]
+                try:
+                    papers = self.request('GET', 'https://export.arxiv.org/api/query',
+                        {'id_list': ','.join(batch), 'max_results': len(batch)}, reserve=reserve,
+                        arxiv_client=arxiv.client)
+                    for paper in papers:
+                        if paper.arxiv_id in batch and paper.categories:
+                            for pid in ids[paper.arxiv_id]:
+                                found[pid] = paper.categories
+                except (httpx.HTTPError, ValueError, ET.ParseError, RequestBudgetExceeded) as exc:
+                    failures += 1
+                    truncated = isinstance(exc, RequestBudgetExceeded)
+                    break
+        finally:
+            arxiv.client.close()
+        status = 'partial' if found and (failures or len(found) < len(nodes)) else 'failed' if failures else 'ok' if len(found) == len(nodes) else 'unknown'
+        return found, self.status(status, count=len(found), truncated=truncated,
+            fetched_at=now() if found else '', message='按 arXiv 元数据核验类别；未取得类别的论文保留待判断')
 
     def seed(self, arxiv_id, existing):
         try:
@@ -104,10 +145,13 @@ class GraphSource:
             return {n['paperId'] for n in combined if 'seed' not in n['roles']}, mapping
 
         cross_reserve = math.ceil(self.config.citations.max_nodes / 50)
-        hard = any(c.get('kind') in {'required', 'exclude'} and c.get('confirmed')
-                   for c in self.config.discovery.search_plan.get('conditions', []))
-        model_reserve = min(4, math.ceil((self.config.citations.max_candidates + 1) / 20)) if hard and self.config.ranking.llm_rerank else 0
-        model_reserve = min(model_reserve, max(0, self.limit - 4 - cross_reserve))
+        hard = [c for c in self.config.discovery.search_plan.get('conditions', [])
+                if c.get('kind') in {'required', 'exclude'} and c.get('confirmed')]
+        semantic = any(c['text'] not in ARXIV_CATEGORIES for c in hard)
+        categorical = any(c['text'] in ARXIV_CATEGORIES for c in hard)
+        model_reserve = min(4, math.ceil((self.config.citations.max_candidates + 1) / 20)) if semantic and self.config.ranking.llm_rerank else 0
+        condition_reserve = model_reserve + (math.ceil((self.config.citations.max_candidates + 1) / 50) if categorical else 0)
+        condition_reserve = min(condition_reserve, max(0, self.limit - 4 - cross_reserve))
         round_number = 0
         # First pages get a fair opportunity, then the global identity cap stops paging.
         while active:
@@ -122,7 +166,7 @@ class GraphSource:
                     active.remove(key)
                     continue
                 first = offsets[key] == 0
-                reserve = cross_reserve + model_reserve + (sum(other in active and offsets[other] == 0 for other in limits if other != key) if first else 0)
+                reserve = cross_reserve + condition_reserve + (sum(other in active and offsets[other] == 0 for other in limits if other != key) if first else 0)
                 params = {'fields': FIELDS, 'limit': min(50, remaining, self.config.citations.max_candidates)}
                 if key == 'similar':
                     params['limit'] = min(500, remaining, self.config.citations.max_candidates)
