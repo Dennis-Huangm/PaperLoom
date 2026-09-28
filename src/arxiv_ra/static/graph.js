@@ -8,7 +8,7 @@
   const edges = [...(data.edges || []), ...(data.citation_edges || [])]
     .map(e => ({...e, a: byId.get(e.source), b: byId.get(e.target)}))
     .filter(e => e.a && e.b && e.a !== e.b && (e.kind !== 'similarity' || Number(e.score) >= .025));
-  const sourceNames = {seed: '起点论文', references: '参考文献', citations: '引用该论文', similar: '近期推荐', cross: '交叉引用'};
+  const sourceNames = {seed: '起点论文', references: '参考文献', citations: '引用该论文', similar: '近期推荐', cross: '交叉引用', conditions: '方向条件'};
   const roles = {seed: '起点论文', reference: '参考文献', citation: '引用该论文', similar: '服务推荐'};
   const statusNames = {ok: '已获取', empty: '成功 · 无结果', partial: '部分可用', cached: '使用缓存', failed: '获取失败', unknown: '历史状态未知'};
   const textNames = {full: '标题与摘要', short_abstract: '摘要较短，依据有限', title_only: '缺少摘要，仅按标题计算', unsupported: '缺少可计算文本，内容相似未知'};
@@ -44,7 +44,7 @@
   $('#source-summary').textContent = `快照时间：${date(data.generated_at)}。${data.budget ? `已使用 ${data.budget.requests_used} / ${data.budget.max_requests} 次请求，展示 ${nodes.length} / ${data.budget.max_nodes} 个节点。` : '历史快照没有预算记录。'}${data.undisplayed_count ? `另有 ${data.undisplayed_count} 篇合格候选未展示。` : ''}`;
   for (const [name, status] of Object.entries(data.sources || {})) {
     const row = element('div', undefined, 'source-row');
-    row.append(element('strong', sourceNames[name] || name), element('span', (statusNames[status.status] || '未知') + (status.truncated ? ' · 已截断' : '')));
+    row.append(element('strong', sourceNames[name] || name), element('span', (name === 'conditions' && status.status === 'unknown' ? '待判断' : statusNames[status.status] || '未知') + (status.truncated ? ' · 已截断' : '')));
     row.append(element('p', `数据获取：${date(status.fetched_at)} · 本次尝试：${date(status.attempted_at)}${status.count !== undefined ? ` · ${status.count} 条` : ''}`));
     if (status.message) row.append(element('p', status.message));
     $('#source-list').append(row);
@@ -158,6 +158,15 @@
     content.append(element('p', (n.authors || []).map(a => a.name).join(', ') || '作者未知', 'authors'));
     content.append(element('div', `${n.year || '年份未知'} · ${n.venue || '出版信息未核实'} · 引用 ${citations(n)}`, 'detail-meta'));
     if (n.eligibility_note) content.append(element('p', n.eligibility_note, 'evidence-box warning'));
+    if (n.condition_checks?.length) {
+      const checks = section('方向条件');
+      for (const check of n.condition_checks) {
+        checks.append(element('p', `${check.text} · ${{satisfied:'满足',not_satisfied:'不满足',unknown:'待判断'}[check.verdict] || '待判断'}`));
+        if (check.quote) checks.append(element('p', `原文依据：${check.quote}`, 'evidence-box'));
+        if (check.reason) checks.append(element('p', check.reason, 'muted'));
+      }
+      content.append(checks);
+    }
     const evidence = section('为什么相关');
     evidence.append(element('p', n === seed ? '这是本次探索的参照论文。选择周围节点，查看它们与起点或其他工作的关系。' : n.selection_reason || '历史快照未记录入选依据。'));
     evidence.append(element('p', textNames[n.text_status] || '文本来源状态未知', 'muted'));

@@ -699,8 +699,11 @@ Recommendations use the upstream `recent` pool; the provider currently offers
 
 `graph_model` merges stable identities, applies profile reading preferences and
 conservative hard-condition evaluation, then selects a diverse, bounded view.
-The default path stays local: unknown semantic constraints remain pending rather
-than making unbudgeted model calls. TF-IDF weights use the fixed eligible corpus;
+The default path stays local without hard conditions. `graph_conditions` reuses
+the configured LLM only for explicit conditions when model ranking is enabled,
+in batches of twenty, with grounded quotes. The existing model request budget
+counts every attempt against the graph total and preserves cross-reference
+capacity. Unknown conditions remain pending; verified conflicts are excluded. TF-IDF weights use the fixed eligible corpus;
 positive similarity edges, directed citations and recommendation provenance have
 separate meanings. Unsupported text never creates invented similarity edges.
 

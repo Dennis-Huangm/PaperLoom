@@ -203,6 +203,8 @@ class CitationConfig:
                 raise ValueError(f"图谱 {name} 必须在 {low} 到 {high} 之间")
         if self.max_nodes > self.max_candidates + 1:
             raise ValueError("图谱展示数量不能超过候选额度加起点")
+        if self.max_requests < 4 + (self.max_nodes + 49) // 50:
+            raise ValueError("图谱请求额度不足以查询各来源并补全展示节点的引用")
         if type(self.enabled) is not bool or not 0 <= self.min_interval <= 60:
             raise ValueError("无效的图谱启用状态或请求间隔")
 

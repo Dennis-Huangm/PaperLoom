@@ -328,3 +328,104 @@ def test_duplicate_identity_and_missing_metadata_stay_readable(tmp_path: Path):
     assert node['text_status'] == 'unsupported'
     assert node['year'] is None and node['authors'] == []
     assert graph['edges'] == []
+
+
+def test_job_cancellation_after_publication_keeps_committed_result(tmp_path: Path):
+    import threading
+    import time
+    from arxiv_ra.web_jobs import JobManager
+    from arxiv_ra.task_runtime import task_commit
+    manager = JobManager(tmp_path, 1)
+    published, finish = threading.Event(), threading.Event()
+    result = tmp_path / 'citations' / 'fixture' / 'index.html'
+    def run():
+        with task_commit():
+            result.parent.mkdir(parents=True)
+            result.write_text('complete publication')
+        published.set()
+        finish.wait(3)
+        return result
+    try:
+        job = manager.submit('citation', 'fixture', run)
+        assert published.wait(3)
+        manager.cancel(job.id)
+        finish.set()
+        for _ in range(300):
+            state = manager.get(job.id)
+            if state.status in {'succeeded', 'failed', 'cancelled'}:
+                break
+            time.sleep(.01)
+        assert state.status == 'succeeded'
+        assert state.result_url and result.exists()
+    finally:
+        finish.set(); manager.close()
+
+
+def test_tiny_candidate_cap_queries_each_source_and_merges_aliases(tmp_path: Path):
+    import json
+    calls = []
+    config = AppConfig(output_dir=str(tmp_path), citations=CitationConfig(max_candidates=1, max_nodes=2, min_interval=0, max_retries=0))
+    def handler(request):
+        calls.append(request.url.path)
+        if '/paper/ARXIV:' in request.url.path:
+            return httpx.Response(200, json={'paperId': 'S', 'title': 'Visual planning'})
+        paper = {'paperId': 'R', 'title': 'Visual feedback', 'externalIds': {'DOI': '10.1234/shared'}}
+        if request.url.path.endswith('references'):
+            return httpx.Response(200, json={'data': [{'citedPaper': paper}]})
+        if request.url.path.endswith('citations'):
+            return httpx.Response(200, json={'data': [{'citingPaper': {**paper, 'paperId': 'ALIAS'}}]})
+        if '/forpaper/' in request.url.path:
+            return httpx.Response(200, json={'recommendedPapers': [{**paper, 'paperId': 'ALIAS2'}]})
+        return httpx.Response(200, json=[{'paperId': p, 'references': []} for p in json.loads(request.content)['ids']])
+    with CitationExplorer(config, tmp_path) as explorer:
+        explorer.client.close(); explorer.client = httpx.Client(transport=httpx.MockTransport(handler))
+        path = explorer.generate('2407.05600')
+    graph = read_json(path.parent / 'graph.json')
+    assert any('/forpaper/' in path for path in calls)
+    assert any(path.endswith('/citations') for path in calls)
+    assert len(graph['nodes']) == 2
+    assert set(graph['nodes'][1]['roles']) == {'reference', 'citation', 'similar'}
+
+
+def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_path: Path, monkeypatch):
+    import json
+    from arxiv_ra.config import DiscoveryConfig, LLMConfig
+    from arxiv_ra.profile_plan import condition
+    requirement = condition('required', 'Evaluates clinical outcomes')
+    config = AppConfig(output_dir=str(tmp_path), citations=CitationConfig(min_interval=0, max_retries=0),
+                       llm=LLMConfig(api_key_env='GRAPH_TEST_KEY', base_url_env='GRAPH_TEST_URL'),
+                       discovery=DiscoveryConfig(search_plan={'version': 2, 'conditions': [requirement]}))
+    monkeypatch.setenv('GRAPH_TEST_KEY', 'fixture')
+    monkeypatch.setenv('GRAPH_TEST_URL', 'https://graph-model.test/v1')
+    model_calls = []
+    abstracts = {'S':'We evaluate clinical outcomes.', 'PASS':'We evaluate clinical outcomes.',
+                 'FAIL':'This study evaluates simulated environments only.', 'UNKNOWN':'Evidence is incomplete.'}
+    def paper(pid):
+        return {'paperId': pid, 'title': 'Visual planning ' + pid, 'abstract': abstracts[pid]}
+    def handle(self, request):
+        if request.url.host == 'graph-model.test':
+            model_calls.append(request)
+            inputs = json.loads(json.loads(request.content)['messages'][1]['content'].split('数据：')[1])
+            rows = []
+            for p in inputs['papers']:
+                pid = p['id']; verdict = 'not_satisfied' if pid == 'FAIL' else 'unknown' if pid == 'UNKNOWN' else 'satisfied'
+                rows.append({'id':pid,'score':8,'reason':'fixture','conditions':[{'id':requirement['id'],'verdict':verdict,'quote':abstracts[pid] if verdict != 'unknown' else '', 'reason':'grounded fixture'}]})
+            return httpx.Response(200, json={'id':'fixture','object':'chat.completion','created':0,'model':'fixture',
+              'choices':[{'index':0,'message':{'role':'assistant','content':json.dumps({'papers':rows})},'finish_reason':'stop'}]}, request=request)
+        if '/paper/ARXIV:' in request.url.path:
+            return httpx.Response(200, json=paper('S'), request=request)
+        if '/forpaper/' in request.url.path:
+            return httpx.Response(200, json={'recommendedPapers':[paper(pid) for pid in ['PASS','FAIL','UNKNOWN']]}, request=request)
+        if request.method == 'POST':
+            return httpx.Response(200, json=[{'paperId':p,'references':[]} for p in json.loads(request.content)['ids']], request=request)
+        return httpx.Response(200, json={'data':[]}, request=request)
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', handle)
+    with CitationExplorer(config, tmp_path) as explorer:
+        path = explorer.generate('2407.05600')
+    graph = read_json(path.parent / 'graph.json')
+    assert {n['paperId'] for n in graph['nodes']} == {'S','PASS'}
+    assert {n['paperId'] for n in graph['pending']} == {'UNKNOWN'}
+    assert graph['excluded_count'] == 1
+    assert len(model_calls) == 1
+    assert graph['budget']['model_requests_used'] == 1
+    assert graph['budget']['requests_used'] == 6

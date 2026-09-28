@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import math
 import time
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -10,6 +11,7 @@ import httpx
 
 from . import __version__
 from .graph_store import normalize_paper
+from .graph_model import combine
 from .rate_limit import shared_rate_limit
 from .task_runtime import task_checkpoint, task_warning
 
@@ -88,7 +90,8 @@ class GraphSource:
             previous = existing.get('sources', {}).get('seed', {})
             return cached, self.status('cached', fetched_at=previous.get('fetched_at', ''), message='查询失败，使用缓存')
 
-    def candidates(self, seed_id, existing):
+    def candidates(self, seed, existing):
+        seed_id = seed['paperId']
         limits = {'references': self.config.citations.max_references,
                   'citations': self.config.citations.max_citations, 'similar': self.config.citations.max_similar}
         values = {key: [] for key in limits}
@@ -96,26 +99,33 @@ class GraphSource:
         offsets = {key: 0 for key in limits}
         active = set(limits)
         visited = {key: set() for key in limits}
-        total_ids = set()
-        # A round obtains at most one page per source. One request remains for cross references.
+        def identities():
+            combined, mapping = combine({'seed': seed, **values})
+            return {n['paperId'] for n in combined if 'seed' not in n['roles']}, mapping
+
+        cross_reserve = math.ceil(self.config.citations.max_nodes / 50)
+        hard = any(c.get('kind') in {'required', 'exclude'} and c.get('confirmed')
+                   for c in self.config.discovery.search_plan.get('conditions', []))
+        model_reserve = min(4, math.ceil((self.config.citations.max_candidates + 1) / 20)) if hard and self.config.ranking.llm_rerank else 0
+        model_reserve = min(model_reserve, max(0, self.limit - 4 - cross_reserve))
+        round_number = 0
+        # First pages get a fair opportunity, then the global identity cap stops paging.
         while active:
             for key in limits:
                 if key not in active:
                     continue
-                remaining = min(limits[key] - len(values[key]), self.config.citations.max_candidates - len(total_ids))
-                if remaining <= 0:
+                total_ids, mapping = identities()
+                count = len({mapping[p['paperId']] for p in values[key]})
+                remaining = limits[key] - count
+                if remaining <= 0 or round_number > 0 and len(total_ids) >= self.config.citations.max_candidates:
                     states[key]['truncated'] = True
                     active.remove(key)
                     continue
                 first = offsets[key] == 0
-                if first:
-                    # Share a small global budget between first pages as well as requests.
-                    awaiting = sum(other in active and offsets[other] == 0 for other in limits)
-                    remaining = min(remaining, max(1, (self.config.citations.max_candidates - len(total_ids)) // max(1, awaiting)))
-                reserve = 1 + (sum(other in active and offsets[other] == 0 for other in limits if other != key) if first else 0)
-                params = {'fields': FIELDS, 'limit': min(50, remaining)}
+                reserve = cross_reserve + model_reserve + (sum(other in active and offsets[other] == 0 for other in limits if other != key) if first else 0)
+                params = {'fields': FIELDS, 'limit': min(50, remaining, self.config.citations.max_candidates)}
                 if key == 'similar':
-                    params['limit'] = min(500, remaining)
+                    params['limit'] = min(500, remaining, self.config.citations.max_candidates)
                     params['from'] = 'recent'
                     url = f'https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{seed_id}'
                 else:
@@ -137,15 +147,8 @@ class GraphSource:
                         pid = paper['paperId']
                         if pid == seed_id or pid in known:
                             continue
-                        if len(total_ids) >= self.config.citations.max_candidates and pid not in total_ids:
-                            states[key]['truncated'] = True
-                            continue
-                        if len(values[key]) >= limits[key]:
-                            states[key]['truncated'] = True
-                            break
                         values[key].append(normalize_paper(paper))
                         known.add(pid)
-                        total_ids.add(pid)
                     states[key].update(fetched_at=now(), status='ok' if values[key] else 'empty')
                     next_page = payload.get('next')
                     visited[key].add(offsets[key])
@@ -175,17 +178,24 @@ class GraphSource:
                     states[key]['truncated'] |= isinstance(exc, RequestBudgetExceeded)
                     task_warning(key, states[key]['message'])
                 states[key]['count'] = len(values[key])
-        # Cached records also obey the global budget, with deterministic interleaving.
-        selected = set()
-        for index in range(max((len(v) for v in values.values()), default=0)):
-            for key in limits:
-                if index < len(values[key]) and len(selected) < self.config.citations.max_candidates:
-                    selected.add(values[key][index]['paperId'])
+            round_number += 1
+        # Canonical IDs count once, even when the source supplied different paper IDs.
+        _, mapping = identities()
+        per_source = {}
         for key in limits:
-            before = len(values[key])
-            values[key] = [p for p in values[key] if p['paperId'] in selected]
-            states[key]['truncated'] |= len(values[key]) < before
-            states[key]['count'] = len(values[key])
+            unique = list(dict.fromkeys(mapping[p['paperId']] for p in values[key]))
+            states[key]['truncated'] |= len(unique) > limits[key]
+            per_source[key] = unique[:limits[key]]
+        selected = set()
+        for index in range(max((len(v) for v in per_source.values()), default=0)):
+            for key in limits:
+                if index < len(per_source[key]) and len(selected) < self.config.citations.max_candidates:
+                    selected.add(per_source[key][index])
+        for key in limits:
+            allowed = selected.intersection(per_source[key])
+            states[key]['truncated'] |= len(allowed) < len(per_source[key])
+            values[key] = [p for p in values[key] if mapping[p['paperId']] in allowed]
+            states[key]['count'] = len(allowed)
         return values, states
 
     def cross_references(self, nodes, existing):
@@ -215,6 +225,7 @@ class GraphSource:
                     records[pid] = self.status('failed')
         all_ok = all(r['status'] == 'ok' for r in records.values())
         fetched = [r['fetched_at'] for r in records.values() if r['fetched_at']]
-        state = self.status('ok' if all_ok else 'partial', fetched_at=min(fetched, default=''),
+        any_available = any(r['status'] in {'ok', 'cached'} for r in records.values())
+        state = self.status('ok' if all_ok else 'partial' if any_available else 'failed', fetched_at=min(fetched, default=''),
                             truncated=any(r['truncated'] for r in records.values()), count=len(records))
         return references, records, state

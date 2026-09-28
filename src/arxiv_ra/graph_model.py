@@ -5,11 +5,7 @@ import math
 import re
 from collections import Counter
 from datetime import datetime, timezone
-from types import SimpleNamespace
-
-from .models import Paper
 from .graph_store import normalize_paper
-from .plan_selection import evaluate_plan
 from .ranker import _plan_phrase_count
 
 
@@ -108,30 +104,24 @@ def combine(graph):
     return sorted(nodes, key=lambda n: ('seed' not in n['roles'], n['paperId'])), identities
 
 
-def select_nodes(nodes, config, reading):
+def select_nodes(nodes, config, reading, outcomes=None):
     seed = next(n for n in nodes if 'seed' in n['roles'])
     eligible, pending, excluded = [], [], []
-    hard = [c for c in config.discovery.search_plan.get('conditions', []) if c['kind'] in {'required', 'exclude'} and c['confirmed']]
+    outcomes = outcomes or {}
     for node in nodes:
         aid = re.sub(r'v\d+$', '', str(node.get('externalIds', {}).get('ArXiv', '')))
         dismissed = aid in reading.get('feedback', {})
         node['saved'] = aid in reading.get('library', {})
         node['text_status'] = 'unsupported' if not terms(node) else 'title_only' if not node.get('abstract') else 'short_abstract' if len(str(node['abstract'])) < 120 else 'full'
-        node['condition_checks'] = []
-        if hard:
-            # Reuse the same conservative hard-condition policy as daily discovery.
-            # No new paid model dependency or unbudgeted model requests.
-            paper = Paper(node['paperId'], str(node.get('title', '')), [], str(node.get('abstract') or ''),
-                          [], '', None, None, '', '', metadata_status='complete' if node.get('abstract') else 'partial')
-            _, rejected = evaluate_plan([paper], config, SimpleNamespace(enabled=False))
-            node['condition_checks'] = paper.ranking_explanation.get('conditions', [])
-            if rejected:
-                node['eligibility_note'] = '方向条件缺少可验证依据，待判断'
+        outcome = outcomes.get(node['paperId'], {})
+        node['condition_checks'] = outcome.get('checks', [])
+        if outcome.get('note'):
+            node['eligibility_note'] = outcome['note']
         if dismissed:
             node['eligibility_note'] = '当前研究方向已标记不相关'
         if node is seed:
             eligible.append(node)
-        elif dismissed:
+        elif dismissed or outcome.get('state') == 'excluded':
             excluded.append(node)
         elif node.get('eligibility_note'):
             pending.append(node)

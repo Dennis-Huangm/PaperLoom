@@ -10,6 +10,7 @@ import httpx
 
 from .config import AppConfig
 from .graph_model import combine, select_nodes, citation_edges, attach_shared_references
+from .graph_conditions import assess_conditions
 from .graph_source import GraphSource, now
 from .graph_store import active_graph_path, read_graph, publish_graph
 from .reading_state import ReadingStateStore
@@ -47,7 +48,7 @@ class CitationExplorer:
         task_progress("正在查询起点论文…", 12)
         seed, seed_status = source.seed(arxiv_id, existing)
         task_progress("正在收集参考、引用和近期推荐候选…", 25)
-        candidates, statuses = source.candidates(seed['paperId'], existing)
+        candidates, statuses = source.candidates(seed, existing)
         graph = {'schema_version': 2, 'arxiv_id': arxiv_id, 'seed': seed, **candidates,
                  'profile_id': self.config.profile_id, 'profile_name': self.config.profile_name,
                  'generated_at': now(), 'sources': {'seed': seed_status, **statuses},
@@ -57,7 +58,10 @@ class CitationExplorer:
         task_progress("正在筛选并计算内容关联…", 60)
         combined, identities = combine(graph)
         reading = ReadingStateStore(self.output_root, self.config.profile_id).snapshot()
-        nodes, similarity, pending, excluded, eligible_count = select_nodes(combined, self.config, reading)
+        outcomes, model_used, condition_state = assess_conditions(combined, self.config, source)
+        nodes, similarity, pending, excluded, eligible_count = select_nodes(combined, self.config, reading, outcomes)
+        if condition_state:
+            graph['sources']['conditions'] = condition_state
         graph.update(nodes=nodes, pending=pending, excluded_count=len(excluded),
                      candidate_count=len(combined) - 1, eligible_count=eligible_count,
                      undisplayed_count=eligible_count - len(nodes))
@@ -70,7 +74,7 @@ class CitationExplorer:
         graph['sources']['cross'] = cross_status
         graph['citation_edges'] = citation_edges(graph, identities)
         attach_shared_references(graph)
-        graph['budget'] = {**asdict(self.config.citations), 'requests_used': source.used}
+        graph['budget'] = {**asdict(self.config.citations), 'requests_used': source.used, 'model_requests_used': model_used}
         graph['status'] = 'partial' if any(s['status'] not in {'ok', 'empty'} or s['truncated'] for s in graph['sources'].values()) else 'complete'
         if pending:
             task_warning('方向条件', f'{len(pending)} 篇候选缺少可验证依据，已列入待判断列表')
