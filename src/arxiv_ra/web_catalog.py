@@ -265,31 +265,32 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
             "coverage": payload.get("coverage") or {}}
 
 
-def citation_library(output_root: Path) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for graph_path in output_root.glob("citations/*/graph.json"):
-        graph = _safe_json(graph_path, {}) or {}
-        if not isinstance(graph, dict):
+def citation_library(output_root: Path, profile_id: str | None = None) -> list[dict[str, Any]]:
+    from .graph_store import active_graph_path, read_graph
+    items = []
+    for folder in (output_root / "citations").glob("*"):
+        if not folder.is_dir():
             continue
-        report_path = graph_path.parent / "index.html"
-        if not report_path.exists():
+        try:
+            graph_path = active_graph_path(folder)
+            graph = read_graph(graph_path)
+        except (OSError, ValueError, TypeError):
             continue
-        report_url = artifact_url(report_path, output_root)
-        if report_url:
-            report_url = f"{report_url}?v={int(report_path.stat().st_mtime)}"
-        items.append(
-            {
-                "arxiv_id": graph.get("arxiv_id") or graph_path.parent.name,
-                "title": (graph.get("seed") or {}).get("title")
-                or graph_path.parent.name,
-                "reference_count": len(graph.get("references") or []),
-                "citation_count": len(graph.get("citations") or []),
-                "similar_count": len(graph.get("similar") or []),
-                "report_url": report_url,
-                "updated_at": datetime.fromtimestamp(
-                    report_path.stat().st_mtime
-                ).isoformat(timespec="minutes"),
-            }
-        )
-    items.sort(key=lambda item: item["updated_at"], reverse=True)
+        if profile_id is not None and graph.get('profile_id', '') != profile_id:
+            # Old folders encoded their direction in their name.
+            if graph.get('schema_version') == 2 or not folder.name.endswith('-' + (profile_id or 'default')):
+                continue
+        report_path = graph_path.with_name('index.html')
+        if not report_path.is_file():
+            continue
+        items.append({'arxiv_id': graph.get('arxiv_id') or folder.name,
+                      'title': graph['seed'].get('title') or folder.name,
+                      'profile_name': graph.get('profile_name') or '历史方向',
+                      'reference_count': len(graph.get('references') or []),
+                      'citation_count': len(graph.get('citations') or []),
+                      'similar_count': len(graph.get('similar') or []),
+                      'node_count': len(graph['nodes']), 'status': graph.get('status', 'legacy'),
+                      'report_url': artifact_url(report_path, output_root),
+                      'updated_at': graph.get('generated_at') or datetime.fromtimestamp(report_path.stat().st_mtime).isoformat(timespec='minutes')})
+    items.sort(key=lambda item: item['updated_at'], reverse=True)
     return items

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
-from .config import AppConfig
+from .config import AppConfig, CitationConfig
 from .utils import atomic_write_text
 
 
@@ -252,9 +252,12 @@ def build_config_update(form: Any) -> dict[str, Any]:
         },
         "citations": {
             "enabled": "citations_enabled" in form,
-            "max_references": _int_value(form, "citations_max_references", 1, 100),
-            "max_citations": _int_value(form, "citations_max_citations", 1, 100),
-            "max_similar": _int_value(form, "citations_max_similar", 1, 100),
+            "max_references": _int_value(form, "citations_max_references", 1, 500),
+            "max_citations": _int_value(form, "citations_max_citations", 1, 500),
+            "max_similar": _int_value(form, "citations_max_similar", 1, 500),
+            **{key: _int_value(form, 'citations_' + key, low, high)
+               for key, low, high in [('max_candidates', 1, 500), ('max_nodes', 1, 150), ('max_requests', 5, 100)]
+               if 'citations_' + key in form},
             "min_interval": _float_value(form, "citations_min_interval", 0, 60),
             "max_retries": _int_value(form, "citations_max_retries", 0, 10),
         },
@@ -268,6 +271,8 @@ def save_config_settings(config_path: Path, values: dict[str, Any]) -> None:
             payload.setdefault(key, {}).update(value)
         else:
             payload[key] = value
+    if "citations" in values:
+        CitationConfig(**payload.get("citations", {}))
     atomic_write_text(
         config_path,
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),

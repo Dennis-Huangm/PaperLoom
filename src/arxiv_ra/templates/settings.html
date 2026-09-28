@@ -116,7 +116,7 @@
         <label>OpenAlex Key 环境变量名<input name="openalex_api_key_env" value="{{ config.metadata.openalex_api_key_env }}" required></label>
         <label>Semantic Scholar Key 环境变量名<input name="semantic_scholar_api_key_env" value="{{ config.metadata.semantic_scholar_api_key_env }}" required></label>
         <label>Semantic Scholar 最小请求间隔（秒）<input type="number" name="semantic_scholar_min_interval" min="0" max="60" step="0.1" value="{{ config.metadata.semantic_scholar_min_interval }}"><small>免费 API 建议保持 1.1 秒。</small></label>
-        <label>Semantic Scholar 429 重试次数<input type="number" name="semantic_scholar_max_retries" min="0" max="10" value="{{ config.metadata.semantic_scholar_max_retries }}"></label>
+        <label>Semantic Scholar 临时故障重试次数<input type="number" name="semantic_scholar_max_retries" min="0" max="10" value="{{ config.metadata.semantic_scholar_max_retries }}"></label>
         <label class="toggle-field"><span>核验会议/期刊信息</span><input type="checkbox" name="verify_venue" value="true" {% if config.metadata.verify_venue %}checked{% endif %}></label>
       </div>
     </section>
@@ -231,11 +231,14 @@
       </div>
       <h3>Semantic Scholar 相关工作地图</h3>
       <div class="config-grid four">
-        <label>参考文献数量<input type="number" name="citations_max_references" min="1" max="100" value="{{ config.citations.max_references }}"></label>
-        <label>后续引用数量<input type="number" name="citations_max_citations" min="1" max="100" value="{{ config.citations.max_citations }}"></label>
-        <label>语义相似数量<input type="number" name="citations_max_similar" min="1" max="100" value="{{ config.citations.max_similar }}"></label>
+        <label>参考文献候选上限<input type="number" name="citations_max_references" min="1" max="500" value="{{ config.citations.max_references }}"></label>
+        <label>引用论文候选上限<input type="number" name="citations_max_citations" min="1" max="500" value="{{ config.citations.max_citations }}"></label>
+        <label>近期推荐候选上限<input type="number" name="citations_max_similar" min="1" max="500" value="{{ config.citations.max_similar }}"></label>
+        <label>总候选额度<input type="number" name="citations_max_candidates" min="1" max="500" value="{{ config.citations.max_candidates }}"></label>
+        <label>展示节点（含起点）<input type="number" name="citations_max_nodes" min="1" max="150" value="{{ config.citations.max_nodes }}"></label>
+        <label>单次请求额度（含重试）<input type="number" name="citations_max_requests" min="5" max="100" value="{{ config.citations.max_requests }}"></label>
         <label>请求间隔（秒）<input type="number" name="citations_min_interval" min="0" max="60" step="0.1" value="{{ config.citations.min_interval }}"></label>
-        <label>429 重试次数<input type="number" name="citations_max_retries" min="0" max="10" value="{{ config.citations.max_retries }}"></label>
+        <label>临时故障重试次数<input type="number" name="citations_max_retries" min="0" max="10" value="{{ config.citations.max_retries }}"></label>
         <label class="toggle-field"><span>启用相关工作地图</span><input type="checkbox" name="citations_enabled" value="true" {% if config.citations.enabled %}checked{% endif %}></label>
       </div>
     </section>

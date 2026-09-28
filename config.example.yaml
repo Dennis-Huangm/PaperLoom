@@ -145,8 +145,11 @@ version_sync:
 
 citations:
   enabled: true
-  max_references: 15
-  max_citations: 15
-  max_similar: 15
+  max_references: 50
+  max_citations: 50
+  max_similar: 50
+  max_candidates: 150
+  max_nodes: 50
+  max_requests: 20
   min_interval: 1.1
   max_retries: 3

@@ -42,6 +42,18 @@ class ReportStaticFiles(StaticFiles):
         if any(part.casefold() in {".jobs", ".search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
             from starlette.exceptions import HTTPException
             raise HTTPException(status_code=404)
+        if Path(path).name == 'index.html' and Path(path).parts and Path(path).parts[0] == 'citations':
+            from .graph_store import read_graph
+            from .graph_render import render_graph
+            graph_name = Path(path).with_name('graph.json').as_posix()
+            graph_path, info = self.lookup_path(graph_name)
+            if info and stat.S_ISREG(info.st_mode):
+                try:
+                    graph = await run_in_threadpool(read_graph, Path(graph_path))
+                    document = await run_in_threadpool(render_graph, graph, '/static/')
+                except (ValueError, TypeError, KeyError, OSError):
+                    return HTMLResponse('<h1>图谱暂时无法读取</h1><p>数据损坏或版本不受支持，请重新生成或更新应用。</p>', status_code=422)
+                return HTMLResponse(document, headers={'Cache-Control': 'no-cache'})
         response = await super().get_response(path, scope)
         if scope['method'] in {'GET', 'HEAD'} and Path(path).name == 'report.html':
             try:

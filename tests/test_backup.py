@@ -245,3 +245,19 @@ def test_restore_guard_blocks_gui_start_during_publication(service):
         guard.close()
     owner = JobStore(root / "run")
     owner.close()
+
+
+def test_graph_publication_keeps_local_assets_after_restore(service):
+    snapshot = service.output / 'citations' / '2407.05600-alpha' / 'snapshots' / ('a' * 32)
+    snapshot.mkdir(parents=True)
+    (snapshot / 'index.html').write_text('<script src="graph.js"></script><link rel="stylesheet" href="graph.css">')
+    (snapshot / 'graph.js').write_text('document.body.dataset.ready="true";')
+    (snapshot / 'graph.css').write_text('body { color: #283333; }')
+    write_json(snapshot / 'graph.json', {'schema_version': 2, 'seed': {'paperId': 'S'}})
+    write_json(snapshot.parent.parent / 'active.json', {'snapshot_id': 'a' * 32})
+    archive = service.create(reports=True)
+    plan = service.preview(archive, 'graph-copy')
+    result = service.restore(archive, 'graph-copy', token=plan['token'])
+    restored = Path(result['target']) / 'run' / snapshot.relative_to(service.output)
+    assert (restored / 'graph.js').read_text() == (snapshot / 'graph.js').read_text()
+    assert (restored / 'graph.css').read_text() == (snapshot / 'graph.css').read_text()

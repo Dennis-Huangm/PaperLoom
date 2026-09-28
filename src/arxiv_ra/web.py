@@ -235,7 +235,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        if request.url.path.startswith("/artifacts/") and request.url.path.endswith("/report.html"):
+        if request.url.path.startswith("/artifacts/") and (request.url.path.endswith("/report.html") or "/citations/" in request.url.path):
             # Also protect legacy reports which have not been regenerated.
             response.headers["Content-Security-Policy"] = (
                 "script-src 'self'; script-src-attr 'none'; object-src 'none'; "
@@ -822,7 +822,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "citations.html",
-            context(request, "citations", citation_maps=citation_library(output_root)),
+            context(request, "citations", citation_maps=citation_library(output_root, current_config().profile_id)),
         )
 
     @app.get("/profiles", response_class=HTMLResponse)
@@ -1317,11 +1317,13 @@ def create_app(config_path: Path | str) -> FastAPI:
     @app.post("/api/jobs/citation", response_class=JSONResponse)
     def create_citation_job(arxiv_id: str = Form(...)) -> JSONResponse:
         arxiv_id = arxiv_id.strip()
-        if not ARXIV_ID_RE.match(arxiv_id):
+        if not ARXIV_ID_RE.fullmatch(arxiv_id):
             raise HTTPException(status_code=400, detail="请输入有效的 arXiv ID")
 
         task = JobContext.capture(current_config(), project_root)
         current = task.config
+        if not current.citations.enabled:
+            raise HTTPException(status_code=409, detail="相关工作地图生成已关闭")
 
         def run_citation() -> Path:
             with CitationExplorer(current, project_root) as explorer:

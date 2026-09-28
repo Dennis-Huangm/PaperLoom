@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import threading
 import uuid
 import copy
@@ -234,6 +236,17 @@ class JobManager:
 
     def _execute(self, job_id: str, function: Callable[[], Path | None]) -> None:
         cancel_event = self.cancel_events[job_id]
+        committed = False
+
+        @contextmanager
+        def commit():
+            nonlocal committed
+            with self.lock:
+                if cancel_event.is_set():
+                    raise TaskCancelled()
+                yield
+                committed = True
+
         try:
             if cancel_event.is_set():
                 self._update(
@@ -248,11 +261,12 @@ class JobManager:
                 ),
                 is_cancelled=cancel_event.is_set,
                 checkpoint_data=lambda key, value: self._checkpoint_data(job_id, key, value),
+                commit=commit,
             )
             with bind_task_hooks(hooks):
                 result = function()
             with self.lock:
-                if cancel_event.is_set():
+                if cancel_event.is_set() and not committed:
                     raise TaskCancelled()
                 self._update(
                     job_id,

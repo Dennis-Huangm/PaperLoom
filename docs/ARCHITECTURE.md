@@ -686,3 +686,41 @@ UI QA captures, dated reviews, local evaluation results and planning notes belon
 in ignored `work/`. Selected public UI screenshots live in `assets/screenshots/`.
 Build products live under `release/<version>/`; temporary output belongs in
 ignored `work/`, `build/`, or `dist/` directories.
+
+
+## Related-work maps
+
+`CitationExplorer.generate` is the shared GUI/CLI seam. `graph_source` enforces a
+per-generation request budget across pagination, retries and batch references,
+records each source's freshness and falls back only to compatible cache data.
+Recommendations use the upstream `recent` pool; the provider currently offers
+`recent` and `all-cs`, not an unrestricted all-years pool. Temporary transport,
+429 and server failures retry within budget, outside the shared service lock.
+
+`graph_model` merges stable identities, applies profile reading preferences and
+conservative hard-condition evaluation, then selects a diverse, bounded view.
+The default path stays local: unknown semantic constraints remain pending rather
+than making unbudgeted model calls. TF-IDF weights use the fixed eligible corpus;
+positive similarity edges, directed citations and recommendation provenance have
+separate meanings. Unsupported text never creates invented similarity edges.
+
+`graph_store` writes immutable snapshot folders containing JSON, HTML and local
+assets; one atomic active pointer publishes the complete group. `task_commit`
+serializes that pointer update with GUI cancellation; a committed result wins a
+late cancel. Other jobs keep their existing cancellation semantics. The catalog
+resolves only the active complete snapshot and scopes it to the current profile.
+Old snapshots and original legacy files remain available, without automatic GC.
+
+The graph document uses external packaged scripts and CSS, embedded escaped JSON,
+text-only DOM construction and safe external links. App artifact reads adapt old
+graphs without overwriting them and enforce the same script CSP as reports.
+Independent generated HTML loads versioned sibling assets without a CDN. Backup
+permits only the two named graph assets at their exact snapshot path shape.
+
+Graph integration tests replace only external HTTP transport. Optional browser
+QA: run `python tests/browser/serve_graph_fixture.py` with the project environment,
+then `node tests/browser/graph_smoke.cjs` with Playwright available. The fixture
+serves an isolated app on loopback port 8768 and creates generated maps only under
+ignored `work/graph-preview`; the browser defaults to installed Edge (override
+`PLAYWRIGHT_CHANNEL`) and writes screenshots and timing evidence under
+`work/graph-qa`. This is not a production service or a live-data benchmark.

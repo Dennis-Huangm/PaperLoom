@@ -16,6 +16,7 @@ class TaskHooks:
     warning: Callable[[str, str], None]
     is_cancelled: Callable[[], bool]
     checkpoint_data: Callable[[str, dict], None] | None = None
+    commit: Callable | None = None
 
 
 _CURRENT_HOOKS: ContextVar[TaskHooks | None] = ContextVar(
@@ -83,4 +84,16 @@ def task_subtask(label: str, start: float, end: float, on_progress=None) -> Iter
                       warning=lambda component, message: parent.warning(f"{label} · {component}", message) if parent else None,
                       is_cancelled=parent.is_cancelled if parent else lambda: False)
     with bind_task_hooks(hooks):
+        yield
+
+
+@contextmanager
+def task_commit():
+    """Serialize the final publication against a GUI cancellation request."""
+    hooks = _CURRENT_HOOKS.get()
+    task_checkpoint()
+    if hooks is not None and hooks.commit is not None:
+        with hooks.commit():
+            yield
+    else:
         yield

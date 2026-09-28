@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Callable, Iterator
 
 
 _STATE_LOCK = threading.Lock()
@@ -20,11 +20,15 @@ def defer_rate_limit(key: str, seconds: float) -> None:
 
 
 @contextmanager
-def shared_rate_limit(key: str, minimum_interval: float) -> Iterator[None]:
+def shared_rate_limit(key: str, minimum_interval: float, checkpoint: Callable[[], None] | None = None) -> Iterator[None]:
     """Serialize a rate-limited external API across all worker instances."""
     with _STATE_LOCK:
         lock = _LOCKS.setdefault(key, threading.Lock())
-    lock.acquire()
+    if checkpoint is None:
+        lock.acquire()
+    else:
+        while not lock.acquire(timeout=.1):
+            checkpoint()
     try:
         last = _LAST_REQUEST.get(key, 0.0)
         elapsed = time.monotonic() - last
@@ -33,7 +37,13 @@ def shared_rate_limit(key: str, minimum_interval: float) -> Iterator[None]:
         cooldown_wait = max(0.0, cooldown - time.monotonic())
         wait = max(interval_wait, cooldown_wait)
         if wait:
-            time.sleep(wait)
+            if checkpoint is None:
+                time.sleep(wait)
+            else:
+                deadline = time.monotonic() + wait
+                while time.monotonic() < deadline:
+                    checkpoint()
+                    time.sleep(min(.1, max(0, deadline - time.monotonic())))
         yield
     finally:
         _LAST_REQUEST[key] = time.monotonic()

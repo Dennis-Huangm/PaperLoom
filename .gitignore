@@ -25,3 +25,4 @@ docs/*
 !docs/specs/
 docs/specs/*
 !docs/specs/research-profile-generation.md
+!docs/specs/related-work-map.md

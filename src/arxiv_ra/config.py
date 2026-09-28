@@ -184,11 +184,27 @@ class VersionSyncConfig:
 @dataclass(slots=True)
 class CitationConfig:
     enabled: bool = True
-    max_references: int = 15
-    max_citations: int = 15
-    max_similar: int = 15
+    max_references: int = 50
+    max_citations: int = 50
+    max_similar: int = 50
+    max_candidates: int = 150
+    max_nodes: int = 50
+    max_requests: int = 20
     min_interval: float = 1.1
     max_retries: int = 3
+
+
+    def __post_init__(self) -> None:
+        for name, low, high in (("max_references", 1, 500), ("max_citations", 1, 500),
+                                ("max_similar", 1, 500), ("max_candidates", 1, 500),
+                                ("max_nodes", 1, 150), ("max_requests", 5, 100), ("max_retries", 0, 10)):
+            value = getattr(self, name)
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f"图谱 {name} 必须在 {low} 到 {high} 之间")
+        if self.max_nodes > self.max_candidates + 1:
+            raise ValueError("图谱展示数量不能超过候选额度加起点")
+        if type(self.enabled) is not bool or not 0 <= self.min_interval <= 60:
+            raise ValueError("无效的图谱启用状态或请求间隔")
 
 
 @dataclass(slots=True)
