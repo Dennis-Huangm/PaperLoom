@@ -627,7 +627,10 @@ class ObsidianExporter:
                                          r"\1（原报告未保存详情文件）", report_body)
             body.extend(["## 完整阅读报告", "", report_body, ""])
         if (report_dir or pdf_source) and self.settings.copy_pdf:
-            pdf = pdf_source or report_dir / "paper.pdf"
+            pdf = pdf_source
+            if pdf is None:
+                assert report_dir is not None
+                pdf = report_dir / "paper.pdf"
             if pdf.exists():
                 destination = self._attachment_folder(arxiv_id, paper.get("version")) / pdf.name
                 self._copy_if_changed(pdf, destination)

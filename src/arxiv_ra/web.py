@@ -260,6 +260,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         from .collaboration import PaperCollection
         current = current_config()
         collection = PaperCollection(current, project_root)
+        links = collection.page_links()
         date_label, recommendations = latest_recommendations(
             output_root, current.profile_id
         )
@@ -274,7 +275,7 @@ def create_app(config_path: Path | str) -> FastAPI:
             "job_load_errors": jobs.load_errors,
             "active_profile": current.profile_id,
             "feedback": FeedbackStore(output_root, current.profile_id).all(),
-            "collection_links": lambda aid: collection.status(aid)['links'],
+            "collection_links": lambda aid: links.get(base_id(aid), {}),
         }
         base.update(values)
         return base
@@ -1216,7 +1217,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         paths = sorted((p for p in output_root.glob("????-??-??/selection-*.json") if name_pattern.fullmatch(p.name)),
                        key=lambda p: p.stat().st_mtime, reverse=True)[:100]
         runs = []
-        payload = {}
+        payload: dict[str, Any] = {}
         for path in paths:
             key = path.relative_to(output_root).as_posix()
             runs.append({"id": key, "label": f"{path.parent.name} · {datetime.fromtimestamp(path.stat().st_mtime).strftime('%H:%M:%S')} · {path.stem[-6:]}"})

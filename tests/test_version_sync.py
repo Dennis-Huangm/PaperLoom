@@ -146,7 +146,7 @@ def test_retry_runs_only_failed_steps_and_remains_pinned(setup, monkeypatch):
     monkeypatch.setattr(sync, "_zotero", lambda *args: (calls.append("retry-zotero") or {"signature": args[-1]}))
     arxiv.fail_lookup = True
     sync.sync(paper().arxiv_id, target_version=3, retry=True)
-    assert calls == ["report", "zotero", "obsidian", "retry-zotero"]
+    assert calls == ["report", "zotero", "obsidian", "retry-zotero", "obsidian"]
     assert len(arxiv.downloads) == 1
     assert operation(sync)["status"] == "succeeded"
 
@@ -421,6 +421,23 @@ def test_successful_sync_rechecks_current_library_state(setup):
     library.remove(paper().arxiv_id)
     sync.sync(paper().arxiv_id)
     assert not library.contains(paper().arxiv_id)
+    assert len(arxiv.downloads) == 1
+
+
+def test_successful_export_rechecks_external_item_on_version_retry(setup, monkeypatch):
+    from unittest.mock import Mock
+    from arxiv_ra.zotero import ZoteroConflict
+    import arxiv_ra.version_sync as module
+    sync, arxiv, _ = setup
+    adapter = SimpleNamespace(client=SimpleNamespace(close=Mock()), library_identity=lambda: 'test/users/0',
+        save_paper=Mock(side_effect=[SimpleNamespace(to_dict=lambda: {'item_key': 'ITEM', 'created': True}),
+                                    ZoteroConflict('External item was deleted')]))
+    monkeypatch.setattr(module, 'ZoteroClient', lambda _: adapter)
+    sync.sync(paper().arxiv_id, zotero=True)
+    assert operation(sync)['steps']['zotero']['status'] == 'succeeded'
+    sync.sync(paper().arxiv_id, target_version=3, retry=True)
+    assert operation(sync)['steps']['zotero']['status'] == 'failed'
+    assert 'External item was deleted' in operation(sync)['steps']['zotero']['error']
     assert len(arxiv.downloads) == 1
 
 

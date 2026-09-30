@@ -1,4 +1,5 @@
 """Collection behavior through the Web boundary, with a temporary vault."""
+import json
 from pathlib import Path
 
 import httpx
@@ -108,6 +109,8 @@ def test_partial_collection_retries_only_failed_target(workspace, zotero_server)
         assert zotero_server['writes'] == writes
         state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
         assert state['links']['zotero'].startswith('zotero://select/library/items/')
+        assert state['associations']['zotero']['version'] == 2
+        assert not state['associations']['zotero']['update_needed']
 
 
 def test_moved_note_is_repaired_without_recreating_deleted_note(workspace):
@@ -254,3 +257,157 @@ def test_check_links_existing_zotero_and_supports_candidate_selection(workspace,
         assert zotero_server['writes'] == 0
         page = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
         assert page['links']['zotero'].endswith('/EXIST002')
+
+
+def test_concurrent_collection_requests_share_external_items(workspace, zotero_server):
+    from concurrent.futures import ThreadPoolExecutor
+    config, _ = workspace
+    zotero_server['fail'] = False
+    with TestClient(create_app(config)) as client:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: collect(client, zotero='true').json(), range(2)))
+        assert results[0]['operation_id'] == results[1]['operation_id']
+        assert all(result['status'] == 'succeeded' for result in results)
+        parents = [item for item in zotero_server['items'].values() if not item['data'].get('parentItem')]
+        assert len(parents) == 1
+
+
+def test_missing_selected_html_report_is_not_reported_as_success(workspace, zotero_server):
+    config, _ = workspace
+    zotero_server['fail'] = False
+    folder = config.parent / 'run/2026-09-01/reports/selected'
+    write_json(folder / 'metadata.json', {'paper': {'arxiv_id': '2609.00001', 'version': 2,
+        'title': 'Shared Paper', 'published': '2026-09-01', 'authors': []}})
+    (folder / 'report.md').write_text('SELECTED REPORT', encoding='utf-8')
+    (folder / 'report.html').write_text('SELECTED HTML', encoding='utf-8')
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client, zotero='true', origin='report', report_id='2026-09-01/reports/selected/report.html').json()
+        (folder / 'report.html').unlink()
+        result = client.post('/api/collection/retry', data={'operation_id': receipt['operation_id']})
+        assert result.json()['targets']['zotero']['status'] != 'succeeded'
+        assert result.json()['targets']['obsidian']['status'] == 'succeeded'
+
+
+def test_user_selected_duplicate_note_remains_selected_on_retry(workspace):
+    config, vault = workspace
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client).json()
+        note = vault / receipt['targets']['obsidian']['path']
+        duplicate = note.with_name('duplicate.md')
+        duplicate.write_text(note.read_text('utf-8'), encoding='utf-8')
+        checked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'}).json()
+        assert checked['associations']['obsidian']['status'] == 'needs_attention'
+        picked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2',
+            'selected_path': duplicate.relative_to(vault).as_posix()}).json()
+        assert picked['associations']['obsidian']['status'] == 'verified'
+        retried = client.post('/api/collection/retry', data={'operation_id': receipt['operation_id']}).json()
+        assert retried['targets']['obsidian']['status'] == 'succeeded'
+        assert retried['targets']['obsidian']['path'] == duplicate.relative_to(vault).as_posix()
+        # A fresh material snapshot exercises the actual writer, rather than its success shortcut.
+        items = json.loads((config.parent / 'run/2026-09-01/recommendations.json').read_text('utf-8'))
+        items[0]['paper']['abstract'] = 'New abstract'
+        write_json(config.parent / 'run/2026-09-01/recommendations.json', items)
+        assert collect(client).json()['targets']['obsidian']['status'] == 'succeeded'
+        checked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'}).json()
+        assert checked['associations']['obsidian']['status'] == 'verified'
+        assert checked['associations']['obsidian']['path'] == duplicate.relative_to(vault).as_posix()
+
+
+def test_deleted_linked_report_requires_explicit_recollection(workspace, zotero_server):
+    config, _ = workspace
+    zotero_server['fail'] = False
+    folder = config.parent / 'run/2026-09-01/reports/linked'
+    write_json(folder / 'metadata.json', {'paper': {'arxiv_id': '2609.00001', 'version': 2,
+        'title': 'Shared Paper', 'published': '2026-09-01', 'authors': []}})
+    (folder / 'report.md').write_text('REPORT', encoding='utf-8')
+    (folder / 'report.html').write_text('HTML', encoding='utf-8')
+    with TestClient(create_app(config)) as client:
+        first = collect(client, zotero='true', obsidian='false', origin='report',
+                        report_id='2026-09-01/reports/linked/report.html').json()
+        attachments = [key for key, value in zotero_server['items'].items()
+                       if value['data'].get('itemType') == 'attachment']
+        assert len(attachments) == 1
+        del zotero_server['items'][attachments[0]]
+        writes = zotero_server['writes']
+        retry = client.post('/api/collection/retry', data={'operation_id': first['operation_id']}).json()
+        assert retry['targets']['zotero']['status'] == 'needs_attention'
+        assert zotero_server['writes'] == writes
+
+
+def test_restore_at_same_path_invalidates_previous_verification(workspace):
+    config, _ = workspace
+    with TestClient(create_app(config)) as client:
+        first = collect(client).json()
+        client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'})
+        write_json(config.parent / '.paperloom-restore.json', {'version': 1, 'generation': 'first-restore'})
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['links'] == {}
+        client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'})
+        client.post('/api/collection/retry', data={'operation_id': first['operation_id']})
+        write_json(config.parent / '.paperloom-restore.json', {'version': 1, 'generation': 'second-restore'})
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['links'] == {}
+
+
+def test_deleted_zotero_item_requires_selection_before_rebinding(workspace, zotero_server):
+    config, _ = workspace
+    zotero_server['fail'] = False
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client, zotero='true', obsidian='false').json()
+        old_key = receipt['targets']['zotero']['item_key']
+        del zotero_server['items'][old_key]
+        zotero_server['items']['REPLACE1'] = {'data': {'key': 'REPLACE1', 'archiveID': '2609.00001', 'title': 'Replacement'}}
+        checked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'}).json()
+        assert checked['associations']['zotero']['status'] == 'needs_attention'
+        assert checked['associations']['zotero']['item_key'] == old_key
+        selected = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2', 'selected_key': 'REPLACE1'}).json()
+        assert selected['associations']['zotero']['status'] == 'verified'
+        retried = client.post('/api/collection/retry', data={'operation_id': receipt['operation_id']}).json()
+        assert retried['targets']['zotero']['item_key'] == 'REPLACE1'
+        assert retried['status'] == 'succeeded'
+
+
+def test_downloaded_pdf_is_pinned_across_retries(workspace, zotero_server, monkeypatch):
+    config, _ = workspace
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['zotero'].update(attach_pdf=True, pdf_attachment_mode='linked_file')
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    items = json.loads((config.parent / 'run/2026-09-01/recommendations.json').read_text('utf-8'))
+    items[0]['paper']['pdf_url'] = 'https://arxiv.org/pdf/2609.00001v2'
+    write_json(config.parent / 'run/2026-09-01/recommendations.json', items)
+    pdf = config.parent / 'downloaded.pdf'
+    pdf.write_bytes(b'%PDF-original-revision')
+    # Inject the HTTP transport's downloaded bytes through the existing PDF boundary.
+    from contextlib import contextmanager
+    @contextmanager
+    def download(*args, **kwargs):
+        class Response:
+            def raise_for_status(self):
+                pass
+            def iter_bytes(self):
+                yield pdf.read_bytes()
+        yield Response()
+    monkeypatch.setattr('arxiv_ra.web.httpx.stream', download)
+    zotero_server['fail'] = False
+    with TestClient(create_app(config)) as client:
+        first = collect(client, zotero='true', obsidian='false').json()
+        assert first['status'] == 'succeeded'
+        cached = next((config.parent / 'run/zotero-cache').glob('*.pdf'))
+        cached.write_bytes(b'%PDF-modified-revision')
+        retry = client.post('/api/collection/retry', data={'operation_id': first['operation_id']}).json()
+        assert retry['targets']['zotero']['status'] != 'succeeded'
+
+
+def test_restore_check_with_disabled_targets_keeps_old_links_unverified(workspace, zotero_server):
+    config, _ = workspace
+    zotero_server['fail'] = False
+    with TestClient(create_app(config)) as client:
+        assert collect(client, zotero='true').json()['status'] == 'succeeded'
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['zotero']['enabled'] = False
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    write_json(config.parent / '.paperloom-restore.json', {'generation': 'restored-disabled'})
+    with TestClient(create_app(config)) as client:
+        client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'})
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert 'zotero' not in state['links']

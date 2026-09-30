@@ -128,6 +128,14 @@ class ZoteroClient:
         if existing:
             if self.get_item(existing) is None:
                 raise ZoteroConflict("关联的 Zotero 条目已删除，请修复关联或明确重新收录")
+        elif self._receipt.get('parent_attempted'):
+            marker = self._receipt['parent_marker']
+            matches = [item.get('data', item) for item in self._get_items('/users/0/items/top', {'format': 'json'})
+                       if marker in {tag.get('tag') for tag in item.get('data', item).get('tags', [])}]
+            if len(matches) != 1:
+                raise ZoteroConflict('上次写入结果尚未确认，请检查外部关联或明确重新收录',
+                                     [{'key': value['key'], 'title': value.get('title', value['key'])} for value in matches])
+            existing = matches[0]['key']
         else:
             existing = self.find_paper(paper, verified or {})
         if collection_key == "__root__":
@@ -142,10 +150,12 @@ class ZoteroClient:
             if target_collection:
                 self._add_item_to_collection(item_key, target_collection)
         else:
+            self._receipt.setdefault('parent_marker', 'PaperLoom-receipt:' + uuid.uuid4().hex)
+            self._receipt['summary_pending'] = True
+            self._checkpoint()
             item_key = self._create_parent(
                 paper, verified or {}, profile_name, target_collection
             )
-            self._receipt['summary_pending'] = True
         self._receipt["item_key"] = item_key
         self._checkpoint()
         if self._receipt.get('summary_pending'):
@@ -514,6 +524,9 @@ class ZoteroClient:
         for field in list(item):
             if field in {"key", "version", "dateAdded", "dateModified"}:
                 item.pop(field, None)
+        item['tags'].append({'tag': self._receipt['parent_marker']})
+        self._receipt['parent_attempted'] = True
+        self._checkpoint()
         return self._post_objects("/users/0/items", [item])
 
     def _tags(self, paper: dict[str, Any], profile_name: str) -> list[dict[str, str]]:
@@ -554,11 +567,19 @@ class ZoteroClient:
         content_type: str,
     ) -> bool:
         resolved = path.resolve()
+        receipt = getattr(self, '_receipt', {})
+        checkpoint = getattr(self, '_checkpoint', lambda: None)
+        material_id = 'linked:' + hashlib.sha256(str(resolved).casefold().encode()).hexdigest()
+        material = receipt.setdefault('files', {}).setdefault(material_id, {})
         children = self._get_items(f"/users/0/items/{item_key}/children", {"format": "json"})
         for child in children:
             data = child.get("data", child)
             if str(data.get("path") or "").casefold() == str(resolved).casefold():
+                material.update(key=data.get('key') or child.get('key'), status='succeeded')
+                checkpoint()
                 return False
+        if material.get('key'):
+            raise ZoteroConflict('关联的本地链接附件已删除或移动，请检查或明确重新收录')
         attachment = self._template("attachment", linkMode="linked_file")
         for stored_only_field in ("filename", "md5", "mtime"):
             attachment.pop(stored_only_field, None)
@@ -571,7 +592,8 @@ class ZoteroClient:
                 "contentType": content_type,
             }
         )
-        self._post_objects("/users/0/items", [attachment])
+        material.update(key=self._post_objects("/users/0/items", [attachment]), status='succeeded')
+        checkpoint()
         return True
 
     def _create_imported_attachment(

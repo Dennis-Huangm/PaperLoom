@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+import builtins
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -78,7 +79,7 @@ def contained(path: Path, root: Path) -> Path:
 
 
 def inventory(root: Path) -> dict[str, Path]:
-    result = {}
+    result: dict[str, Path] = {}
     if not root.exists():
         return result
     contained(root, root)
@@ -338,7 +339,8 @@ class BackupService:
                     raise ValueError("恢复配置必须使用独立 run 目录；请选择替换冲突配置")
                 if sha(archive_path) != plan["archive_hash"] or tree_hash(target) != plan["tree_hash"]:
                     raise ValueError("资料在恢复期间发生变化，请重新预览")
-                write_json(stage / ".paperloom-restore.json", {"version": 1, "archive_sha256": plan["archive_hash"]})
+                write_json(stage / ".paperloom-restore.json", {"version": 1, "archive_sha256": plan["archive_hash"],
+                                                              "generation": identity})
                 write_json(journal, {"status": "prepared", "target": str(target), "before": str(before), "stage": str(stage)})
                 if target.exists():
                     rename_directory(target, before)
@@ -360,7 +362,7 @@ class BackupService:
         return [{"name": path.name, "path": str(path), "size": path.stat().st_size}
                 for path in sorted(self.backups.glob("paperloom-*.zip"), reverse=True) if path.is_file()]
 
-    def pending(self, name: str | None = None) -> list[dict]:
+    def pending(self, name: str | None = None) -> builtins.list[dict]:
         result = []
         for path in self.restores.glob(".restore-*.json"):
             value = read_json(path)

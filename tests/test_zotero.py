@@ -98,7 +98,9 @@ def test_save_paper_creates_collection_note_and_imported_pdf(tmp_path: Path, mon
             if item["itemType"] == "preprint":
                 calls["parent"] += 1
                 assert item["collections"] == ["COLL0001"]
-                assert {tag["tag"] for tag in item["tags"]} == {"cs.CV", "AgenticT2I"}
+                tags = {tag['tag'] for tag in item['tags']}
+                assert {'cs.CV', 'AgenticT2I'} <= tags
+                assert len([tag for tag in tags if tag.startswith('PaperLoom-receipt:')]) == 1
                 return httpx.Response(200, json={"successful": {"0": {"key": "PARENT01"}}})
             if item["itemType"] == "note":
                 calls["note"] += 1
@@ -446,3 +448,37 @@ def test_lookup_reads_all_pages_before_choosing_match(monkeypatch):
     with pytest.raises(ZoteroConflict) as error:
         adapter.save_paper(_paper(), {}, 'Test', collection_key='__root__')
     assert {c['key'] for c in error.value.candidates} == {'FIRST001', 'SECOND01'}
+
+
+def test_uncertain_parent_creation_reuses_persisted_identity(monkeypatch):
+    monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'test')
+    parents, receipt = {}, {}
+    def handler(request):
+        if request.url.path == '/api/':
+            return httpx.Response(200, headers={'Zotero-Server-ID': 'SERVER1'})
+        if request.url.path.endswith('/top'):
+            # Search indexing has not caught up, but unfiltered receipt lookup works.
+            return httpx.Response(200, json=[] if request.url.params.get('q') else list(parents.values()))
+        if request.url.path == '/api/items/new':
+            return httpx.Response(404)
+        if request.url.path.endswith('/children'):
+            return httpx.Response(200, json=[])
+        if request.url.path == '/api/users/0/items' and request.method == 'POST':
+            item = json.loads(request.content)[0]
+            if item['itemType'] == 'note':
+                return httpx.Response(200, json={'successful': {'0': {'key': 'NOTE0001'}}})
+            assert 'key' not in item
+            key = f'KEY{len(parents):05}'
+            parents[key] = {'data': {**item, 'key': key}}
+            raise httpx.ReadError('response lost after external write', request=request)
+        key = request.url.path.split('/')[-1]
+        if key in parents:
+            return httpx.Response(200, json=parents[key])
+        return httpx.Response(404)
+    adapter = ZoteroClient(ZoteroConfig(attach_pdf=False), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(httpx.ReadError):
+        adapter.save_paper(_paper(), {}, 'Test', collection_key='__root__', receipt=receipt)
+    adapter = ZoteroClient(ZoteroConfig(attach_pdf=False), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    result = adapter.save_paper(_paper(), {}, 'Test', collection_key='__root__', receipt=receipt)
+    assert len(parents) == 1
+    assert result.item_key in parents

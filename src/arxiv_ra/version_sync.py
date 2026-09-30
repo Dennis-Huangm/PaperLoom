@@ -122,12 +122,12 @@ class PaperVersionSync:
                     zotero_signature = self._export_signature(signature, self.config.zotero)
                     task_progress("正在同步 Zotero…", 85)
                     self._step("zotero", lambda: self._zotero(paper, folder, report_path, zotero_signature),
-                               lambda step: step.get("signature") == zotero_signature)
+                               lambda step: False)
                 if options.get("obsidian"):
                     obsidian_signature = self._export_signature(signature, self.config.obsidian)
                     task_progress("正在同步 Obsidian…", 92)
                     self._step("obsidian", lambda: self._obsidian(paper, folder, report_path, obsidian_signature),
-                               lambda step: step.get("signature") == obsidian_signature and Path(step.get("path", "")).is_file())
+                               lambda step: False)
                 active_steps = {"download", "library"} | {name for name, enabled in options.items() if enabled}
                 self.operation["status"] = ("partial" if any(s["status"] in {"failed", "degraded", "interrupted"}
                     for name, s in self.operation["steps"].items() if name in active_steps) else "succeeded")

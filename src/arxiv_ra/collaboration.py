@@ -51,12 +51,16 @@ class PaperCollection:
         data = read_json(self.path, {}) or {}
         data.setdefault('operations', {})
         data.setdefault('associations', {})
-        if data.get('storage_root', str(self.output)) != str(self.output):
+        restored = read_json(self.project_root / '.paperloom-restore.json', {}) or {}
+        generation = restored.get('generation') or restored.get('archive_sha256', '')
+        if (data.get('storage_root', str(self.output)) != str(self.output)
+                or generation != data.get('restore_generation', '')):
             data['restored'] = True
             data['checked_after_restore'] = []
             for entry in data['associations'].values():
                 entry['status'] = 'unverified'
         data['storage_root'] = str(self.output)
+        data['restore_generation'] = generation
         return data
 
     def _restore_pending(self, data, aid):
@@ -96,9 +100,13 @@ class PaperCollection:
                    'targets': [name for name, enabled in [('zotero', zotero), ('obsidian', obsidian)] if enabled],
                    'collection_key': collection_key,
                    'report_path': str(Path(report_path).resolve()) if report_path else '',
+                   'report_html': str(Path(report_path).with_suffix('.html').resolve()) if report_path else '',
                    'pdf_path': str(Path(pdf_path).resolve()) if pdf_path else ''}
         request['material_hashes'] = {key: hashlib.sha256(Path(request[key]).read_bytes()).hexdigest()
                                       for key in ('report_path', 'pdf_path') if request[key]}
+        if zotero and self.config.zotero.attach_report and request['report_html']:
+            html = Path(request['report_html'])
+            request['material_hashes']['report_html'] = hashlib.sha256(html.read_bytes()).hexdigest() if html.is_file() else ''
         operation_id = _digest(request)
         with _locked(self.lock):
             data = self._read()
@@ -116,10 +124,16 @@ class PaperCollection:
 
     def _run(self, data, operation, *, pdf_loader=None, zotero_factory=None):
         request = operation['request']
+        self.config.profile_name = request['profile_name']
         for target in request['targets']:
             step = operation['targets'].setdefault(target, {})
             if self._restore_pending(data, request['paper']['arxiv_id']):
                 step.update(status='needs_attention', error='回执来自恢复目录，请先检查外部关联')
+                continue
+            try:
+                self._validate_materials(request, target)
+            except ValueError as exc:
+                step.update(status='needs_attention', error=str(exc), updated_at=_now())
                 continue
             if target == 'obsidian':
                 association = self._check_note(data, request['paper'])
@@ -144,7 +158,10 @@ class PaperCollection:
                             error=f'{type(exc).__name__}: {exc}', updated_at=_now())
             write_json(self.path, data)
         self._link_note(data, operation)
-        operation['status'] = 'succeeded' if all(s.get('status') == 'succeeded' for s in operation['targets'].values()) else 'partial'
+        statuses = {step.get('status') for step in operation['targets'].values()}
+        operation['status'] = ('succeeded' if statuses == {'succeeded'} else 'partial'
+                               if 'succeeded' in statuses or 'partial' in statuses else 'needs_attention'
+                               if 'needs_attention' in statuses else 'failed')
         operation['updated_at'] = _now()
         write_json(self.path, data)
         return copy.deepcopy(operation)
@@ -161,15 +178,11 @@ class PaperCollection:
                     raise ValueError('目标配置已变化；请明确按原配置重试，或从论文发起新收录')
                 for name, settings in request['settings'].items():
                     setattr(self.config, name, type(getattr(self.config, name))(**settings))
-            for key, digest in request['material_hashes'].items():
-                path = Path(request[key])
-                if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-                    raise ValueError('原收录材料已变化或缺失，请从论文发起新收录')
             if selected_key:
                 step = operation['targets'].get('zotero', {})
                 if selected_key not in {item['key'] for item in step.get('candidates', [])}:
                     raise ValueError('请从本次匹配候选中选择条目')
-                step.update(item_key=selected_key, status='pending', candidates=[])
+                step.update(item_key=selected_key, status='pending', candidates=[], files={})
             return self._execute(data, operation, pdf_loader=pdf_loader, zotero_factory=zotero_factory)
 
     def recollect(self, operation_id, target, *, pdf_loader=None):
@@ -181,6 +194,7 @@ class PaperCollection:
             if not old or old['request']['profile_id'] != (self.config.profile_id or 'default'):
                 raise ValueError('未找到本研究方向的收录记录')
             request = copy.deepcopy(old['request'])
+            self._validate_materials(request, target)
             paper = request['paper']
             if target == 'obsidian':
                 with ObsidianExporter(self.config, self.project_root, clients=self.clients) as exporter:
@@ -200,6 +214,33 @@ class PaperCollection:
             data['operations'][new_id] = operation
             return self._execute(data, operation, pdf_loader=pdf_loader)
 
+    @staticmethod
+    def _validate_materials(request, target):
+        for key, digest in request['material_hashes'].items():
+            if key == 'report_html' and target != 'zotero':
+                continue
+            path = Path(request[key])
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                raise ValueError('原收录材料已变化或缺失，请从论文发起新收录')
+
+    def _pdf(self, data, request, step, pdf_loader):
+        if request['pdf_path']:
+            return Path(request['pdf_path'])
+        previous = step.get('downloaded_pdf')
+        if previous:
+            path = Path(previous['path'])
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != previous['sha256']:
+                raise ZoteroConflict('原收录 PDF 已变化或缺失，请从论文发起新收录')
+            return path
+        if not request['paper'].get('version'):
+            raise ZoteroConflict('论文版本未知，请确认指定版本后收录 PDF')
+        path = pdf_loader(request['paper'], True) if pdf_loader else None
+        if not path or not path.is_file():
+            raise ValueError('所选 PDF 材料尚不可用')
+        step['downloaded_pdf'] = {'path': str(path.resolve()), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+        write_json(self.path, data)
+        return path
+
     def _zotero(self, data, request, step, pdf_loader, factory):
         if not self.config.zotero.enabled:
             raise ValueError('Zotero 尚未启用，请前往设置')
@@ -212,21 +253,24 @@ class PaperCollection:
             data.setdefault('zotero_libraries', {})[self.config.zotero.base_url] = identity
             key = _digest(['zotero', identity, request['paper']['arxiv_id']])
             association = data['associations'].get(key, {})
+            if step.get('item_key') and association.get('replaces') == step['item_key']:
+                step.update(item_key=association['item_key'], files={})
             if not step.get('item_key') and association.get('item_key'):
                 step['item_key'] = association['item_key']
+            if step.get('item_key') == association.get('item_key'):
+                step['files'] = {**association.get('files', {}), **step.get('files', {})}
             def checkpoint():
                 if step.get('item_key'):
-                    data['associations'][key] = {'target': 'zotero', 'library_id': identity,
+                    value = {**data['associations'].get(key, {}), 'target': 'zotero', 'library_id': identity,
                         'item_key': step['item_key'], 'arxiv_id': request['paper']['arxiv_id'],
+                        'files': copy.deepcopy(step.get('files', {})),
                         'base_url': self.config.zotero.base_url, 'status': 'verified', 'verified_at': _now()}
+                    if step.get('version'):
+                        value.update(version=step['version'], report_path=step['report_path'],
+                                     material_hashes=request['material_hashes'])
+                    data['associations'][key] = value
                 write_json(self.path, data)
-            pdf = Path(request['pdf_path']) if request['pdf_path'] else None
-            if pdf is None and self.config.zotero.attach_pdf and pdf_loader:
-                if not request['paper'].get('version'):
-                    raise ZoteroConflict('论文版本未知，请确认指定版本后收录 PDF')
-                pdf = pdf_loader(request['paper'], True)
-            if self.config.zotero.attach_pdf and (not pdf or not pdf.is_file()):
-                raise ValueError('所选 PDF 材料尚不可用')
+            pdf = self._pdf(data, request, step, pdf_loader) if self.config.zotero.attach_pdf else None
             result = client.save_paper(request['paper'], request['verified'], request['profile_name'],
                 report_path=Path(request['report_path']).with_suffix('.html') if request['report_path'] else None,
                 pdf_path=pdf, collection_key=request['collection_key'] or None,
@@ -245,6 +289,8 @@ class PaperCollection:
         if not zotero.get('item_key'):
             identity = data.get('zotero_libraries', {}).get(self.config.zotero.base_url)
             zotero = data['associations'].get(_digest(['zotero', identity, request['paper']['arxiv_id']]), {})
+            if zotero.get('status') != 'verified':
+                return
         if not zotero.get('item_key') or not note.get('path') or self._restore_pending(data, request['paper']['arxiv_id']):
             return
         step = operation['targets'].setdefault('obsidian_link', {})
@@ -269,11 +315,15 @@ class PaperCollection:
             with ObsidianExporter(self.config, self.project_root, clients=self.clients) as exporter:
                 candidates = exporter.find_paper_notes(paper['arxiv_id'])
                 historical = exporter.historical_paper_note(paper['arxiv_id'])
-                chosen = next((entry for entry in candidates if entry['path'] == selected_path), None) if selected_path else (
+                preferred = selected_path or previous.get('chosen_path', '')
+                chosen = next((entry for entry in candidates if entry['path'] == preferred), None) if preferred else (
                     candidates[0] if len(candidates) == 1 else None)
                 if chosen and chosen['valid']:
                     exporter.associate_paper_note(paper['arxiv_id'], chosen['path'])
-                    value = {**previous, 'target': 'obsidian', 'status': 'verified', 'verified_at': _now(), **chosen}
+                    value = {**previous, 'target': 'obsidian', 'arxiv_id': paper['arxiv_id'],
+                             'status': 'verified', 'verified_at': _now(), **chosen}
+                    if selected_path:
+                        value['chosen_path'] = selected_path
                 elif candidates or previous.get('path') or historical:
                     value = {**previous, 'status': 'needs_attention', 'candidates': candidates,
                              'error': '笔记缺失、托管标记损坏或存在多个匹配，请检查关联后选择或明确重新收录'}
@@ -292,7 +342,12 @@ class PaperCollection:
             if self.config.zotero.enabled:
                 associations['zotero'] = self._check_zotero(data, aid, selected_key)
             write_json(self.path, data)
-            if all(value.get('status') not in {'needs_attention'} for value in associations.values()):
+            relevant = [data['associations'].get(self._obsidian_key({'arxiv_id': aid}), {})]
+            library_id = data.get('zotero_libraries', {}).get(self.config.zotero.base_url)
+            relevant.append(data['associations'].get(_digest(['zotero', library_id, aid]), {}))
+            if (all(value.get('status') != 'needs_attention' for value in associations.values())
+                    and all(value.get('status') == 'verified' for value in relevant
+                            if value.get('path') or value.get('item_key'))):
                 checked = data.setdefault('checked_after_restore', [])
                 identity = f'{self.config.profile_id or "default"}:{aid}'
                 if identity not in checked:
@@ -310,6 +365,7 @@ class PaperCollection:
             key = _digest(['zotero', identity, aid])
             previous = data['associations'].get(key, {})
             item_key = previous.get('item_key')
+            original_key = item_key
             if selected_key:
                 if selected_key not in {item['key'] for item in previous.get('candidates', [])}:
                     raise ValueError('请从检查结果中选择条目')
@@ -318,10 +374,16 @@ class PaperCollection:
                 item_key = None
             if not item_key:
                 item_key = client.find_paper({'arxiv_id': aid}, {})
+                if original_key and item_key and not selected_key:
+                    candidate = client.get_item(item_key)
+                    raise ZoteroConflict('原关联条目已删除，请确认要改绑的文献',
+                                         [{'key': item_key, 'title': candidate.get('title', item_key)}])
             if item_key:
-                previous = {'target': 'zotero', 'status': 'verified', 'verified_at': _now(),
+                previous = {**previous, 'target': 'zotero', 'status': 'verified', 'verified_at': _now(),
                     'item_key': item_key, 'library_id': identity, 'arxiv_id': aid,
-                    'base_url': self.config.zotero.base_url}
+                    'base_url': self.config.zotero.base_url, 'candidates': [], 'error': ''}
+                if selected_key and original_key != selected_key:
+                    previous.update(replaces=original_key, files={})
             else:
                 previous = {**previous, 'target': 'zotero', 'library_id': identity, 'arxiv_id': aid,
                     'status': 'needs_attention' if previous.get('item_key') else 'unlinked',
@@ -340,25 +402,45 @@ class PaperCollection:
     def _obsidian(self, data, request, step, pdf_loader=None):
         with ObsidianExporter(self.config, self.project_root, clients=self.clients) as exporter:
             report = request['report_path']
-            pdf = Path(request['pdf_path']) if request['pdf_path'] else None
-            if self.config.obsidian.copy_pdf and pdf is None and pdf_loader:
-                if not request['paper'].get('version'):
-                    raise ZoteroConflict('论文版本未知，请确认指定版本后复制 PDF')
-                pdf = pdf_loader(request['paper'], True)
-                if pdf is None:
-                    raise ValueError('所选 PDF 材料尚不可用')
+            pdf = self._pdf(data, request, step, pdf_loader) if self.config.obsidian.copy_pdf else None
             path = exporter.sync_collection(request['paper'], request['verified'],
                 Path(report).with_suffix('.md') if report else None, pdf)
             relative = path.resolve().relative_to(Path(self.config.obsidian.vault_path).resolve()).as_posix()
             step.update(path=relative, version=request['paper'].get('version'), report_path=report)
-            data['associations'][self._obsidian_key(request['paper'])] = {
-                'target': 'obsidian', 'status': 'verified', 'path': relative,
+            key = self._obsidian_key(request['paper'])
+            data['associations'][key] = {**data['associations'].get(key, {}),
+                'target': 'obsidian', 'arxiv_id': request['paper']['arxiv_id'], 'status': 'verified', 'path': relative,
                 'version': request['paper'].get('version'), 'report_path': report,
                 'material_hashes': request['material_hashes']}
 
     def status(self, arxiv_id):
         aid = base_id(arxiv_id)
         data = self._read()
+        return self._status(data, arxiv_id, aid)
+
+    def page_links(self):
+        """Build links from one receipt snapshot for a rendered page."""
+        data = self._read()
+        links = {}
+        identity = data.get('zotero_libraries', {}).get(self.config.zotero.base_url)
+        for association in data['associations'].values():
+            if (association.get('target') == 'zotero' and association.get('library_id') == identity
+                    and association.get('status') == 'verified'):
+                aid = association['arxiv_id']
+                if not self._restore_pending(data, aid):
+                    links.setdefault(aid, {})['zotero'] = 'zotero://select/library/items/' + association['item_key']
+        vault = Path(self.config.obsidian.vault_path).resolve()
+        for key, association in data['associations'].items():
+            aid = association.get('arxiv_id')
+            if (not aid or key != self._obsidian_key({'arxiv_id': aid}) or not association.get('path')
+                    or association.get('status') != 'verified' or self._restore_pending(data, aid)):
+                continue
+            path = (vault / association['path']).resolve()
+            if path.is_relative_to(vault) and path.is_file():
+                links.setdefault(aid, {})['obsidian'] = 'obsidian://open?' + urlencode({'path': str(path)})
+        return links
+
+    def _status(self, data, arxiv_id, aid):
         operations = [copy.deepcopy(op) for op in data['operations'].values()
                       if op['request']['paper']['arxiv_id'] == aid
                       and op['request']['profile_id'] == (self.config.profile_id or 'default')]
@@ -373,10 +455,10 @@ class PaperCollection:
         for association in data['associations'].values():
             if (association.get('target') == 'zotero' and association.get('arxiv_id') == aid
                     and association.get('base_url') == self.config.zotero.base_url
-                    and association.get('library_id') == identity and association.get('status') != 'needs_attention'):
+                    and association.get('library_id') == identity and association.get('status') == 'verified'):
                 links['zotero'] = 'zotero://select/library/items/' + association['item_key']
         association = data['associations'].get(self._obsidian_key({'arxiv_id': aid}))
-        if association and association.get('path') and association.get('status') != 'needs_attention':
+        if association and association.get('path') and association.get('status') == 'verified':
             vault = Path(self.config.obsidian.vault_path).resolve()
             path = (vault / association['path']).resolve()
             if path.is_relative_to(vault) and path.is_file():
