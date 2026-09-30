@@ -710,7 +710,7 @@ if (dataNode) {
       button.dataset.saved = String(Boolean(saved));
       button.classList.toggle('active', Boolean(saved));
     }
-    if (label) label.textContent = saved ? '已加入文献库（相关）' : '加入文献库';
+    if (label) label.textContent = saved ? '已加入文献库' : '加入文献库';
   };
 
   const selectPaper = (index) => {
@@ -760,33 +760,34 @@ if (dataNode) {
     const arxiv = document.querySelector('#inspector-arxiv');
     const pdf = document.querySelector('#inspector-pdf');
     const reportId = document.querySelector('#inspector-report-id');
-    const reportLabel = document.querySelector('#inspector-report-label');
+    const reportForm = document.querySelector('#inspector-report-form');
     const reportOpen = document.querySelector('#inspector-report-open');
-    const zoteroId = document.querySelector('#inspector-zotero-id');
+    const selectedId = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
     if (arxiv) arxiv.href = paper.abs_url;
     if (pdf) pdf.href = paper.pdf_url;
-    if (reportId) reportId.value = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
-    if (reportLabel) reportLabel.textContent = item.has_report ? '重新生成报告' : '生成完整报告';
+    if (reportId) reportId.value = selectedId;
+    if (reportForm) reportForm.hidden = Boolean(item.has_report);
     if (reportOpen) {
       reportOpen.hidden = !item.report_url;
       reportOpen.href = item.report_url || '#';
     }
-    if (zoteroId) zoteroId.value = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
     const collectionLink = document.querySelector('#inspector-collection');
-    if (collectionLink && zoteroId) {
+    if (collectionLink) {
       const query = new URLSearchParams(new URL(collectionLink.href).search);
-      query.set('arxiv_id', zoteroId.value);
+      query.set('arxiv_id', selectedId);
       collectionLink.href = '/collection?' + query.toString();
       const links = document.querySelector('#inspector-collection-links');
       links?.replaceChildren();
-      const selectedId = zoteroId.value;
       scopedFetch('/api/collection?' + new URLSearchParams({arxiv_id: selectedId})).then((response) => response.json()).then((state) => {
-        if (!links || zoteroId.value !== selectedId) return;
+        if (!links || new URL(collectionLink.href).searchParams.get('arxiv_id') !== selectedId) return;
         for (const [target, url] of Object.entries(state.links || {})) {
           const link = document.createElement('a');
           link.className = 'button secondary';
           link.href = url;
-          link.textContent = `打开 ${target}`;
+          const icon = document.createElement('i');
+          icon.className = target === 'obsidian' ? 'fas fa-gem' : 'fas fa-book';
+          icon.setAttribute('aria-hidden', 'true');
+          link.append(icon, document.createTextNode(`打开 ${target === 'obsidian' ? 'Obsidian' : 'Zotero'}`));
           links.append(link);
         }
       }).catch(() => {});

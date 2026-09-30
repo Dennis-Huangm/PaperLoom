@@ -176,8 +176,7 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 .report-row .report-actions button{width:100%;text-align:left}
 .report-row .report-actions i{width:16px;flex:0 0 16px;display:inline-flex;justify-content:center}
 .report-action-open{grid-column:1;grid-row:1}.report-action-regenerate{grid-column:2;grid-row:1}
-.report-action-library{grid-column:1;grid-row:2}.report-action-zotero{grid-column:2;grid-row:2}
-.report-action-figures{grid-column:1;grid-row:3}.report-action-delete{grid-column:2;grid-row:3}
+.report-action-library{grid-column:1;grid-row:2}
 @media(max-width:940px){.report-row{grid-template-columns:minmax(0,1fr) 290px}}
 @media(max-width:720px){.report-row{grid-template-columns:minmax(0,1fr)}.report-heading-actions{width:100%}.report-row .report-actions{gap:4px 12px}}
 @media(max-width:360px){.report-row .report-actions{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto;gap:4px}.report-row .report-actions>*{grid-column:1;grid-row:auto}}
@@ -217,9 +216,15 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 @media(max-width:940px){.report-table{padding-top:14px}.report-row{margin-inline:12px}}
 @media(max-width:720px){.report-row{margin-inline:8px;padding:18px 14px}}
 
-.inspector-actions{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin}
-.inspector-actions>form,.inspector-actions>.button{width:auto;flex:1 0 auto}
-.inspector-actions .button{white-space:nowrap;padding-inline:6px}
+.inspector-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;overflow:visible}
+.paper-inspector{container-type:inline-size}
+.inspector-actions>form,.inspector-actions>.button{width:100%;min-width:0}
+.inspector-actions .button{white-space:nowrap;padding-inline:12px;gap:8px}
+.inspector-actions .button i{flex:0 0 16px;text-align:center}
+#inspector-collection-links{display:contents}
+@container(max-width:960px){.inspector-actions{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container(max-width:540px){.inspector-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(max-width:340px){.inspector-actions{grid-template-columns:minmax(0,1fr)}}
 
 .profile-card h3 a:hover{color:var(--accent)}
 .profile-card-actions,.profile-edit-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}

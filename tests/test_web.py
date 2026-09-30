@@ -615,14 +615,14 @@ def test_dashboard_marks_existing_report_and_uses_chinese_summary(tmp_path: Path
     report_dir = date_dir / "reports" / "2407.05600-genartist"
     report_dir.mkdir(parents=True)
     (date_dir / "recommendations.json").write_text(
-        '[{"paper":{"arxiv_id":"2407.05600","title":"GenArtist","authors":[],"abstract":"English abstract.",'
+        '[{"paper":{"arxiv_id":"2407.05600","version":1,"title":"GenArtist","authors":[],"abstract":"English abstract.",'
         '"primary_category":"cs.CV","categories":["cs.CV"],"published":"2024-07-08T00:00:00+00:00",'
         '"updated":"2024-07-08T00:00:00+00:00","abs_url":"https://arxiv.org/abs/2407.05600",'
         '"pdf_url":"https://arxiv.org/pdf/2407.05600","final_score":9.0},"verified":{}}]',
         encoding="utf-8",
     )
     (report_dir / "metadata.json").write_text(
-        '{"paper":{"arxiv_id":"2407.05600","title":"GenArtist","authors":[]},"verified":{}}',
+        '{"paper":{"arxiv_id":"2407.05600","version":1,"title":"GenArtist","authors":[]},"verified":{}}',
         encoding="utf-8",
     )
     (report_dir / "report.html").write_text("<html></html>", encoding="utf-8")
@@ -644,7 +644,16 @@ def test_dashboard_marks_existing_report_and_uses_chinese_summary(tmp_path: Path
     assert "该论文统一协调推理、工具调用与图像生成" in response.text
     summary = BeautifulSoup(response.text, "html.parser").select_one("#inspector-abstract").get_text(strip=True)
     assert summary == "该论文统一协调推理、工具调用与图像生成。"
-    assert "重新生成报告" in response.text
+    dashboard = BeautifulSoup(response.text, "html.parser")
+    assert "重新生成报告" not in response.text
+    assert dashboard.select_one("#inspector-report-form").has_attr("hidden")
+    assert not dashboard.select_one("#inspector-report-open").has_attr("hidden")
+    assert BeautifulSoup(reports_before.text, "html.parser").select_one(".report-action-regenerate")
+    for page in (response, reports_before, library):
+        assert not BeautifulSoup(page.text, "html.parser").select(
+            'form[action="/api/zotero/save-paper"], form[action="/api/zotero/save-report"]'
+        )
+    assert dashboard.select_one('form[action="/api/zotero/save-today"]')
     assert "打开报告" in response.text
     assert "加入文献库" in reports_before.text
     assert added.status_code == 200 and added.json()["saved"] is True
@@ -683,6 +692,9 @@ def test_dashboard_can_save_and_remove_paper_from_profile_library(tmp_path: Path
         removed = client.post("/api/library/toggle", data={"arxiv_id": "2407.05600"})
 
     assert "加入文献库" in home.text
+    dashboard = BeautifulSoup(home.text, "html.parser")
+    assert not dashboard.select_one("#inspector-report-form").has_attr("hidden")
+    assert dashboard.select_one("#inspector-report-open").has_attr("hidden")
     assert "必读" not in home.text
     assert "稍后读" not in home.text
     assert negative.status_code == 200 and negative.json()["in_library"] is False

@@ -159,24 +159,18 @@
       </div>
 
       <footer class="inspector-actions">
-        <button id="inspector-library-button" class="button secondary library-toggle {% if selected.in_library %}active{% endif %}" type="button" data-saved="{{ 'true' if selected.in_library else 'false' }}"><i class="far fa-bookmark" aria-hidden="true"></i><span id="inspector-library-label">{% if selected.in_library %}已加入文献库（相关）{% else %}加入文献库{% endif %}</span></button>
-        <button id="inspector-negative-button" class="button secondary" type="button" data-feedback="not_relevant" data-scope="paper">仅排除此论文</button>
-        <button id="inspector-undo-feedback" class="button secondary" type="button" hidden>撤销反馈</button>
-        <form id="inspector-report-form" class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+        <button id="inspector-library-button" class="button secondary library-toggle {% if selected.in_library %}active{% endif %}" type="button" data-saved="{{ 'true' if selected.in_library else 'false' }}"><i class="far fa-bookmark" aria-hidden="true"></i><span id="inspector-library-label">{% if selected.in_library %}已加入文献库{% else %}加入文献库{% endif %}</span></button>
+        <button id="inspector-negative-button" class="button secondary" type="button" data-feedback="not_relevant" data-scope="paper"><i class="fas fa-ban" aria-hidden="true"></i>仅排除此论文</button>
+        <button id="inspector-undo-feedback" class="button secondary" type="button" hidden><i class="fas fa-undo" aria-hidden="true"></i>撤销反馈</button>
+        <form id="inspector-report-form" class="job-form" action="/api/jobs/report" method="post" {% if selected.has_report %}hidden{% endif %}><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
           <input id="inspector-report-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}{% if selected.paper.version %}v{{ selected.paper.version }}{% endif %}">
           <input type="hidden" name="origin" value="recommendation">
           <input type="hidden" name="source_date" value="{{ selected_date }}">
-          <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span id="inspector-report-label">{% if selected.has_report %}重新生成报告{% else %}生成完整报告{% endif %}</span></button>
+          <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span>生成完整报告</span></button>
         </form>
         <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
-        <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
-          <input id="inspector-zotero-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}{% if selected.paper.version %}v{{ selected.paper.version }}{% endif %}">
-          <input type="hidden" name="origin" value="recommendation">
-          <input type="hidden" name="source_date" value="{{ selected_date }}">
-          <button class="button secondary" type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button>
-        </form>
-        <a id="inspector-collection" class="button secondary" href="/collection?arxiv_id={{ (selected.paper.arxiv_id ~ ('v' ~ selected.paper.version if selected.paper.version else ''))|urlencode }}&amp;origin=recommendation&amp;source_date={{ selected_date }}">收录与同步</a>
-        <span id="inspector-collection-links">{% for target, url in collection_links(selected.paper.arxiv_id).items() %}<a class="button secondary" href="{{ url }}">打开 {{ target }}</a>{% endfor %}</span>
+        <a id="inspector-collection" class="button secondary" href="/collection?arxiv_id={{ (selected.paper.arxiv_id ~ ('v' ~ selected.paper.version if selected.paper.version else ''))|urlencode }}&amp;origin=recommendation&amp;source_date={{ selected_date }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
+        <span id="inspector-collection-links">{% for target, url in collection_links(selected.paper.arxiv_id).items() %}<a class="button secondary" href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}</span>
         <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
       </footer>
     </article>

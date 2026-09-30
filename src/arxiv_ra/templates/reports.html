@@ -38,15 +38,14 @@
       <time>{{ report.date }}</time>
       <div class="report-actions">
         <a class="report-action-open" href="{{ report.report_url }}"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
-        {% if report.version %}<form class="job-form report-action-regenerate" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit">{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
+        {% if report.version %}<form class="job-form report-action-regenerate" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-redo" aria-hidden="true"></i>{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
         {% if report.in_library %}
         <span class="saved-status report-action-library"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
         {% else %}
         <form class="library-add-form report-action-library" action="/api/library/add" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
         {% endif %}
-        <a href="/collection?arxiv_id={{ report.arxiv_id|urlencode }}&amp;origin=report&amp;report_id={{ report.report_id|urlencode }}">收录与同步</a>
-        {% for target, url in collection_links(report.arxiv_id).items() %}<a href="{{ url }}">打开 {{ target }}</a>{% endfor %}
-        <form class="zotero-form report-action-zotero" action="/api/zotero/save-report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button></form>
+        <a href="/collection?arxiv_id={{ report.arxiv_id|urlencode }}&amp;origin=report&amp;report_id={{ report.report_id|urlencode }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
+        {% for target, url in collection_links(report.arxiv_id).items() %}<a href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}
         {% if report.method_figure_count %}<span class="report-action-figures"><i class="far fa-images" aria-hidden="true"></i>{{ report.method_figure_count }} 张方法图</span>{% endif %}
         {% if catalog_ready %}<form class="report-delete-form report-action-delete" action="/reports/delete" method="post"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><input type="hidden" name="q" value="{{ query }}"><input type="hidden" name="direction" value="{{ direction }}"><button type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>删除报告</button></form>{% endif %}
       </div>
