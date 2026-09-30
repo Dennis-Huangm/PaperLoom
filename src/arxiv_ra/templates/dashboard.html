@@ -170,7 +170,7 @@
         </form>
         <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
         <a id="inspector-collection" class="button secondary" href="/collection?arxiv_id={{ (selected.paper.arxiv_id ~ ('v' ~ selected.paper.version if selected.paper.version else ''))|urlencode }}&amp;origin=recommendation&amp;source_date={{ selected_date }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
-        <span id="inspector-collection-links">{% for target, url in collection_links(selected.paper.arxiv_id).items() %}<a class="button secondary" href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}</span>
+        <span id="inspector-collection-links">{% for target, url in collection_links(selected.paper.arxiv_id).items() if target != 'obsidian' or selected.has_report %}<a class="button secondary" href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}</span>
         <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
       </footer>
     </article>

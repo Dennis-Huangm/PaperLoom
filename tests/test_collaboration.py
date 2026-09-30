@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from arxiv_ra.web import create_app
@@ -54,6 +55,34 @@ def test_collect_note_survives_restart_and_preserves_personal_text(workspace):
         assert len(list(vault.rglob('*.md'))) >= 1
         assert state['links']['obsidian'].startswith('obsidian://open?')
         assert '%26' in state['links']['obsidian']
+
+
+def test_obsidian_shortcut_requires_report_for_selected_revision(workspace):
+    config, _ = workspace
+    recommendations = config.parent / 'run/2026-09-01/recommendations.json'
+    items = json.loads(recommendations.read_text('utf-8'))
+    items[0]['paper']['final_score'] = 9.0
+    write_json(recommendations, items)
+    with TestClient(create_app(config)) as client:
+        profile_id = BeautifulSoup(client.get('/').text, 'html.parser').select_one(
+            '#inspector-report-form [name="profile_id"]')['value']
+        assert collect(client).status_code == 200
+        assert client.post('/api/library/add', data={'arxiv_id': '2609.00001v2',
+            'origin': 'recommendation', 'source_date': '2026-09-01'}).status_code == 200
+        assert client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()['links']['obsidian']
+        for route in ('/', '/library'):
+            assert not BeautifulSoup(client.get(route).text, 'html.parser').select('a[href^="obsidian://"]')
+        for version in (1, 2):
+            folder = config.parent / f'run/2026-09-01/reports/shared-v{version}'
+            write_json(folder / 'metadata.json', {'profile_id': profile_id, 'paper': {
+                'arxiv_id': '2609.00001', 'version': version, 'title': 'Shared Paper',
+                'authors': [], 'published': '2026-09-01'}})
+            (folder / 'report.html').write_text('<html>Report</html>', encoding='utf-8')
+            (folder / 'report.md').write_text('# Shared Paper\n\nReport', encoding='utf-8')
+            for route in ('/', '/library'):
+                page = BeautifulSoup(client.get(route).text, 'html.parser')
+                assert bool(page.select('a[href^="obsidian://"]')) == (version == 2)
+            assert BeautifulSoup(client.get('/reports').text, 'html.parser').select('a[href^="obsidian://"]')
 
 
 @pytest.fixture

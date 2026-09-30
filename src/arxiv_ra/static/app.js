@@ -781,6 +781,7 @@ if (dataNode) {
       scopedFetch('/api/collection?' + new URLSearchParams({arxiv_id: selectedId})).then((response) => response.json()).then((state) => {
         if (!links || new URL(collectionLink.href).searchParams.get('arxiv_id') !== selectedId) return;
         for (const [target, url] of Object.entries(state.links || {})) {
+          if (target === 'obsidian' && !item.has_report) continue;
           const link = document.createElement('a');
           link.className = 'button secondary';
           link.href = url;
