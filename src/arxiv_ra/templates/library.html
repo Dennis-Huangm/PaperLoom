@@ -58,6 +58,8 @@
         {% endif %}
         <a href="{{ paper.abs_url }}" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
         <a href="{{ paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
+        <a href="/collection?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library">收录与同步</a>
+        {% for target, url in collection_links(paper.arxiv_id).items() %}<a href="{{ url }}">打开 {{ target }}</a>{% endfor %}
         <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>Zotero</button></form>
         <form action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
       </footer>

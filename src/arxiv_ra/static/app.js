@@ -425,6 +425,12 @@ const submitZoteroForm = async (form, collectionKey) => {
     formData.set('collection_key', collectionKey);
     const response = await scopedFetch(form.action, {method: 'POST', body: formData});
     const payload = await response.json();
+    if (payload.receipt_url) {
+      let receiptLink = form.querySelector('.collection-receipt');
+      if (!receiptLink) { receiptLink = document.createElement('a'); receiptLink.className = 'collection-receipt'; form.append(receiptLink); }
+      receiptLink.href = payload.receipt_url;
+      receiptLink.textContent = '查看收录回执';
+    }
     if (!response.ok) throw new Error(payload.detail || 'Zotero 保存失败');
     toast(payload.message || '已保存到 Zotero');
   } catch (error) {
@@ -766,6 +772,25 @@ if (dataNode) {
       reportOpen.href = item.report_url || '#';
     }
     if (zoteroId) zoteroId.value = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
+    const collectionLink = document.querySelector('#inspector-collection');
+    if (collectionLink && zoteroId) {
+      const query = new URLSearchParams(new URL(collectionLink.href).search);
+      query.set('arxiv_id', zoteroId.value);
+      collectionLink.href = '/collection?' + query.toString();
+      const links = document.querySelector('#inspector-collection-links');
+      links?.replaceChildren();
+      const selectedId = zoteroId.value;
+      scopedFetch('/api/collection?' + new URLSearchParams({arxiv_id: selectedId})).then((response) => response.json()).then((state) => {
+        if (!links || zoteroId.value !== selectedId) return;
+        for (const [target, url] of Object.entries(state.links || {})) {
+          const link = document.createElement('a');
+          link.className = 'button secondary';
+          link.href = url;
+          link.textContent = `打开 ${target}`;
+          links.append(link);
+        }
+      }).catch(() => {});
+    }
     setFeedbackUI(item.feedback);
     setLibraryUI(item.in_library);
     const tags = document.querySelector('#inspector-tags');
@@ -1108,3 +1133,21 @@ if (window.location.hash === '#deleted-drafts') {
   const deletedDrafts = document.querySelector('#deleted-drafts');
   if (deletedDrafts) deletedDrafts.open = true;
 }
+
+// Durable collection actions use the same profile boundary as other mutations.
+document.querySelectorAll('.collection-action').forEach((form) => {
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = event.submitter || form.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      const response = await scopedFetch(form.action, {method: 'POST', body: new FormData(form)});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || '收录操作失败');
+      window.location.reload();
+    } catch (error) {
+      toast(error.message);
+      if (button) button.disabled = false;
+    }
+  });
+});

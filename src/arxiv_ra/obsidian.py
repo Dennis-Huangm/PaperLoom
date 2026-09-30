@@ -358,6 +358,101 @@ class ObsidianExporter:
         return path
 
     @_serialized_sync
+    def sync_collection(self, paper: dict, verified: dict, report_path: Path | None, pdf_path: Path | None) -> Path:
+        self._require_enabled()
+        if report_path and not self.settings.sync_reports:
+            raise ObsidianError('请先启用 Obsidian 报告同步')
+        feedback = FeedbackStore(self.output_root, self.config.profile_id).all().get(paper['arxiv_id'])
+        if PaperLibraryStore(self.output_root, self.config.profile_id).contains(paper['arxiv_id']):
+            feedback = {'label': '已加入文献库（相关）', 'verdict': 'relevant'}
+        path = self._sync_paper_note(paper, verified, feedback,
+            report_markdown=report_path.read_text(encoding='utf-8') if report_path else '',
+            report_dir=report_path.parent if report_path else None,
+            discover_report=False, pdf_source=pdf_path)
+        self.rebuild_indexes()
+        return path
+
+    def find_paper_notes(self, arxiv_id: str) -> list[dict]:
+        """Read only managed notes inside the configured dedicated root."""
+        self._require_enabled()
+        vault, root = self._paths(create=False)
+        result = []
+        for path in root.rglob("*.md"):
+            try:
+                path = self._safe_target(path)
+                text = path.read_text(encoding="utf-8")
+                front = re.match(r"\A---\n(.*?)\n---", text, re.S)
+                fields = yaml.safe_load(front.group(1)) if front else {}
+                if (not isinstance(fields, dict) or fields.get("type") != "paper-note"
+                        or fields.get("arxiv_id") != arxiv_id
+                        or fields.get("profile_id") != (self.config.profile_id or "default")):
+                    continue
+                valid = (text.count(MANAGED_START) == text.count(MANAGED_END) == 1
+                         and text.index(MANAGED_START) < text.index(MANAGED_END))
+                result.append({"path": path.relative_to(vault).as_posix(),
+                               "version": fields.get("version"), "valid": valid})
+            except (OSError, ValueError, yaml.YAMLError):
+                continue
+        return result
+
+    @_serialized_sync
+    def associate_paper_note(self, arxiv_id: str, relative_path: str) -> dict:
+        candidate = next((item for item in self.find_paper_notes(arxiv_id)
+                          if item['path'] == relative_path and item['valid']), None)
+        if not candidate:
+            raise ObsidianError("所选笔记身份或托管标记无效")
+        manifest = self._manifest()
+        entry = self._paper_entry(manifest, arxiv_id).copy()
+        entry.update(note=str(Path(relative_path).with_suffix("").as_posix()),
+                     arxiv_id=arxiv_id, profile_id=self.config.profile_id or 'default',
+                     profile=self.config.profile_name, version=candidate['version'])
+        manifest.setdefault('papers', {})[self._paper_key(arxiv_id)] = entry
+        self._save_manifest(manifest)
+        return candidate
+
+    def historical_paper_note(self, arxiv_id: str) -> dict:
+        return self._paper_entry(self._manifest(), arxiv_id).copy()
+
+    @_serialized_sync
+    def forget_missing_paper_note(self, arxiv_id: str) -> None:
+        if self.find_paper_notes(arxiv_id):
+            raise ObsidianError("仍有匹配笔记，请选择关联或修复托管标记")
+        manifest = self._manifest()
+        entry = self._paper_entry(manifest, arxiv_id)
+        vault, _ = self._paths(create=False)
+        if entry.get('note') and (vault / (entry['note'] + '.md')).exists():
+            raise ObsidianError("原笔记仍存在但身份无法验证，请手动检查")
+        manifest.setdefault('papers', {}).pop(self._paper_key(arxiv_id), None)
+        legacy = manifest['papers'].get(arxiv_id, {})
+        if self._entry_belongs_to_profile(legacy):
+            manifest['papers'].pop(arxiv_id, None)
+        self._save_manifest(manifest)
+
+    @_serialized_sync
+    def link_zotero(self, relative_path: str, arxiv_id: str, item_key: str) -> None:
+        """Update only the managed cross-tool link, without regenerating the note."""
+        self._require_enabled()
+        if not re.fullmatch(r"[A-Z0-9]{8}", item_key):
+            raise ObsidianError("无效的 Zotero 条目 key")
+        vault, _ = self._paths(create=False)
+        path = self._safe_target(vault / relative_path)
+        text = path.read_text(encoding="utf-8")
+        if text.count(MANAGED_START) != 1 or text.count(MANAGED_END) != 1:
+            raise ObsidianError("托管标记损坏，未写入 Zotero 链接")
+        prefix, rest = text.split(MANAGED_START, 1)
+        body, tail = rest.split(MANAGED_END, 1)
+        front = re.match(r"\A---\n(.*?)\n---", prefix, re.S)
+        fields = yaml.safe_load(front.group(1)) if front else {}
+        if (not isinstance(fields, dict) or fields.get("arxiv_id") != arxiv_id
+                or fields.get("profile_id") != (self.config.profile_id or "default")):
+            raise ObsidianError("笔记身份不匹配，未写入 Zotero 链接")
+        link = f"> - Zotero：[打开文献](zotero://select/library/items/{item_key})"
+        body = re.sub(r"(?m)^> - Zotero：.*\n?", "", body)
+        body = body.rstrip() + "\n\n" + link + "\n"
+        fields['zotero_item_key'] = item_key
+        self._write_managed(path, fields, body)
+
+    @_serialized_sync
     def rebuild_indexes(self) -> Path:
         self._require_enabled()
         manifest = self._manifest()
@@ -453,6 +548,7 @@ class ObsidianExporter:
         feedback: dict[str, Any] | None,
         report_markdown: str,
         report_dir: Path | None,
+        *, discover_report: bool = True, pdf_source: Path | None = None,
     ) -> Path:
         arxiv_id = str(paper.get("arxiv_id") or "").strip()
         if not arxiv_id:
@@ -461,7 +557,7 @@ class ObsidianExporter:
         date = str(paper.get("published") or "")[:10]
         year = date[:4]
         path = self._paper_path(arxiv_id, title, year)
-        if not report_markdown:
+        if not report_markdown and discover_report:
             source_report = matching_report(self.output_root, self.config.profile_id, paper)
             if source_report:
                 report_markdown = source_report.read_text(encoding="utf-8")
@@ -530,8 +626,8 @@ class ObsidianExporter:
                     report_body = re.sub(r"\[([^\]\n]+)\]\(evidence\.json\)",
                                          r"\1（原报告未保存详情文件）", report_body)
             body.extend(["## 完整阅读报告", "", report_body, ""])
-        if report_dir and self.settings.copy_pdf:
-            pdf = report_dir / "paper.pdf"
+        if (report_dir or pdf_source) and self.settings.copy_pdf:
+            pdf = pdf_source or report_dir / "paper.pdf"
             if pdf.exists():
                 destination = self._attachment_folder(arxiv_id, paper.get("version")) / pdf.name
                 self._copy_if_changed(pdf, destination)

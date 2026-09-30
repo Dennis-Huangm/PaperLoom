@@ -243,3 +243,13 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 @media(min-width:2000px){.list-head{grid-template-columns:1fr 82px 94px}.paper-row{grid-template-columns:24px 28px minmax(0,1fr) 62px 54px 94px}}
 @media(max-width:1180px){.paper-row{grid-template-columns:22px 22px minmax(0,1fr) 44px 84px}}
 @media(max-width:720px){.paper-row{grid-template-columns:20px 20px minmax(0,1fr) 42px}}
+
+.collection-page{max-width:1080px;margin:0 auto;overflow-wrap:anywhere}
+.collection-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin:18px 0}
+.collection-panel h2,.collection-panel h3{margin-top:0}
+.collection-panel p{line-height:1.7}
+.collection-panel select{max-width:100%;padding:8px;border:1px solid var(--line);border-radius:var(--radius)}
+.collection-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.collection-panel input[type=checkbox]{accent-color:var(--accent);margin-right:8px}
+.collection-panel .collection-action + .collection-action{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.collection-receipt{color:var(--accent);margin-left:10px}

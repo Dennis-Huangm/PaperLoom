@@ -399,8 +399,8 @@ def test_sync_zotero_receives_exact_revision_files_and_closes_client(setup, monk
     from unittest.mock import Mock
     import arxiv_ra.version_sync as module
     sync, _, _ = setup
-    adapter = SimpleNamespace(client=SimpleNamespace(close=Mock()),
-                              save_paper=Mock(return_value=SimpleNamespace(item_key="ITEM")))
+    adapter = SimpleNamespace(client=SimpleNamespace(close=Mock()), library_identity=lambda: "test/users/0",
+                              save_paper=Mock(return_value=SimpleNamespace(to_dict=lambda: {"item_key": "ITEM", "created": True})))
     monkeypatch.setattr(module, "ZoteroClient", lambda _: adapter)
     sync.sync(paper().arxiv_id, zotero=True)
     args, kwargs = adapter.save_paper.call_args
@@ -434,3 +434,13 @@ def test_sync_repairs_nonempty_damaged_pdf(setup):
     with pymupdf.open(path) as document:
         assert document.page_count == 1
     assert operation(sync)['status'] == 'succeeded'
+
+
+def test_version_export_exposes_shared_collection_receipt(setup, tmp_path):
+    from arxiv_ra.config import ObsidianConfig
+    sync, _, _ = setup
+    vault = tmp_path / 'vault'
+    vault.mkdir()
+    sync.config.obsidian = ObsidianConfig(enabled=True, vault_path=str(vault))
+    result = sync.sync(paper().arxiv_id, obsidian=True)
+    assert '收录回执' in result.read_text(encoding='utf-8')

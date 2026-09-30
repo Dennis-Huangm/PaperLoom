@@ -28,6 +28,12 @@ class ZoteroAuthorizationRequired(ZoteroError):
     pass
 
 
+class ZoteroConflict(ZoteroError):
+    def __init__(self, message, candidates=()):
+        super().__init__(message)
+        self.candidates = list(candidates)
+
+
 @dataclass(slots=True)
 class ZoteroSaveResult:
     item_key: str
@@ -110,11 +116,20 @@ class ZoteroClient:
         report_path: Path | None = None,
         pdf_path: Path | None = None,
         collection_key: str | None = None,
+        *, receipt: dict | None = None, checkpoint=None,
+        selected_key: str = "",
     ) -> ZoteroSaveResult:
         if not self.config.enabled:
             raise ZoteroError("Zotero 联动尚未启用")
         self._require_write_access()
-        existing = self._find_existing(paper, verified or {})
+        self._receipt = receipt if receipt is not None else {}
+        self._checkpoint = checkpoint or (lambda: None)
+        existing = selected_key or self._receipt.get("item_key")
+        if existing:
+            if self.get_item(existing) is None:
+                raise ZoteroConflict("关联的 Zotero 条目已删除，请修复关联或明确重新收录")
+        else:
+            existing = self.find_paper(paper, verified or {})
         if collection_key == "__root__":
             target_collection = ""
         elif collection_key:
@@ -130,7 +145,13 @@ class ZoteroClient:
             item_key = self._create_parent(
                 paper, verified or {}, profile_name, target_collection
             )
+            self._receipt['summary_pending'] = True
+        self._receipt["item_key"] = item_key
+        self._checkpoint()
+        if self._receipt.get('summary_pending'):
             self._create_summary_note(item_key, paper, profile_name)
+            self._receipt['summary_pending'] = False
+            self._checkpoint()
         attachments_added = 0
         revision_label = f" · v{paper['version']}" if paper.get("version") else ""
         if self.config.attach_report and report_path and report_path.exists():
@@ -153,6 +174,29 @@ class ZoteroClient:
                 )
             attachments_added += int(added)
         return ZoteroSaveResult(item_key, created, attachments_added)
+
+    def library_identity(self) -> str:
+        """The local server identifies this personal library, independent of collections."""
+        return self._require_server_id() + "/users/0"
+
+    def get_item(self, key: str) -> dict | None:
+        if not re.fullmatch(r"[A-Z0-9]{8}", key):
+            raise ZoteroError("无效的 Zotero 条目 key")
+        response = self.client.get(f"{self.base_url}/users/0/items/{key}", headers=self._headers())
+        if response.status_code == 404:
+            return None
+        if response.status_code == 401:
+            raise ZoteroAuthorizationRequired("Zotero 授权已失效，请重新连接")
+        if response.status_code != 200:
+            raise ZoteroError(f"Zotero 读取失败：HTTP {response.status_code}")
+        try:
+            wrapper = response.json()
+            data = wrapper.get("data", wrapper)
+            if not isinstance(data, dict) or not data.get("key"):
+                raise ValueError()
+        except (ValueError, AttributeError) as exc:
+            raise ZoteroError("Zotero 条目响应格式错误") from exc
+        return None if data.get("deleted") else data
 
     def list_trackable_papers(self) -> list[dict[str, str]]:
         """Translate Zotero fields into revision-independent arXiv identities."""
@@ -228,17 +272,31 @@ class ZoteroClient:
         return headers
 
     def _get_items(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        response = self.client.get(
-            f"{self.base_url}{path}",
-            params=params,
-            headers=self._headers(),
-        )
-        if response.status_code == 401:
-            raise ZoteroAuthorizationRequired("Zotero 授权已失效，请重新连接")
-        if response.status_code != 200:
-            return []
-        payload = response.json()
-        return payload if isinstance(payload, list) else []
+        values = dict(params or {})
+        values.setdefault('limit', 100)
+        result: list[dict[str, Any]] = []
+        while True:
+            values['start'] = len(result)
+            response = self.client.get(f"{self.base_url}{path}", params=values, headers=self._headers())
+            if response.status_code == 401:
+                raise ZoteroAuthorizationRequired("Zotero 授权已失效，请重新连接")
+            if response.status_code != 200:
+                raise ZoteroError(f"Zotero 读取失败：HTTP {response.status_code}")
+            try:
+                payload = response.json()
+                total = int(response.headers.get('Total-Results', len(result) + len(payload)))
+            except (ValueError, TypeError) as exc:
+                raise ZoteroError("Zotero 响应格式错误") from exc
+            if (not isinstance(payload, list) or any(not isinstance(item, dict)
+                    or not isinstance(item.get('data', item), dict) for item in payload)):
+                raise ZoteroError("Zotero 列表响应格式错误")
+            if not payload and len(result) < total:
+                raise ZoteroError('Zotero 分页结果不完整，未执行写入')
+            result.extend(payload)
+            if len(result) >= total:
+                return result
+            if len(result) >= 100000:
+                raise ZoteroError('Zotero 查询结果过多，未执行写入')
 
     def _post_objects(self, path: str, objects: list[dict[str, Any]]) -> str:
         response = self.client.post(
@@ -338,36 +396,43 @@ class ZoteroClient:
             }
         raise ZoteroError(f"不支持的 Zotero 条目模板：{item_type}")
 
-    def _find_existing(self, paper: dict[str, Any], verified: dict[str, Any]) -> str | None:
-        arxiv_id = str(paper.get("arxiv_id") or "").casefold()
-        doi = str(verified.get("doi") or paper.get("doi") or "").casefold()
+    def find_paper(self, paper: dict[str, Any], verified: dict[str, Any]) -> str | None:
+        arxiv_id = re.sub(r"v\d+$", "", str(paper.get("arxiv_id") or "").casefold())
+        doi = self._doi(verified.get("doi") or paper.get("doi"))
         title = str(paper.get("title") or "").strip()
-        queries = [value for value in [arxiv_id, doi, title] if value]
-        candidates: dict[str, dict[str, Any]] = {}
-        for query in queries:
+        candidates = {}
+        for query in dict.fromkeys(value for value in (arxiv_id, doi, title) if value):
             for item in self._get_items("/users/0/items/top", {"q": query, "format": "json"}):
                 data = item.get("data", item)
                 key = str(data.get("key") or item.get("key") or "")
-                if key:
+                if key and not data.get("deleted"):
                     candidates[key] = data
-        expected_title = normalize_title(str(paper.get("title") or ""))
-        matches: list[tuple[str, dict[str, Any]]] = []
+        reliable, suggestions = [], []
         for key, data in candidates.items():
-            haystack = " ".join(
-                str(data.get(field) or "") for field in ("extra", "url", "DOI", "title")
-            ).casefold()
-            if arxiv_id and arxiv_id in haystack:
-                matches.append((key, data))
-                continue
-            if doi and doi in haystack:
-                matches.append((key, data))
-                continue
-            if expected_title and normalize_title(str(data.get("title") or "")) == expected_title:
-                matches.append((key, data))
-        if not matches:
-            return None
-        matches.sort(key=lambda item: str(item[1].get("dateAdded") or "9999"))
-        return matches[0][0]
+            ids = self._arxiv_ids(data)
+            item_doi = self._doi(data.get("DOI"))
+            exact = (arxiv_id and arxiv_id in ids) or (doi and doi == item_doi)
+            conflict = (ids and arxiv_id not in ids) or (doi and item_doi and doi != item_doi)
+            candidate = {"key": key, "title": str(data.get("title") or key)}
+            if exact and not conflict:
+                reliable.append(candidate)
+            elif exact or (title and normalize_title(data.get("title", "")) == normalize_title(title)):
+                suggestions.append(candidate)
+        if len(reliable) == 1 and not suggestions:
+            return reliable[0]["key"]
+        if reliable or suggestions:
+            raise ZoteroConflict("发现多个匹配或仅标题匹配，请选择 Zotero 条目", reliable + suggestions)
+        return None
+
+    @staticmethod
+    def _doi(value):
+        return re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", str(value or "").strip(), flags=re.I).casefold()
+
+    @staticmethod
+    def _arxiv_ids(data):
+        text = " ".join(str(data.get(field) or "") for field in ("archiveID", "extra", "url"))
+        return {match.casefold() for match in re.findall(
+            r"(?<![\w.])((?:[a-z-]+(?:\.[a-z]{2})?/\d{7}|\d{4}\.\d{4,5}))(?:v\d+)?(?![\w.])", text, re.I)}
 
     def _ensure_collection(self, name: str, preferred_key: str = "") -> str:
         collections = self.list_collections()
@@ -460,6 +525,10 @@ class ZoteroClient:
     def _create_summary_note(
         self, item_key: str, paper: dict[str, Any], profile_name: str
     ) -> None:
+        marker = f'PaperLoom-summary:{profile_name}'
+        children = self._get_items(f'/users/0/items/{item_key}/children', {'format': 'json'})
+        if any(any(tag.get('tag') == marker for tag in child.get('data', child).get('tags', [])) for child in children):
+            return
         note = self._template("note")
         reason = html.escape(str(paper.get("recommendation_reason") or ""))
         arxiv_id = html.escape(str(paper.get("arxiv_id") or ""))
@@ -472,7 +541,7 @@ class ZoteroClient:
                     f"<p><strong>推荐理由：</strong>{reason or '由当前研究方向自动筛选。'}</p>"
                     f"<p><strong>arXiv ID：</strong>{arxiv_id}</p>"
                 ),
-                "tags": [{"tag": "PaperLoom"}],
+                "tags": [{"tag": "PaperLoom"}, {"tag": marker}],
             }
         )
         self._post_objects("/users/0/items", [note])
@@ -514,6 +583,9 @@ class ZoteroClient:
     ) -> bool:
         resolved = path.resolve()
         digest = hashlib.md5(resolved.read_bytes()).hexdigest()
+        receipt = getattr(self, "_receipt", {})
+        checkpoint = getattr(self, "_checkpoint", lambda: None)
+        material = receipt.setdefault("files", {}).setdefault(digest, {})
         children = self._get_items(f"/users/0/items/{item_key}/children", {"format": "json"})
         for child in children:
             data = child.get("data", child)
@@ -521,7 +593,18 @@ class ZoteroClient:
                 str(data.get("contentType") or "").casefold() == content_type.casefold()
                 and str(data.get("md5") or "").casefold() == digest
             ):
+                material.update(key=data.get("key") or child.get("key"), status="succeeded")
+                checkpoint()
                 return False
+        marker = f"PaperLoom-file:{digest}"
+        recoverable = [child.get("data", child) for child in children
+                       if any(tag.get("tag") == marker for tag in child.get("data", child).get("tags", []))]
+        if not material.get("key") and len(recoverable) == 1:
+            material["key"] = recoverable[0]["key"]
+        if len(recoverable) > 1:
+            raise ZoteroConflict("发现多个待上传附件，请先在 Zotero 中核对")
+        if material.get("key") and self.get_item(material["key"]) is None:
+            raise ZoteroConflict("已收录附件被删除，请明确重新收录")
         attachment = self._template("attachment", linkMode="imported_file")
         attachment.update(
             {
@@ -530,9 +613,12 @@ class ZoteroClient:
                 "title": title,
                 "contentType": content_type,
                 "filename": resolved.name,
+                "tags": [{"tag": marker}],
             }
         )
-        attachment_key = self._post_objects("/users/0/items", [attachment])
+        attachment_key = material.get("key") or self._post_objects("/users/0/items", [attachment])
+        material.update(key=attachment_key, status="uploading")
+        checkpoint()
         file_endpoint = f"{self.base_url}/users/0/items/{attachment_key}/file"
         headers = self._headers(write=True)
         headers["If-None-Match"] = "*"
@@ -552,6 +638,8 @@ class ZoteroClient:
             raise ZoteroError(f"Zotero PDF 上传授权失败：HTTP {authorization.status_code}")
         upload = authorization.json() or {}
         if upload.get("exists") == 1:
+            material["status"] = "succeeded"
+            checkpoint()
             return True
         upload_url = str(upload.get("url") or "")
         upload_key = str(upload.get("uploadKey") or "")
@@ -580,4 +668,6 @@ class ZoteroClient:
         )
         if registered.status_code != 204:
             raise ZoteroError(f"Zotero PDF 注册失败：HTTP {registered.status_code}")
+        material["status"] = "succeeded"
+        checkpoint()
         return True

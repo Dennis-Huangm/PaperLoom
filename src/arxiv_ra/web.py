@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import importlib.util
 import os
 import re
@@ -255,7 +257,9 @@ def create_app(config_path: Path | str) -> FastAPI:
         return response
 
     def context(request: Request, active: str, **values: Any) -> dict[str, Any]:
+        from .collaboration import PaperCollection
         current = current_config()
+        collection = PaperCollection(current, project_root)
         date_label, recommendations = latest_recommendations(
             output_root, current.profile_id
         )
@@ -270,6 +274,7 @@ def create_app(config_path: Path | str) -> FastAPI:
             "job_load_errors": jobs.load_errors,
             "active_profile": current.profile_id,
             "feedback": FeedbackStore(output_root, current.profile_id).all(),
+            "collection_links": lambda aid: collection.status(aid)['links'],
         }
         base.update(values)
         return base
@@ -356,25 +361,14 @@ def create_app(config_path: Path | str) -> FastAPI:
         item: dict[str, Any], collection_key: str = "", current: AppConfig | None = None
     ) -> dict[str, Any]:
         current = current or current_config()
-        paper = item.get("paper") or {}
-        client = ZoteroClient(current.zotero)
-        connection = client.status()
-        if not connection.get("ready"):
-            raise ZoteroUnavailable("Zotero 未运行或本地 API 未启用")
-        if not os.getenv(current.zotero.api_key_env):
-            raise ZoteroAuthorizationRequired("请先在配置中心连接并授权 Zotero")
-        try:
-            pdf_path = cached_zotero_pdf(paper, current.zotero.attach_pdf)
-        except (httpx.HTTPError, OSError) as exc:
-            raise ZoteroError(f"论文 PDF 下载失败：{type(exc).__name__}") from exc
-        result = client.save_paper(
-            paper,
-            item.get("verified") or {},
-            current.profile_name,
-            pdf_path=pdf_path,
-            collection_key=collection_key or None,
-        )
-        return result.to_dict()
+        from .collaboration import PaperCollection, zotero_result
+        operation = PaperCollection(current, project_root).collect(
+            item, zotero=True, collection_key=collection_key,
+            pdf_loader=cached_zotero_pdf, zotero_factory=ZoteroClient)
+        return zotero_result(operation)
+
+    from .web_collection import register_collection_routes
+    register_collection_routes(app, current_config, selected_paper, project_root, cached_zotero_pdf, templates, context)
 
     generate_profile_draft = register_profile_routes(
         app, profiles, current_config, templates, context, jobs, project_root)
@@ -1053,7 +1047,12 @@ def create_app(config_path: Path | str) -> FastAPI:
         message = "已创建 Zotero 条目" if result["created"] else "Zotero 中已存在该论文"
         if result["attachments_added"]:
             message += f"，新增 {result['attachments_added']} 个附件"
-        return JSONResponse({**result, "message": message})
+        if result.get("status") != "succeeded":
+            message = result.get("error") or "部分步骤未完成，请查看收录回执"
+        status = 200
+        if result.get('status') != 'succeeded':
+            status = 503 if 'ZoteroUnavailable' in message else 409 if 'ZoteroAuthorizationRequired' in message or result.get('status') == 'needs_attention' else 502
+        return JSONResponse({**result, "message": message, "detail": message}, status_code=status)
 
     @app.post("/api/zotero/save-today", response_class=JSONResponse)
     async def save_zotero_today(
@@ -1084,14 +1083,16 @@ def create_app(config_path: Path | str) -> FastAPI:
         except ZoteroError as exc:
             raise_zotero_http_error(exc)
         created = sum(1 for item in results if item["created"])
-        existing = len(results) - created
+        failed = sum(item.get("status") != "succeeded" for item in results)
+        existing = len(results) - created - failed
         attachments = sum(int(item["attachments_added"]) for item in results)
         return JSONResponse(
             {
                 "created": created,
+                "results": results,
                 "existing": existing,
                 "attachments_added": attachments,
-                "message": f"Zotero 同步完成：新增 {created} 篇，已存在 {existing} 篇，新增附件 {attachments} 个",
+                "message": f"Zotero 收录：新增 {created} 篇，已存在 {existing} 篇，未完成 {failed} 篇，新增附件 {attachments} 个；逐篇结果已保存",
             }
         )
 
@@ -1120,15 +1121,15 @@ def create_app(config_path: Path | str) -> FastAPI:
                 profile_name = source_profile
 
         def save_report() -> dict[str, Any]:
-            result = ZoteroClient(current.zotero).save_paper(
-                payload.get("paper") or {},
-                payload.get("verified") or {},
-                profile_name or current.profile_name,
-                report_path=report["report_path"],
+            from .collaboration import PaperCollection, zotero_result
+            source_config = copy.deepcopy(current)
+            source_config.profile_name = profile_name or current.profile_name
+            operation = PaperCollection(source_config, project_root).collect(
+                payload, zotero=True, report_path=report["report_path"].with_suffix('.md'),
                 pdf_path=report["pdf_path"] if report["pdf_path"].exists() else None,
-                collection_key=collection_key or None,
-            )
-            return result.to_dict()
+                collection_key=collection_key, zotero_factory=ZoteroClient)
+            return zotero_result(operation)
+
 
         try:
             result = await run_in_threadpool(save_report)
@@ -1137,7 +1138,12 @@ def create_app(config_path: Path | str) -> FastAPI:
         message = "报告已保存到 Zotero"
         if result["attachments_added"]:
             message += f"，新增 {result['attachments_added']} 个附件"
-        return JSONResponse({**result, "message": message})
+        if result.get("status") != "succeeded":
+            message = result.get("error") or "部分步骤未完成，请查看收录回执"
+        status = 200
+        if result.get('status') != 'succeeded':
+            status = 503 if 'ZoteroUnavailable' in message else 409 if 'ZoteroAuthorizationRequired' in message or result.get('status') == 'needs_attention' else 502
+        return JSONResponse({**result, "message": message, "detail": message}, status_code=status)
 
     @app.get("/status", response_class=HTMLResponse)
     def status_page(request: Request) -> HTMLResponse:

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}收录与同步 · PaperLoom{% endblock %}
+{% block content %}
+<div class="collection-page">
+<section class="page-heading"><div><p class="section-kicker">RESEARCH TOOLS</p><h1>收录与同步</h1><p>{{ arxiv_id }} · 收录不会改变收藏或阅读状态。</p></div></section>
+<section class="collection-panel">
+{% if item %}
+<h2>{{ item.paper.title }}</h2>
+<p>本次材料：论文信息 · {% if item.paper.version %}v{{ item.paper.version }}{% else %}版本未知{% endif %}{% if report_path %} · 所选报告 {{ report_id }}{% endif %}</p>
+<form class="collection-action" action="/api/collection" method="post">
+<input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+<input type="hidden" name="arxiv_id" value="{{ arxiv_id }}"><input type="hidden" name="origin" value="{{ origin }}"><input type="hidden" name="source_date" value="{{ source_date }}"><input type="hidden" name="report_id" value="{{ report_id }}">
+<p><label><input type="checkbox" name="zotero" value="true" {% if not config.zotero.enabled %}disabled{% endif %}> Zotero：{{ config.zotero.collection_name or '我的文库' }}{% if config.zotero.attach_pdf %}，保存 PDF{% endif %}{% if report_path and config.zotero.attach_report %}，链接所选报告{% endif %}</label></p>
+<p><label><input type="checkbox" name="obsidian" value="true" {% if not config.obsidian.enabled %}disabled{% endif %}> Obsidian：{{ config.obsidian.root_folder }}{% if config.obsidian.copy_pdf %}，复制可用 PDF{% endif %}{% if report_path %}，所选报告正文{% endif %}</label></p>
+<p>沿用现有配置。未知版本的 PDF 不会自动下载；请先确认指定版本。<a href="/settings#zotero">设置工具与附件</a></p>
+<button class="button primary" type="submit">收录所选目标</button>
+</form>
+{% endif %}
+<div class="collection-links">{% for target, url in state.links.items() %}<a class="button secondary" href="{{ url }}">在 {{ target }} 打开</a>{% endfor %}</div>
+<p>链接对应上次保存的关联；打开链接不代表已验证外部内容。更换资料库或移动笔记后请检查关联。</p>
+<form class="collection-action" action="/api/collection/check" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ arxiv_id }}"><button class="button secondary" type="submit">检查 / 修复关联</button></form>
+{% for name, association in state.associations.items() %}
+<p>{{ name }}：{{ labels.get(association.status, '待验证') }}{% if association.update_needed %} · 与当前所选版本不同或尚未确认{% endif %} {{ association.error or '' }}</p>
+{% if name == 'zotero' and association.candidates %}
+<form class="collection-action" action="/api/collection/check" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ arxiv_id }}"><select name="selected_key" required>{% for candidate in association.candidates %}<option value="{{ candidate.key }}">{{ candidate.title }} · {{ candidate.key }}</option>{% endfor %}</select><button type="submit">关联所选文献</button></form>
+{% endif %}
+{% if name == 'obsidian' and association.candidates %}
+<form class="collection-action" action="/api/collection/check" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ arxiv_id }}"><select name="selected_path" required>{% for candidate in association.candidates %}{% if candidate.valid %}<option value="{{ candidate.path }}">{{ candidate.path }}</option>{% endif %}{% endfor %}</select><button type="submit">关联所选笔记</button></form>
+{% endif %}
+{% endfor %}
+</section>
+<h2>收录回执</h2>
+{% for operation in state.operations %}
+<article class="collection-panel"><h3>{{ operation.request.paper.title }} · {% if operation.request.paper.version %}v{{ operation.request.paper.version }}{% else %}版本未知{% endif %} · {{ labels.get(operation.status, '待处理') }}</h3>
+<p>{{ operation.updated_at or operation.created_at }}{% if operation.request.report_path %} · 报告：{{ operation.request.report_path }}{% endif %}</p>
+{% for target, step in operation.targets.items() %}<p><strong>{{ target }}</strong>：{{ labels.get(step.status, step.status) }}{% if step.update_needed %} · 外部笔记已被后续收录更新，本回执保留历史结果{% endif %}{% if step.path %} · {{ step.path }}{% endif %}{% if step.error %} · {{ step.error }}{% endif %}</p>{% endfor %}
+{% if operation.legacy %}<p>此记录来自历史版本同步。请先检查关联，再从论文发起收录；原目标配置无法可靠恢复。</p>{% else %}
+<form class="collection-action" action="/api/collection/retry" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="operation_id" value="{{ operation.operation_id }}">
+{% if operation.targets.zotero and operation.targets.zotero.candidates %}<label>匹配候选<select name="selected_key" required><option value="">请选择文献</option>{% for candidate in operation.targets.zotero.candidates %}<option value="{{ candidate.key }}">{{ candidate.title }} · {{ candidate.key }}</option>{% endfor %}</select></label>{% endif %}
+<p><label><input type="checkbox" name="use_original" value="true">配置已变化时，明确按此回执的原目标配置重试</label></p><button class="button secondary" type="submit">检查并继续未完成步骤</button></form>
+{% if operation.status != 'succeeded' %}
+<form class="collection-action" action="/api/collection/recollect" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="operation_id" value="{{ operation.operation_id }}"><label>重新收录目标<select name="target">{% for target in operation.request.targets %}<option value="{{ target }}">{{ target }}</option>{% endfor %}</select></label><p>使用当前配置；明确允许重建已删除资料，保留此历史回执。仍存在的笔记须先检查关联。</p><button class="button secondary" type="submit">明确重新收录</button></form>
+{% endif %}
+{% endif %}
+</article>
+{% else %}<p>尚无收录回执。</p>{% endfor %}
+</div>
+{% endblock %}

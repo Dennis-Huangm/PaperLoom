@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from arxiv_ra.config import ZoteroConfig
-from arxiv_ra.zotero import ZoteroClient
+from arxiv_ra.zotero import ZoteroClient, ZoteroConflict
 
 
 def _paper() -> dict:
@@ -171,7 +171,7 @@ def test_existing_arxiv_item_is_not_created_again(monkeypatch) -> None:
     assert posts == []
 
 
-def test_title_query_finds_item_when_local_api_does_not_index_arxiv_id(monkeypatch) -> None:
+def test_title_only_match_requires_user_selection(monkeypatch) -> None:
     monkeypatch.setenv("ZOTERO_LOCAL_API_KEY", "secret")
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -197,13 +197,12 @@ def test_title_query_finds_item_when_local_api_does_not_index_arxiv_id(monkeypat
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    result = zotero.save_paper(_paper(), {}, "AgenticT2I", collection_key="__root__")
+    with pytest.raises(ZoteroConflict) as error:
+        zotero.save_paper(_paper(), {}, "AgenticT2I", collection_key="__root__")
+    assert [item["key"] for item in error.value.candidates] == ["BYTITLE1"]
 
-    assert result.created is False
-    assert result.item_key == "BYTITLE1"
 
-
-def test_duplicate_matches_prefer_oldest_zotero_item(monkeypatch) -> None:
+def test_duplicate_matches_require_user_selection(monkeypatch) -> None:
     monkeypatch.setenv("ZOTERO_LOCAL_API_KEY", "secret")
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -231,10 +230,9 @@ def test_duplicate_matches_prefer_oldest_zotero_item(monkeypatch) -> None:
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    result = zotero.save_paper(_paper(), {}, "AgenticT2I", collection_key="__root__")
-
-    assert result.created is False
-    assert result.item_key == "OLDEST01"
+    with pytest.raises(ZoteroConflict) as error:
+        zotero.save_paper(_paper(), {}, "AgenticT2I", collection_key="__root__")
+    assert {item["key"] for item in error.value.candidates} == {"NEWER001", "OLDEST01"}
 
 
 def test_collection_tree_labels_nested_collections() -> None:
@@ -269,7 +267,7 @@ def test_existing_item_is_added_to_selected_collection(monkeypatch) -> None:
             return httpx.Response(200, headers={"Zotero-Server-ID": "SERVER1"})
         if request.method == "GET" and path == "/api/users/0/items/top":
             if request.url.params.get("q") == _paper()["title"]:
-                return httpx.Response(200, json=[{"data": {"key": "EXISTING", "title": _paper()["title"]}}])
+                return httpx.Response(200, json=[{"data": {"key": "EXISTING", "title": _paper()["title"], "archiveID": "2407.05600"}}])
             return httpx.Response(200, json=[])
         if request.method == "GET" and path == "/api/users/0/collections":
             return httpx.Response(200, json=[{"data": {"key": "TARGET01", "name": "Reading"}}])
@@ -374,3 +372,77 @@ def test_linked_attachment_does_not_send_stored_file_filename(tmp_path: Path, mo
     assert posted["linkMode"] == "linked_file"
     assert posted["path"] == str(report.resolve())
     assert "filename" not in posted
+
+
+@pytest.mark.parametrize('status,payload', [(503, []), (200, {'error': 'invalid'})])
+def test_failed_lookup_never_creates_a_paper(monkeypatch, status, payload):
+    from arxiv_ra.zotero import ZoteroError
+    monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'secret')
+    writes = []
+    def handler(request):
+        if request.method != 'GET':
+            writes.append(request.url.path)
+            return httpx.Response(500)
+        if request.url.path == '/api/':
+            return httpx.Response(200, headers={'Zotero-Server-ID': 'SERVER1'})
+        return httpx.Response(status, json=payload)
+    adapter = ZoteroClient(ZoteroConfig(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(ZoteroError, match='读取|格式'):
+        adapter.save_paper(_paper(), {}, 'Research', collection_key='__root__')
+    assert writes == []
+
+
+def test_interrupted_upload_resumes_existing_attachment(tmp_path, monkeypatch):
+    monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'test')
+    pdf = tmp_path / 'paper.pdf'
+    pdf.write_bytes(b'%PDF-retained-revision')
+    children, uploads = [], []
+    def handler(request):
+        path = request.url.path
+        if path == '/api/':
+            return httpx.Response(200, headers={'Zotero-Server-ID': 'SERVER1'})
+        if path == '/api/users/0/items/top':
+            return httpx.Response(200, json=[{'data': {'key': 'PARENT01', 'archiveID': '2407.05600'}}])
+        if path == '/api/users/0/items/PARENT01':
+            return httpx.Response(200, json={'data': {'key': 'PARENT01', 'archiveID': '2407.05600'}})
+        if path.endswith('/children'):
+            return httpx.Response(200, json=children)
+        if path == '/api/items/new':
+            return httpx.Response(404)
+        if path == '/api/users/0/items' and request.method == 'POST':
+            item = json.loads(request.content)[0]
+            children.append({'data': {**item, 'key': 'ATTACH01'}})
+            return httpx.Response(200, json={'successful': {'0': {'key': 'ATTACH01'}}})
+        if path == '/api/users/0/items/ATTACH01':
+            return httpx.Response(200, json=children[0])
+        if path.endswith('/file'):
+            uploads.append(path)
+            return httpx.Response(503 if len(uploads) == 1 else 200, json={'exists': 1})
+        return httpx.Response(404)
+    receipt = {}
+    for attempt in range(2):
+        adapter = ZoteroClient(ZoteroConfig(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+        if attempt == 0:
+            from arxiv_ra.zotero import ZoteroError
+            with pytest.raises(ZoteroError):
+                adapter.save_paper(_paper(), {}, 'Test', pdf_path=pdf, collection_key='__root__', receipt=receipt)
+        else:
+            adapter.save_paper(_paper(), {}, 'Test', pdf_path=pdf, collection_key='__root__', receipt=receipt)
+    assert len(children) == 1
+    assert uploads == ['/api/users/0/items/ATTACH01/file'] * 2
+
+
+def test_lookup_reads_all_pages_before_choosing_match(monkeypatch):
+    monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'test')
+    def handler(request):
+        if request.url.path == '/api/':
+            return httpx.Response(200, headers={'Zotero-Server-ID': 'SERVER1'})
+        if request.url.path.endswith('/top'):
+            key = 'FIRST001' if request.url.params.get('start', '0') == '0' else 'SECOND01'
+            return httpx.Response(200, headers={'Total-Results': '2'}, json=[
+                {'data': {'key': key, 'archiveID': '2407.05600'}}])
+        return httpx.Response(500)
+    adapter = ZoteroClient(ZoteroConfig(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(ZoteroConflict) as error:
+        adapter.save_paper(_paper(), {}, 'Test', collection_key='__root__')
+    assert {c['key'] for c in error.value.candidates} == {'FIRST001', 'SECOND01'}

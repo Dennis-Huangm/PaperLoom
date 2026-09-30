@@ -239,33 +239,35 @@ class PaperVersionSync:
             return path
         return None
 
+    def _collect(self, paper, folder, report_path, signature, target):
+        from .collaboration import PaperCollection
+        metadata = read_json(report_path.with_name("metadata.json"), {}) if report_path else {}
+        operation = PaperCollection(self.config, self.project_root, clients=self.clients).collect(
+            {"paper": paper.to_dict(), "verified": metadata.get("verified") or {}},
+            zotero=target == "zotero", obsidian=target == "obsidian", report_path=report_path,
+            pdf_path=folder / "paper.pdf", zotero_factory=ZoteroClient)
+        step = operation['targets'][target]
+        if step['status'] != 'succeeded':
+            raise ValueError(step.get('error') or '收录未完成，请查看收录回执')
+        result = {"signature": signature, "operation_id": operation['operation_id']}
+        if target == 'zotero':
+            result['item_key'] = step['item_key']
+        else:
+            result['path'] = str(Path(self.config.obsidian.vault_path) / step['path'])
+        return result
+
     def _zotero(self, paper, folder, report_path, signature):
         if not self.config.zotero.attach_pdf:
             raise ValueError("请先在 Zotero 设置中启用 PDF 附件同步")
-        client = ZoteroClient(self.config.zotero)
-        try:
-            metadata = read_json(report_path.with_name("metadata.json"), {}) if report_path else {}
-            result = client.save_paper(paper.to_dict(), metadata.get("verified") or {}, self.config.profile_name,
-                                      pdf_path=folder / "paper.pdf",
-                                      report_path=report_path.with_suffix(".html") if report_path else None)
-            return {"signature": signature, "item_key": result.item_key}
-        finally:
-            client.client.close()
+        return self._collect(paper, folder, report_path, signature, 'zotero')
 
     def _obsidian(self, paper, folder, report_path, signature):
-        exporter = ObsidianExporter(self.config, self.project_root, clients=self.clients)
-        if report_path:
-            if not self.config.obsidian.sync_reports:
-                raise ValueError("请先启用 Obsidian 报告同步")
-            metadata = read_json(report_path.with_name("metadata.json"), {})
-            path = exporter.sync_report(paper.to_dict(), metadata.get("verified") or {}, report_path)
-        else:
-            saved = PaperLibraryStore(self.output_root, self.config.profile_id).contains(paper.arxiv_id)
-            path = exporter.sync_feedback(paper.to_dict(), {"label": "已收藏" if saved else "未标记"}, paper_dir=folder)
-        return {"signature": signature, "path": str(path)}
+        return self._collect(paper, folder, report_path, signature, 'obsidian')
 
     def _render(self):
         lines = [f"# {self.state.get('title') or self.state['arxiv_id']} · 版本同步", ""]
+        from urllib.parse import urlencode
+        lines += ["[查看收录回执](/collection?" + urlencode({'arxiv_id': self.state['arxiv_id']}) + ")", ""]
         if self.state.get("latest_error"):
             lines += ["未确认最新版本：" + self.state["latest_error"], ""]
         for version, operation in sorted(self.state["operations"].items(), key=lambda item: int(item[0]), reverse=True):

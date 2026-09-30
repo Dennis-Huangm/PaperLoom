@@ -137,7 +137,9 @@ def test_abstract_cache_does_not_reuse_another_revision(tmp_path, monkeypatch):
     class LLM:
         enabled = True
         def __init__(self, _config):
-            pass
+            self.client = SimpleNamespace(close=lambda: None)
+        def library_identity(self):
+            return "test-library/users/0"
         def chat(self, *args, **kwargs):
             return '{"papers":[{"id":"2609.00001","abstract_zh":"V1_SUMMARY","recommendation_detail":"V1_REASON"}]}'
     monkeypatch.setattr("arxiv_ra.abstracts.LLMClient", LLM)
@@ -181,7 +183,9 @@ def test_zotero_export_uses_selected_report_and_rejects_ambiguous_id(tmp_path, m
     saved = []
     class Zotero:
         def __init__(self, _config):
-            pass
+            self.client = SimpleNamespace(close=lambda: None)
+        def library_identity(self):
+            return "test-library/users/0"
         def save_paper(self, p, verified, profile, **kwargs):
             saved.append((p, profile, kwargs))
             return SimpleNamespace(to_dict=lambda: {"attachments_added": 1, "created": True})
@@ -202,7 +206,9 @@ def test_zotero_pdf_cache_pins_revision(tmp_path, monkeypatch):
     saved = []
     class Zotero:
         def __init__(self, _config):
-            pass
+            self.client = SimpleNamespace(close=lambda: None)
+        def library_identity(self):
+            return "test-library/users/0"
         def status(self):
             return {"ready": True}
         def save_paper(self, p, verified, profile, **kwargs):
@@ -306,7 +312,9 @@ def test_zotero_export_uses_historical_recommendation_snapshot(tmp_path, monkeyp
                    [{"profile_id": "a", "paper": paper(version).to_dict()}])
     class Zotero:
         def __init__(self, _config):
-            pass
+            self.client = SimpleNamespace(close=lambda: None)
+        def library_identity(self):
+            return "test-library/users/0"
         def status(self):
             return {"ready": True}
         def save_paper(self, p, verified, profile, **kwargs):
