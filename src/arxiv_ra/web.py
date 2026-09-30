@@ -33,7 +33,7 @@ from .library import PaperLibraryStore
 from .reading_state import READING_STATUSES, ReadingConflict
 from .models import Paper
 from .paper_data import local_paper_item, base_id, requested_version
-from .report_store import delete_report_attempts
+from .report_store import delete_report_attempts, explicit_report, html_reports, StoredReport
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .pipeline import DailyPipeline
 from .profiles import ProfileManager
@@ -295,21 +295,21 @@ def create_app(config_path: Path | str) -> FastAPI:
             return item
         raise HTTPException(status_code=404, detail="当前推荐中没有这篇论文")
 
+    def selected_report(arxiv_id: str, report_id: str) -> StoredReport:
+        report = explicit_report(output_root, base_id(arxiv_id), report_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="没有找到对应的阅读报告")
+        revision = requested_version(arxiv_id)
+        if revision and report.paper.get("version") != revision:
+            raise HTTPException(status_code=409, detail="报告修订版不匹配")
+        return report
+
     def selected_paper(arxiv_id: str, current: AppConfig, *, origin: str = "",
                        source_date: str = "", report_id: str = "") -> dict[str, Any]:
         if origin not in {"", "recommendation", "library", "report"}:
             raise HTTPException(status_code=400, detail="无效的论文来源")
         if origin == "report":
-            report = next((item for item in report_library(output_root)
-                           if item["report_id"] == report_id
-                           and item["arxiv_id"] == base_id(arxiv_id)), None)
-            if not report:
-                raise HTTPException(status_code=404, detail="没有找到对应的阅读报告")
-            item = read_json(report["metadata_path"], {})
-            revision = requested_version(arxiv_id)
-            if revision and (item.get("paper") or {}).get("version") != revision:
-                raise HTTPException(status_code=409, detail="报告修订版不匹配")
-            return {**item, "_source_date": report["date"]}
+            return selected_report(arxiv_id, report_id).source_item()
         if origin == "recommendation" and not DATE_DIR_RE.fullmatch(source_date):
             raise HTTPException(status_code=400, detail="历史推荐需要有效的推荐日期")
         item = local_paper_item(output_root, current.profile_id, arxiv_id,
@@ -369,7 +369,8 @@ def create_app(config_path: Path | str) -> FastAPI:
         return zotero_result(operation)
 
     from .web_collection import register_collection_routes
-    register_collection_routes(app, current_config, selected_paper, project_root, cached_zotero_pdf, templates, context)
+    register_collection_routes(app, current_config, selected_paper, project_root, cached_zotero_pdf,
+                               templates, context, selected_report=selected_report)
 
     generate_profile_draft = register_profile_routes(
         app, profiles, current_config, templates, context, jobs, project_root)
@@ -1102,16 +1103,17 @@ def create_app(config_path: Path | str) -> FastAPI:
         arxiv_id: str = Form(...), collection_key: str = Form(""), report_id: str = Form("")
     ) -> JSONResponse:
         arxiv_id = arxiv_id.strip()
-        matches = [item for item in report_library(output_root) if item["arxiv_id"] == arxiv_id]
+        matches = [item for item in html_reports(output_root)
+                   if item.paper.get("arxiv_id", "") == arxiv_id]
         if report_id:
-            matches = [item for item in matches if item["report_id"] == report_id]
+            matches = [item for item in matches if item.report_id == report_id]
         elif len(matches) > 1:
             raise HTTPException(status_code=409, detail="这篇论文有多份报告，请从报告列表选择具体报告")
         report = matches[0] if matches else None
         if not report:
             raise HTTPException(status_code=404, detail="没有找到这篇论文的本地报告")
 
-        payload = read_json(report["metadata_path"], {}) or {}
+        payload = report.metadata
         current = current_config()
         source_profile = str(payload.get("profile_id") or "")
         profile_name = str(payload.get("profile_name") or "")
@@ -1126,8 +1128,8 @@ def create_app(config_path: Path | str) -> FastAPI:
             source_config = copy.deepcopy(current)
             source_config.profile_name = profile_name or current.profile_name
             operation = PaperCollection(source_config, project_root).collect(
-                payload, zotero=True, report_path=report["report_path"].with_suffix('.md'),
-                pdf_path=report["pdf_path"] if report["pdf_path"].exists() else None,
+                payload, zotero=True, report_path=report.markdown_path,
+                pdf_path=report.pdf_path if report.pdf_path.exists() else None,
                 collection_key=collection_key, zotero_factory=ZoteroClient)
             return zotero_result(operation)
 

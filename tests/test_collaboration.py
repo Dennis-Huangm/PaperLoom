@@ -279,7 +279,7 @@ def test_explicit_recollection_preserves_old_receipt(workspace):
         assert len(state['operations']) == 2
 
 
-def test_historical_report_selection_is_exact(workspace):
+def test_historical_report_selection_is_exact(workspace, monkeypatch):
     config, vault = workspace
     root = config.parent / 'run'
     for name, body in [('old', 'SELECTED REPORT'), ('new', 'UNSELECTED REPORT')]:
@@ -289,11 +289,51 @@ def test_historical_report_selection_is_exact(workspace):
             'abstract': '', 'published': '2026-09-01'}})
         (folder / 'report.md').write_text('# Shared Paper\n\n' + body, encoding='utf-8')
         (folder / 'report.html').write_text(body, encoding='utf-8')
+    scans = []
+    original_glob = Path.glob
+
+    def observed_glob(path, pattern, **kwargs):
+        if path == root and pattern == '????-??-??/reports/*/metadata.json':
+            scans.append(pattern)
+        return original_glob(path, pattern, **kwargs)
+
     with TestClient(create_app(config)) as client:
+        monkeypatch.setattr(Path, 'glob', observed_glob)
         result = collect(client, origin='report', report_id='2026-09-01/reports/old/report.html').json()
         assert result['targets']['obsidian']['status'] == 'succeeded', result
         content = (vault / result['targets']['obsidian']['path']).read_text('utf-8')
         assert 'SELECTED REPORT' in content and 'UNSELECTED REPORT' not in content
+        # The chosen metadata and materials must share one directory discovery.
+        assert len(scans) == 1
+
+
+@pytest.mark.parametrize('change, expected_status', [
+    ('cross-direction', 200), ('wrong-version', 409), ('wrong-paper', 404),
+    ('missing-html', 404), ('missing-id', 404),
+])
+def test_explicit_report_selection_preserves_identity_errors(workspace, change, expected_status):
+    config, vault = workspace
+    folder = config.parent / 'run/2026-09-01/reports/selected'
+    write_json(folder / 'metadata.json', {'profile_id': 'another-direction', 'paper': {
+        'arxiv_id': '2609.00002' if change == 'wrong-paper' else '2609.00001',
+        'version': 1 if change == 'wrong-version' else 2, 'title': 'Selected Paper',
+        'authors': [], 'published': '2026-09-01'}})
+    (folder / 'report.md').write_text('EXPLICIT CROSS-DIRECTION REPORT', encoding='utf-8')
+    if change != 'missing-html':
+        (folder / 'report.html').write_text('HTML', encoding='utf-8')
+    report_id = '2026-09-01/reports/selected/report.html'
+    if change == 'missing-id':
+        report_id = '2026-09-01/reports/not-selected/report.html'
+    with TestClient(create_app(config)) as client:
+        response = collect(client, origin='report', report_id=report_id)
+        assert response.status_code == expected_status, response.text
+        if expected_status == 200:
+            receipt = response.json()
+            assert receipt['targets']['obsidian']['status'] == 'succeeded'
+            note = vault / receipt['targets']['obsidian']['path']
+            assert 'EXPLICIT CROSS-DIRECTION REPORT' in note.read_text('utf-8')
+        else:
+            assert client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()['operations'] == []
 
 
 def test_unknown_pdf_version_requires_attention_without_download(workspace, zotero_server):

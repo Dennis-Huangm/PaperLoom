@@ -96,6 +96,17 @@ and revision must match. Unscoped legacy metadata remains compatible, but a
 known revision never falls back to unknown or different revisions. Scoped
 reports take precedence over legacy reports of the same revision.
 
+Report discovery reads metadata into operation-local `StoredReport` records with
+the sibling HTML, Markdown and PDF paths. The web catalog and evidence lookup use
+these shared facts but retain separate selection policies: direction-local HTML
+selection keeps catalog date/generated-time order for equal scope and quality;
+Markdown evidence uses its file modification time; the cross-direction overview
+retains revision/quality/HTML modification-time ranking. Explicit report selection
+never substitutes a preferred report and resolves metadata and collection materials
+in one scan. Records are not cached across requests or file transactions; collection
+still validates materials at execution. Report publication and deletion locking are
+unchanged.
+
 Obsidian paper manifest keys are `<profile>::<arxiv-id>`; legacy keys are
 migrated on writes for their original named profile. Attachment paths include
 profile and revision. Managed updates retain text on both sides of the markers

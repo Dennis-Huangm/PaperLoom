@@ -8,8 +8,6 @@ from fastapi import Form, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from .collaboration import PaperCollection
-from .paper_data import base_id
-from .web_catalog import report_library
 
 
 LABELS = {'succeeded': '已完成', 'failed': '失败，可重试', 'partial': '部分完成',
@@ -60,21 +58,15 @@ def collection_time(value, timezone):
         return value
 
 
-def register_collection_routes(app, current_config, selected_paper, project_root, pdf_loader, templates, context):
+def register_collection_routes(app, current_config, selected_paper, project_root, pdf_loader, templates, context,
+                               *, selected_report):
     def resolve(arxiv_id, config, origin, source_date, report_id):
-        item = selected_paper(arxiv_id, config, origin=origin, source_date=source_date, report_id=report_id)
-        report_path = None
-        pdf_path = None
         if origin == 'report':
-            output = PaperCollection(config, project_root).output
-            report = next((r for r in report_library(output) if r['report_id'] == report_id
-                           and r['arxiv_id'] == base_id(arxiv_id)), None)
-            if not report:
-                raise HTTPException(404, '报告不存在')
-            report_path = Path(report['report_path']).with_suffix('.md')
-            if report['pdf_path'].is_file():
-                pdf_path = report['pdf_path']
-        return item, report_path, pdf_path
+            report = selected_report(arxiv_id, report_id)
+            return (report.source_item(), report.markdown_path,
+                    report.pdf_path if report.pdf_path.is_file() else None)
+        item = selected_paper(arxiv_id, config, origin=origin, source_date=source_date, report_id=report_id)
+        return item, None, None
 
     @app.get('/collection')
     def page(request: Request, arxiv_id: str, origin: str = '', source_date: str = '', report_id: str = ''):

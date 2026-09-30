@@ -13,7 +13,7 @@ from .utils import read_json
 from .library import PaperLibraryStore
 from .feedback import FeedbackStore
 from .paper_data import base_id
-from .report_store import profile_matches, quality_rank
+from .report_store import preferred_report_index, profile_matches, quality_rank, html_reports
 from .version_sync import STEP_LABELS, STATUS_LABELS
 
 
@@ -98,18 +98,15 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
     reports: list[dict[str, Any]] = []
     if not output_root.exists():
         return reports
-    for metadata_path in output_root.glob("????-??-??/reports/*/metadata.json"):
-        payload = _safe_json(metadata_path, {}) or {}
-        if not isinstance(payload, dict):
-            continue
-        paper = payload.get("paper") or {}
+    for record in html_reports(output_root):
+        metadata_path = record.metadata_path
+        payload = record.metadata
+        paper = record.paper
         verified = payload.get("verified") or {}
-        report_path = metadata_path.parent / "report.html"
-        if not report_path.exists():
-            continue
+        report_path = record.html_path
         reports.append(
             {
-                "date": metadata_path.parents[2].name,
+                "date": record.date,
                 "folder": metadata_path.parent.name,
                 "arxiv_id": paper.get("arxiv_id", ""),
                 "version": paper.get("version"),
@@ -128,7 +125,7 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "venue": verified.get("venue") or "会议/期刊未核实",
                 "venue_status": verified.get("venue_status", "unverified"),
                 "report_url": artifact_url(report_path, output_root),
-                "report_id": report_path.relative_to(output_root).as_posix(),
+                "report_id": record.report_id,
                 "method_figure_count": len(
                     list(metadata_path.parent.glob("method-figure-*"))
                 ),
@@ -137,7 +134,7 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 ).isoformat(timespec="minutes"),
                 "metadata_path": metadata_path,
                 "report_path": report_path,
-                "pdf_path": metadata_path.parent / "paper.pdf",
+                "pdf_path": record.pdf_path,
             }
         )
     reports.sort(key=lambda item: (item["date"], item["generated_at"] or item["updated_at"]), reverse=True)
@@ -179,19 +176,6 @@ def grouped_report_library(reports: list[dict[str, Any]],
         grouped.append(chosen)
     grouped.sort(key=lambda item: (item["date"], item["generated_at"] or item["updated_at"]), reverse=True)
     return grouped
-
-
-def preferred_report_index(reports: list[dict], profile_id: str) -> dict[tuple, dict]:
-    selected = {}
-    for report in reports:
-        if not profile_matches(report, profile_id):
-            continue
-        key = (report["arxiv_id"], report.get("version"))
-        previous = selected.get(key)
-        rank = lambda item: (bool(item.get("profile_id")), quality_rank(item))
-        if previous is None or rank(report) > rank(previous):
-            selected[key] = report
-    return selected
 
 
 def weekly_library(output_root: Path, profile_id: str = "") -> list[dict[str, Any]]:
