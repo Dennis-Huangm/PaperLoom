@@ -133,6 +133,66 @@ def test_restart_retains_completion_and_preserves_malformed_files(tmp_path):
         stop(manager)
 
 
+def test_clear_finished_records_keeps_active_jobs_and_result_files(tmp_path):
+    manager = JobManager(tmp_path, max_parallel=1)
+    result = tmp_path / "result.html"
+    result.write_text("saved result", encoding="utf-8")
+    release, started = threading.Event(), threading.Event()
+
+    def holding():
+        started.set()
+        release.wait(5)
+        return result
+
+    try:
+        finished = manager.submit("weekly", "finished", lambda: result)
+        assert wait_job(manager, finished).status == "succeeded"
+        failed = manager.submit("weekly", "failed", lambda: (_ for _ in ()).throw(ValueError("fixture")))
+        assert wait_job(manager, failed).status == "failed"
+        running = manager.submit("weekly", "running", holding)
+        assert started.wait(2)
+        queued = manager.submit("weekly", "queued", lambda: result)
+        assert queued.status == "queued"
+
+        assert manager.clear_finished() == 2
+        assert manager.get(finished.id) is None and manager.get(failed.id) is None
+        assert not (tmp_path / ".jobs" / f"{finished.id}.json").exists()
+        assert not (tmp_path / ".jobs" / f"{failed.id}.json").exists()
+        assert manager.get(running.id).status == "running"
+        assert manager.get(queued.id).status == "queued"
+        assert result.read_text(encoding="utf-8") == "saved result"
+        assert manager.clear_finished() == 0
+    finally:
+        release.set()
+        stop(manager)
+
+    restored = JobManager(tmp_path)
+    try:
+        assert restored.get(finished.id) is None and restored.get(failed.id) is None
+        assert restored.get(running.id) is not None and restored.get(queued.id) is not None
+    finally:
+        stop(restored)
+
+
+def test_clear_finished_jobs_api_updates_page_without_deleting_results(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\ndiscovery:\n  interest_description: fixture\n", encoding="utf-8")
+    app = create_app(config)
+    result = tmp_path / "run" / "result.html"
+    result.parent.mkdir(exist_ok=True)
+    result.write_text("saved result", encoding="utf-8")
+
+    with TestClient(app) as client:
+        job = app.state.jobs.submit("weekly", "fixture", lambda: result)
+        assert wait_job(app.state.jobs, job).status == "succeeded"
+        assert 'id="clear-job-history"' in client.get("/generate").text
+        response = client.delete("/api/jobs/completed")
+        assert response.status_code == 200 and response.json() == {"deleted": 1}
+        assert client.get(f"/api/jobs/{job.id}").status_code == 404
+        assert "当前没有后台任务" in client.get("/generate").text
+        assert client.get("/artifacts/result.html").text == "saved result"
+
+
 def test_retry_uses_pinned_paper_and_saved_config_without_duplicate_attempts(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "PRIVATE_RUNTIME_SECRET")
     manager = JobManager(tmp_path)

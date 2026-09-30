@@ -11,6 +11,7 @@ from .models import Paper, ReportArtifact, VerifiedMetadata
 from .report_presentation import compact_report
 from .markdown_rendering import render_markdown
 from .utils import atomic_write_text
+from .summary_cleaning import clean_summary_text
 
 
 STYLE = """
@@ -69,6 +70,7 @@ def markdown_with_math(markdown_text: str) -> tuple[str, str]:
 def summary_html(text: str) -> str:
     """Render public paper summaries with the shared dialect and no active media."""
     from .markdown_rendering import ReportRenderError
+    text = clean_summary_text(text)
     try:
         body, _ = markdown_with_math(text or "")
     except ReportRenderError:
@@ -100,6 +102,7 @@ def report_document(
         )
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{escaped_title}</title>
 <link rel="stylesheet" href="{assets}/vendor/fontawesome/css/all.min.css">
+<link rel="icon" href="{assets}/app-icon.ico" sizes="any">
 <link rel="stylesheet" href="{assets}/vendor/katex/katex.min.css">
 <style>{REPORT_STYLE}</style></head><body>
 <header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>PaperLoom</span></a>
@@ -107,18 +110,21 @@ def report_document(
 <p id="report-action-message" role="status"></p><div class="report-shell"><aside class="report-sidebar"><p class="toc-title">CONTENTS</p><p class="toc-doc-title">{escaped_title}</p><nav class="report-toc" aria-label="报告目录">{toc}</nav></aside><article class="report-article">{body}</article></div>
 <script defer src="{assets}/vendor/katex/katex.min.js"></script><script defer src="{assets}/report.js"></script></body></html>"""
 
-def render_report(markdown_text: str, destination: Path, title: str, arxiv_id: str = "",
-                  *, profile_id: str = "", report_id: str = "") -> None:
-    # Disk artifacts must also work when opened via file://. HTTP report views
-    # are freshly rendered by ReportStaticFiles using /static and the app CSP.
+def _local_asset_base(destination: Path) -> str:
+    # Disk artifacts must also work when opened via file://.
     static = Path(__file__).resolve().parent / "static"
     try:
-        asset_base = quote(Path(os.path.relpath(static, destination.resolve().parent)).as_posix(), safe="/")
+        return quote(Path(os.path.relpath(static, destination.resolve().parent)).as_posix(), safe="/")
     except ValueError:  # Windows destinations may reside on another drive.
-        asset_base = static.as_uri()
+        return static.as_uri()
+
+
+def render_report(markdown_text: str, destination: Path, title: str, arxiv_id: str = "",
+                  *, profile_id: str = "", report_id: str = "") -> None:
+    # HTTP report views are freshly rendered by ReportStaticFiles using /static.
     atomic_write_text(destination, report_document(markdown_text, title, arxiv_id,
                                                   profile_id=profile_id, report_id=report_id,
-                                                  asset_base=asset_base))
+                                                  asset_base=_local_asset_base(destination)))
 
 
 
@@ -138,7 +144,7 @@ def render_digest(artifacts: list[ReportArtifact], destination: Path, date_label
 <div class='score'>{paper.final_score:.1f}</div></main>"""
         )
     body = "\n".join(cards) or "<main><p>本次没有符合条件的新论文。</p></main>"
-    page = f"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>arXiv 科研日报 {date_label}</title><style>{STYLE}</style><body><h1>arXiv 科研日报 · {date_label}</h1>{body}</body></html>"
+    page = f"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>arXiv 科研日报 {date_label}</title><link rel='icon' href='{_local_asset_base(destination)}/app-icon.ico' sizes='any'><style>{STYLE}</style><body><h1>arXiv 科研日报 · {date_label}</h1>{body}</body></html>"
     destination.write_text(page, encoding="utf-8")
     return page
 
@@ -174,6 +180,6 @@ def render_recommendations(
 <div class='score'>{paper.final_score:.1f}</div></main>"""
         )
     body = "\n".join(cards) or "<main><p>本次没有符合条件的新论文。</p></main>"
-    page = f"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>arXiv 每日推荐 {date_label}</title><style>{STYLE}</style><body><h1>arXiv 每日推荐 · {date_label}</h1><p>深度阅读报告不会自动生成；需要时请使用 arXiv ID 主动生成并保存在本地。</p>{body}</body></html>"
+    page = f"<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>arXiv 每日推荐 {date_label}</title><link rel='icon' href='{_local_asset_base(destination)}/app-icon.ico' sizes='any'><style>{STYLE}</style><body><h1>arXiv 每日推荐 · {date_label}</h1><p>深度阅读报告不会自动生成；需要时请使用 arXiv ID 主动生成并保存在本地。</p>{body}</body></html>"
     atomic_write_text(destination, page)
     return page

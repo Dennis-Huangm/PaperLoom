@@ -5,7 +5,7 @@ import re
 import unicodedata
 
 from .models import ParsedPaper
-from .quality import audit_report_numbers, apply_numeric_policy
+from .quality import audit_report_numbers, apply_numeric_policy, preserve_unverified_content
 from .source_spans import source_spans, exact_span, ID_TOKEN, SPAN_VERSION
 
 
@@ -62,6 +62,149 @@ EVIDENCE_GUIDANCE = """对核心方法、主要贡献、实验设置、关键结
 
 KEY_SECTIONS = ("核心方法", "主要贡献", "实验设置", "关键结果", "局限性")
 TOKEN = re.compile(r"\[\[证据:(.*?)\]\]|\[\[证据ID:([^\]\n]*)\]\]", re.S)
+TABLE_CAPTION = re.compile(r"\bTable\s+(\d+)\s*[:：]\s*([^\r\n]*)", re.I)
+
+
+def source_table_inventory(parsed: ParsedPaper | None) -> list[dict]:
+    """List PDF table captions with physical pages, independent of model notes."""
+    found = {}
+    for page, content in enumerate(parsed.page_texts if parsed else [], 1):
+        for match in TABLE_CAPTION.finditer(content):
+            number = int(match[1])
+            found.setdefault(number, {"number": number, "page": page,
+                                      "title": " ".join(match[2].split())[:160]})
+    return [found[number] for number in sorted(found)]
+
+
+def report_table_coverage(report: str, inventory: list[dict]) -> dict:
+    """Count reproduced Markdown tables, not captions or images alone."""
+    from .table_quality import tables
+    headings = list(re.finditer(r"(?m)^#{2,6}\s+[^\n]+", report))
+    presented = set()
+    partial = set()
+    for row in tables(report, TOKEN):
+        preceding = next((heading for heading in reversed(headings)
+                          if heading.start() < row["header_start"]), None)
+        if preceding and (match := re.search(r"\bTable\s+(\d+)\b|表\s*(\d+)\b", preceding[0], re.I)):
+            number = int(match[1] or match[2])
+            (partial if re.search(r"节选|摘录|excerpt|partial", preceding[0], re.I)
+             else presented).add(number)
+    known = {item["number"] for item in inventory}
+    partial -= presented
+    return {"source_count": len(inventory), "presented": sorted(presented & known),
+            "partial": [item for item in inventory if item["number"] in partial],
+            "missing": [item for item in inventory if item["number"] not in presented | partial]}
+
+
+def source_table_index(coverage: dict) -> str:
+    missing = coverage["missing"]
+    partial = coverage.get("partial", [])
+    if not missing and not partial:
+        return ""
+    lines = ["## 原文表格索引", "", "下列原文表格尚未确认完整复刻；未按表号匹配的表也可能以其他标题出现。链接仅指向原文位置，数值未逐项核验。", ""]
+    lines.extend(f'- [Table {item["number"]}](paper.pdf#page={item["page"]})：摘录，完整性待核对；{item["title"]}'
+                 for item in partial)
+    lines.extend(f'- [Table {item["number"]}](paper.pdf#page={item["page"]})：正文未按表号匹配；{item["title"]}'
+                 for item in missing)
+    return "\n".join(lines)
+
+
+def publication_gate(coverage: dict) -> dict:
+    """Summarize automatic review findings without certifying paper truth."""
+    audit = coverage["numeric_audit"]
+    issues = audit.get("issues", [])
+    conflicts = [issue for issue in issues if issue.get("table_binding", {}).get("bad_columns")]
+    unverified = [issue for issue in issues if issue not in conflicts]
+    tables = coverage["table_coverage"]
+    unassessed_tables = sum(check.get("status") in {"unassessed", "partial_headers_checked", "row_order_checked"}
+                            for check in audit.get("table_checks", []))
+    # A Markdown table and a matching caption do not establish that every PDF
+    # row, condition and footnote was reproduced.
+    unassessed_completeness = len(tables["presented"])
+    review = (not coverage["status"] == "checked" or bool(issues) or
+              bool(tables["partial"] or tables["missing"]) or
+              bool(coverage["rejected_citations"] or unassessed_tables or unassessed_completeness))
+    return {"status": "review_required" if review else "automatic_checks_passed",
+            "source_located_citations": coverage["validated_citations"],
+            "unverified_claims": len(unverified), "conflicting_claims": len(conflicts),
+            "partial_tables": len(tables["partial"]), "missing_tables": len(tables["missing"]),
+            "table_completeness_unassessed": unassessed_completeness,
+            "unassessed_table_rows": unassessed_tables,
+            "scope": "source_location_and_limited_numeric_consistency; not_semantic_or_paper_truth"}
+
+
+def restore_table_row_citations(report: str, notes: list[str], parsed: ParsedPaper,
+                                spans: dict[str, dict]) -> str:
+    """Restore a dropped row ID only when the note and physical PDF agree.
+
+    A cited peer ties the report table to the same PDF table. Plain PDF text
+    also needs an explicit table caption because its headers cannot be bound.
+    """
+    from .table_quality import check_row, label, scalar, tables
+
+    if not parsed.page_texts or not spans:
+        return report
+    rows = list(tables(report, TOKEN))
+    candidates = {}
+
+    def row_key(row):
+        if label(row["headers"][-1]) not in {"依据", "原文依据"}:
+            return None
+        values = [" ".join(cell[0].split()) for cell in row["cells"][:-1]]
+        return tuple(values) if any(scalar(value) is not None for value in values) else None
+
+    def sources(row):
+        _, start, end = row["cells"][-1]
+        return [spans[key] for match in TOKEN.finditer(row["raw"][start:end])
+                if (key := (match.group(2) or "").strip()) in spans]
+
+    def checked_location(row, source_rows):
+        binding = check_row(row, source_rows, parsed.page_texts)
+        locations = {tuple(item) for item in binding.get("source_rows", [])}
+        if binding["status"] not in {"headers_checked", "row_order_checked"} or len(locations) != 1:
+            return None
+        return binding["status"], next(iter(locations))
+
+    def caption(page, offset):
+        prefix = parsed.page_texts[page - 1][:offset]
+        matches = list(re.finditer(r"(?im)^\s*(?:table|表)\s*\d+\s*[:：]", prefix))
+        return matches[-1].start() if matches else None
+
+    for note in notes:
+        for row in tables(note, TOKEN):
+            key = row_key(row)
+            if key and (found := sources(row)):
+                candidates.setdefault(key, []).append(found)
+
+    anchors = {}
+    for row in rows:
+        if (found := sources(row)) and (location := checked_location(row, found)):
+            anchors.setdefault(row["header_start"], []).append(location)
+
+    edits = []
+    for row in rows:
+        key = row_key(row)
+        if not key or len(candidates.get(key, [])) != 1:
+            continue
+        evidence_cell, start, end = row["cells"][-1]
+        if evidence_cell not in {"", "—", "当前材料缺少可定位原文依据"}:
+            continue
+        found = candidates[key][0]
+        checked = checked_location(row, found)
+        if not checked:
+            continue
+        status, (page, offset, _) = checked
+        peers = anchors.get(row["header_start"], [])
+        table_caption = caption(page, offset)
+        if not any(peer_page == page and table_caption == caption(page, peer_start) and
+                   (table_caption is not None or status == "headers_checked")
+                   for _, (peer_page, peer_start, _) in peers):
+            continue
+        tokens = " ".join(f'[[证据ID:{source["source_id"]}]]' for source in found)
+        edits.append((row["start"] + start, row["start"] + end, " " + tokens + " "))
+    for start, end, replacement in reversed(edits):
+        report = report[:start] + replacement + report[end:]
+    return report
 
 
 def _normalize(text: str) -> str:
@@ -112,7 +255,7 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
             existing.update({k: resolved[k] for k in ("source_id", "start", "end", "text_sha256")})
         if section and section not in existing["sections"]:
             existing["sections"].append(section)
-        return f'[原文 {existing["id"]} · PDF 第 {page} 页](paper.pdf#page={page})'
+        return f'[{existing["id"]}](paper.pdf#page={page})'
 
     report = re.sub(r"\[([^\]\n]+)\]\([^\s)]*#page=\d+[^)]*\)", r"\1（模型提供的页码未核对）", report, flags=re.I)
     # Covers raw HTML, reference-style links and bare URLs too. Only the
@@ -131,11 +274,15 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
                      {"version": 1, "checked_claims": 0, "issues": [], "semantic_support": "not_assessed"})
     numeric_audit['completed_row_citations'] = completed_rows
     if full_report:
+        numeric_audit = preserve_unverified_content(numeric_audit, TOKEN)
+        for issue in numeric_audit["issues"]:
+            issue["review_state"] = ("explicit_conflict" if issue.get("table_binding", {}).get("bad_columns")
+                                     else "pending_verification")
         report = apply_numeric_policy(report, numeric_audit)
     sections = list(re.finditer(r"(?m)^##\s+([^\n]+)", report))
     report = TOKEN.sub(replace, report)
     if numeric_audit["issues"]:
-        notice = "> **实验数值待核对**：依据不足或归属冲突的数值已暂不展示；表格中的“—”不代表零或论文未报告。[查看原始内容与核对详情](evidence.json)。\n\n"
+        notice = "> **实验数值待核对**：标注“待核对”的内容尚未确认，请勿作为已核实结论；明确归属冲突的单元格以“—”显示，不代表零或论文未报告。[查看核对详情](evidence.json)。\n\n"
         title = re.match(r"\s*# [^\n]+\n", report)
         position = title.end() if title else 0
         report = report[:position] + "\n" + notice + report[position:]
@@ -148,6 +295,8 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
                 "missing_sections": missing, "citations": citations, "numeric_audit": numeric_audit}
     coverage["source_spans"] = {"version": SPAN_VERSION, "available": len(spans),
                                 "cited": sum("source_id" in c for c in citations)}
+    coverage["table_coverage"] = report_table_coverage(report, source_table_inventory(parsed) if full_report else [])
+    coverage["publication_gate"] = publication_gate(coverage)
     total = coverage["total_pages"]
     summary = ["## 引用与核对"]
     if coverage["status"] == "unavailable":
@@ -164,4 +313,6 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
     summary.append("引用链接仅核验原文位置，不代表结论正确。[查看引用与数值核对详情](evidence.json)。")
     if any(c["status"] in {"row_order_checked", "partial_headers_checked", "unassessed"} for c in numeric_audit.get("table_checks", [])):
         summary.append("部分表格尚未完成指标表头、单位和实验条件的对应核验，请结合原文阅读。")
+    if table_index := source_table_index(coverage["table_coverage"]):
+        summary.append(table_index)
     return report.rstrip() + "\n\n" + "\n\n".join(summary) + "\n", coverage

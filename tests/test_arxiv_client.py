@@ -168,6 +168,122 @@ def test_too_small_pdf_does_not_replace_existing_file(tmp_path) -> None:
     assert list(tmp_path.glob("*.part")) == []
 
 
+class InterruptedPDFStream(httpx.SyncByteStream):
+    def __iter__(self):
+        yield b"%PDF-1.7\n" + b"partial" * 4096
+        raise httpx.RemoteProtocolError(
+            "peer closed connection without sending complete message body "
+            "(received 17825792 bytes, expected 21235990)"
+        )
+
+
+@pytest.mark.parametrize("version_download", [False, True])
+def test_pdf_retries_interrupted_body_from_start(tmp_path, monkeypatch, version_download):
+    paper = parse_feed(ATOM)[0]
+    destination = tmp_path / "paper.pdf"
+    payload = b"%PDF-1.7\n" + b"complete" * 2048
+    requests = []
+    delays = []
+
+    def handler(request):
+        requests.append(request)
+        assert not destination.exists()
+        assert list(tmp_path.glob("*.part")) == []
+        if len(requests) < 3:
+            return httpx.Response(200, stream=InterruptedPDFStream())
+        assert request.headers.get("Range") == "bytes=0-"
+        return httpx.Response(206, content=payload, headers={
+            "Content-Range": f"bytes 0-{len(payload) - 1}/{len(payload)}",
+        })
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", delays.append)
+    client = ArxivClient(max_retries=3, retry_base_delay=1, min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        if version_download:
+            client.download_version(paper.arxiv_id, paper.version, destination)
+        else:
+            client.download_pdf(paper, destination)
+
+    assert destination.read_bytes() == payload
+    assert len(requests) == 3
+    assert all(str(request.url) == paper.pdf_url for request in requests)
+    assert requests[0].headers.get("Range") is None
+    assert delays[:2] == [1, 2]
+    assert list(tmp_path.glob("*.part")) == []
+
+
+@pytest.mark.parametrize("version_download", [False, True])
+def test_pdf_exhausted_retries_preserve_existing_file(tmp_path, monkeypatch, version_download):
+    paper = parse_feed(ATOM)[0]
+    destination = tmp_path / "paper.pdf"
+    previous = b"previous complete PDF" if not version_download else b"old small file"
+    destination.write_bytes(previous)
+    requests = []
+    delays = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, stream=InterruptedPDFStream())
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", delays.append)
+    client = ArxivClient(max_retries=2, retry_base_delay=1, min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        with pytest.raises(RuntimeError, match="PDF.*已自动重试 2 次") as error:
+            if version_download:
+                client.download_version(paper.arxiv_id, paper.version, destination)
+            else:
+                client.download_pdf(paper, destination)
+
+    assert isinstance(error.value.__cause__, httpx.RemoteProtocolError)
+    assert "17825792" in str(error.value)
+    assert len(requests) == 3
+    assert delays == [1, 2]
+    assert destination.read_bytes() == previous
+    assert list(tmp_path.glob("*.part")) == []
+
+
+def test_pdf_does_not_retry_permanent_http_error(tmp_path, monkeypatch):
+    requests = []
+    delays = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(404)
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", delays.append)
+    client = ArxivClient(min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        with pytest.raises(httpx.HTTPStatusError):
+            client.download_pdf(parse_feed(ATOM)[0], tmp_path / "paper.pdf")
+    assert len(requests) == 1
+    assert delays == []
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("content_range", [
+    None, "bytes 100-20000/20001", "bytes 0-12000/24000", "bytes 0-24000/24001",
+])
+def test_pdf_rejects_incomplete_range_response(tmp_path, monkeypatch, content_range):
+    payload = b"%PDF-1.7\n" + b"x" * 16384
+    headers = {"Content-Range": content_range} if content_range else {}
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", lambda _: None)
+    client = ArxivClient(max_retries=0, min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(206, content=payload, headers=headers)
+    )) as transport:
+        client.client = transport
+        with pytest.raises(RuntimeError, match="PDF.*已自动重试 0 次"):
+            client.download_pdf(parse_feed(ATOM)[0], tmp_path / "paper.pdf")
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("date_header", [False, True])
 def test_retry_after_long_cooldown_is_not_shortened(monkeypatch, date_header):
     from datetime import datetime, timedelta, timezone

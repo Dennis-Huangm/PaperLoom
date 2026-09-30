@@ -48,6 +48,110 @@ def test_generate_draft_preserves_user_intent_without_activating(workspace):
     assert "必要条件" in page.text and "survey" in page.text
 
 
+def test_model_names_new_direction_and_manual_rename_survives_regeneration(workspace):
+    client, model, root = workspace
+    suggested_names = iter(["机器人世界模型", "具身预测模型"])
+    model.chat = lambda *a, **kw: json.dumps({
+        "profile_name": next(suggested_names),
+        "interest_description": "机器人控制中的世界模型",
+        "arxiv_categories": ["cs.RO"],
+        "arxiv_query_terms": ["world model"],
+    })
+    draft = client.post("/api/profile-drafts", json={
+        "name": "我写的一个很长的方向名称", "keywords": ["world model"],
+    }).json()
+    assert draft["name"] == "机器人世界模型"
+    assert draft["source"]["name_hint"] == "我写的一个很长的方向名称"
+    page = client.get(f'/profiles/drafts/{draft["id"]}').text
+    assert 'name="name" value="机器人世界模型"' in page
+
+    edited = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={
+        "revision": 1, "name": "机器人视觉预测",
+    }).json()
+    assert edited["name_user_edited"] is True
+    regenerated = client.post(f'/api/profile-drafts/{draft["id"]}/regenerate', json={
+        "revision": edited["revision"],
+    }).json()
+    assert regenerated["name"] == "机器人视觉预测"
+    assert regenerated["source"]["name_hint"] == "我写的一个很长的方向名称"
+    response = client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={
+        "revision": regenerated["revision"],
+    })
+    assert response.status_code == 200
+    assert (root / "profiles" / f'{draft["id"]}.yaml').exists()
+    assert response.json()["name"] == "机器人视觉预测"
+
+
+def test_invalid_manual_direction_name_rejected(workspace):
+    client, _, _ = workspace
+    draft = client.post("/api/profile-drafts", json={"name": "Robots", "keywords": ["robot"]}).json()
+    response = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={
+        "revision": 1, "name": "   ",
+    })
+    assert response.status_code == 400
+    assert client.get(f'/api/profile-drafts/{draft["id"]}').json()["name"] == "Robots"
+
+
+def test_regeneration_updates_unedited_model_name(workspace):
+    client, model, _ = workspace
+    names = iter(["机器人模型", "机器人世界模型"])
+    model.chat = lambda *a, **kw: json.dumps({
+        "profile_name": next(names), "arxiv_query_terms": ["world model"],
+    })
+    draft = client.post("/api/profile-drafts", json={
+        "name": "机器人方向", "keywords": ["world model"],
+    }).json()
+    assert draft["name"] == "机器人模型"
+    regenerated = client.post(f'/api/profile-drafts/{draft["id"]}/regenerate', json={
+        "revision": 1,
+    }).json()
+    assert regenerated["name"] == "机器人世界模型"
+
+
+def test_preview_range_is_validated_and_passed_without_editing_daily_config(workspace, monkeypatch):
+    client, _, root = workspace
+    draft = client.post('/api/profile-drafts', json={'name': 'Range', 'keywords': ['SVG']}).json()
+    calls = []
+    def preview(saved, config, *, references_only=False, lookback_days=90):
+        calls.append(lookback_days)
+        return {'revision': saved['revision'], 'status': 'empty', 'sources': {}, 'selected': [], 'rejected': []}
+    monkeypatch.setattr('arxiv_ra.web_profiles.preview_profile', preview)
+    url = f"/api/profile-drafts/{draft['id']}/preview"
+    assert client.post(url, json={'revision': 1, 'lookback_days': 366}).status_code == 400
+    assert client.post(url, json={'revision': 1, 'lookback_days': True}).status_code == 400
+    response = client.post(url, json={'revision': 1, 'lookback_days': 30})
+    assert response.status_code == 202
+    for _ in range(100):
+        if calls:
+            break
+        time.sleep(.01)
+    assert calls == [30]
+    current = client.get(f"/api/profile-drafts/{draft['id']}").json()
+    assert current['discovery'] == draft['discovery']
+    page = client.get(f"/profiles/drafts/{draft['id']}")
+    assert '最近 90 天（推荐）' in page.text
+    assert 'id="draft-results"' in page.text
+    assert '启用此方向' in page.text
+    from bs4 import BeautifulSoup
+    html = BeautifulSoup(page.text, 'html.parser')
+    assert [o.get('value') for o in html.select('.draft-preview-form select option')] == ['90', '30', '365', str(draft['discovery']['lookback_days'])]
+
+
+def test_missing_model_client_dependency_creates_failed_draft(workspace, monkeypatch):
+    client, _, _ = workspace
+
+    def missing_llm(_self):
+        raise ImportError("Using SOCKS proxy, but socksio is not installed")
+
+    monkeypatch.setattr(ResearchClients, "llm", property(missing_llm))
+    response = client.post("/api/profile-drafts", json={"name": "Robots", "keywords": ["robot"]})
+
+    assert response.status_code == 201
+    draft = response.json()
+    assert draft["status"] == "failed"
+    assert any("socksio" in message for message in draft["diagnostics"])
+
+
 def test_edit_activate_and_reject_stale_revision(workspace):
     client, _, root = workspace
     draft = client.post("/api/profile-drafts", json={"name": "Editable", "keywords": ["world model"]}).json()

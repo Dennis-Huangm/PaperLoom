@@ -82,7 +82,7 @@
       <article class="job job-{{ job.status }}" data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
         <span class="job-indicator"><i class="far fa-clock" aria-hidden="true"></i></span>
         <div><strong>{{ job.label }}</strong><p>{{ job.detail }}</p>{% if job.warnings %}<ul class="job-warnings">{% for warning in job.warnings %}<li>{{ warning.component }}：{{ warning.message }}</li>{% endfor %}</ul>{% endif %}</div>
-        <time>{{ job.updated_at[11:19] }}</time><span class="job-actions">{% if job.result_url %}<a href="{{ job.result_url }}" target="_blank" rel="noreferrer">打开结果</a>{% endif %}{% if job.status in ['queued', 'running'] %}<button class="job-cancel" type="button" data-cancel-job="{{ job.id }}">取消任务</button>{% endif %}</span>
+        <time>{{ job.updated_at[11:19] }}</time><span class="job-actions">{% if job.result_url %}<a href="{{ job.result_url }}">打开结果</a>{% endif %}{% if job.status in ['queued', 'running'] %}<button class="job-cancel" type="button" data-cancel-job="{{ job.id }}">取消任务</button>{% endif %}</span>
       </article>
       {% else %}<div class="queue-empty"><p>同步进度和结果会显示在这里。</p></div>{% endfor %}
     </div>
@@ -104,14 +104,14 @@
       </li>{% endfor %}
       </ul>
       <footer>{% if batch.summary.remaining %}<form class="job-form" action="/api/jobs/version-batch/{{ batch.id }}" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button primary" type="submit">{{ '开始此批次' if batch.status == 'preview' else '继续未完成论文' }}（{{ batch.summary.remaining }} 篇）</button></form>{% endif %}
-      {% if batch.status != 'preview' %}<a class="button secondary" href="{{ batch.result_url }}" target="_blank">查看批次结果</a>{% endif %}</footer>
+      {% if batch.status != 'preview' %}<a class="button secondary" href="{{ batch.result_url }}">查看批次结果</a>{% endif %}</footer>
     </details>
     {% endfor %}
   </section>
   {% endif %}
   {% if tracking['events'] %}
   <section class="tracking-section"><header><p class="section-kicker">UPDATES</p><h2>发现的新版本</h2></header><div class="tracking-events">
-    {% for event in tracking['events'] %}<article><span>v{{ event.from_version }} → v{{ event.to_version }}</span><div><strong>{{ event.title }}</strong><p>arXiv:{{ event.arxiv_id }} · {{ event.detected_at[:16]|replace('T',' ') }}</p>{% if event.error %}<p>差异分析失败；新版已记录。{{ event.error }}</p>{% endif %}</div>{% if event.report_url %}<a class="button secondary" href="{{ event.report_url }}" target="_blank">查看差异</a>{% endif %}</article>{% endfor %}
+    {% for event in tracking['events'] %}<article><span>v{{ event.from_version }} → v{{ event.to_version }}</span><div><strong>{{ event.title }}</strong><p>arXiv:{{ event.arxiv_id }} · {{ event.detected_at[:16]|replace('T',' ') }}</p>{% if event.error %}<p>差异分析失败；新版已记录。{{ event.error }}</p>{% endif %}</div>{% if event.report_url %}<a class="button secondary" href="{{ event.report_url }}">查看差异</a>{% endif %}</article>{% endfor %}
   </div></section>
   {% endif %}
   <section class="version-cards" aria-label="论文版本状态">
@@ -136,7 +136,7 @@
       </form>
       <footer>
         {% if item.retry_available %}<form class="job-form" action="/api/jobs/version-sync" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ item.arxiv_id }}"><input type="hidden" name="target_version" value="{{ item.sync_target }}"><input type="hidden" name="retry" value="true"><button class="button secondary" type="submit">继续 v{{ item.sync_target }} 未完成步骤</button></form>{% endif %}
-        {% if item.sync_url %}<a class="button secondary" href="{{ item.sync_url }}" target="_blank">查看同步记录与文件</a>{% endif %}
+        {% if item.sync_url %}<a class="button secondary" href="{{ item.sync_url }}">查看同步记录与文件</a>{% endif %}
         <small>最近检查：{{ item.checked_at[:16]|replace('T',' ') or '尚未检查' }}</small>
       </footer>
     </article>

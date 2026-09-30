@@ -52,12 +52,12 @@
       <footer>
         <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span>
         {% if entry.report_url %}
-        <a href="{{ entry.report_url }}" target="_blank"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
+        <a href="{{ entry.report_url }}"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
         {% else %}
         <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
         {% endif %}
-        <a href="{{ paper.abs_url }}" target="_blank" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
-        <a href="{{ paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
+        <a href="{{ paper.abs_url }}" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
+        <a href="{{ paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
         <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>Zotero</button></form>
         <form action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
       </footer>

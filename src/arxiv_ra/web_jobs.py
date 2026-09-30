@@ -19,6 +19,7 @@ from .config import AppConfig
 from .task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 from .job_store import JobStore
 from .job_requests import RECOVERABLE, recovery_note, recovery_runner, restore_config
+from .paper_data import base_id
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,8 @@ JOB_LABELS = {
     "citation": "生成相关工作地图",
     "obsidian": "同步 Obsidian 知识库",
 }
+
+FINISHED_STATUSES = {"succeeded", "succeeded_with_warnings", "failed", "cancelled", "interrupted"}
 
 
 @dataclass(slots=True)
@@ -351,6 +354,22 @@ class JobManager:
         with self.lock:
             return self.jobs.get(job_id)
 
+    def clear_finished(self) -> int:
+        """Forget finished queue entries while preserving active work and result files."""
+        with self.lock:
+            deleted = 0
+            for job_id, job in list(self.jobs.items()):
+                if job.status not in FINISHED_STATUSES:
+                    continue
+                self.store.delete(job_id)
+                del self.jobs[job_id]
+                self.identities.pop(job_id, None)
+                self.requests.pop(job_id, None)
+                self.checkpoints.pop(job_id, None)
+                self.cancel_events.pop(job_id, None)
+                deleted += 1
+            return deleted
+
     def cancel(self, job_id: str) -> BackgroundJob | None:
         """Cancel queued work immediately or request cancellation at a safe boundary."""
         with self.lock:
@@ -382,6 +401,22 @@ class JobManager:
         with self.lock:
             return any(job.kind == kind and job.profile_id == profile_id
                        and job.status in {"queued", "running", "cancelling"} for job in self.jobs.values())
+
+    def active_report_for(self, arxiv_id: str) -> bool:
+        with self.lock:
+            return any(
+                job.kind == "report" and job.status in {"queued", "running", "cancelling"}
+                and base_id(str(((self.requests.get(job.id) or {}).get("parameters") or {}).get("arxiv_id") or "")) == arxiv_id
+                for job in self.jobs.values()
+            )
+
+    def forget_result_urls(self, urls: set[str]) -> None:
+        """Remove task links to artifacts that were explicitly deleted."""
+        with self.lock:
+            for job in self.jobs.values():
+                if job.result_url in urls:
+                    job.result_url = None
+                    self._save(job)
 
     def recent(self, limit: int = 8) -> list[BackgroundJob]:
         with self.lock:

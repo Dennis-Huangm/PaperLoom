@@ -16,7 +16,7 @@
     <article class="weekly-card">
       <div class="weekly-card-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></div>
       <div><span>{{ report.week_id }}</span><h2>{{ report.profile_name }}</h2><p>汇总 {{ report.paper_count }} 篇论文 · {{ report.generated_at[:16]|replace('T', ' ') }}</p>{% if report.activity_counts %}<p>已读 {{ report.activity_counts.get('completed', 0) }} · 报告 {{ report.activity_counts.get('report', 0) }} · 新版 {{ report.activity_counts.get('version', 0) }}</p>{% endif %}{% if report.includes_personal_notes %}<p>含个人笔记</p>{% endif %}</div>
-      <a class="button secondary" href="{{ report.report_url }}" target="_blank">打开周报</a>
+      <a class="button secondary" href="{{ report.report_url }}">打开周报</a>
     </article>
     {% endfor %}
   </section>

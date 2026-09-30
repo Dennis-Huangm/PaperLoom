@@ -26,6 +26,30 @@ def test_valid_quote_uses_real_page_and_reports_partial_coverage():
     assert "核心方法" in evidence["missing_sections"]
     assert "部分页面" in result
     assert "paper.pdf#page=2" in markdown_with_math(result)[0]
+    assert "[1](paper.pdf#page=2" in result
+    assert "PDF 第 2 页" not in markdown_with_math(result.split("## 引用与核对")[0])[0].split("</a>")[0].split(">")[-1]
+
+
+def test_missing_source_results_table_is_visible_in_coverage():
+    pages = ["Table 3: Main benchmark results.\nModel A 91.2", "Table 4: Visual quality results.\nModel A 4.2"]
+    report = "# Paper\n\n## 关键结果\n\n### Table 4 视觉质量\n\n| Model | Score |\n|---|---|\n| A | 4.2 |\n"
+    result, evidence = attach_evidence(report, ParsedPaper("", pages), pdf_available=True, full_report=True)
+    assert evidence["table_coverage"]["source_count"] == 2
+    assert evidence["table_coverage"]["presented"] == [4]
+    assert [item["number"] for item in evidence["table_coverage"]["missing"]] == [3]
+    assert "[Table 3](paper.pdf#page=1)" in result
+
+    with_crop = report.replace("## 关键结果", "## 关键结果\n\n![原文 Table 3](source-table-03.png)")
+    _, cropped = attach_evidence(with_crop, ParsedPaper("", pages), pdf_available=True, full_report=True)
+    assert cropped["table_coverage"]["presented"] == [4]
+
+    with_table = report.replace("### Table 4 视觉质量", "### Table 3 主结果\n\n| Model | Score |\n|---|---|\n| A | 91.2 |\n\n### Table 4 视觉质量")
+    _, reproduced = attach_evidence(with_table, ParsedPaper("", pages), pdf_available=True, full_report=True)
+    assert reproduced["table_coverage"]["presented"] == [3, 4]
+
+    partial = with_table.replace("### Table 3 主结果", "### Table 3 主结果节选")
+    _, excerpt = attach_evidence(partial, ParsedPaper("", pages), pdf_available=True, full_report=True)
+    assert excerpt["table_coverage"]["presented"] == [4]
 
 
 def test_fake_ambiguous_short_or_unavailable_quotes_never_get_links():
@@ -65,7 +89,7 @@ def test_numeric_warning_does_not_copy_formatted_claim_into_appendix():
     claim = "### 1. 质量排名\n\n**评测分析**：结果为 13.9%。"
     report, data = attach_evidence("# Paper\n\n## 关键结果\n\n" + claim,
                                   ParsedPaper("", [QUOTE]), pdf_available=True, full_report=True)
-    assert "13.9%" not in report and "定量陈述暂不展示" in report
+    assert "13.9%" in report and "**[待核对]**" in report
     assert "### 1. 质量排名" in report
     assert data["numeric_audit"]["issues"][0]["original"] == "**评测分析**：结果为 13.9%。"
     assert "实验数值待核对" in report and "原陈述" not in report

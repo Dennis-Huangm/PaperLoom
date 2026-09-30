@@ -1,52 +1,57 @@
 {% extends "base.html" %}
 {% block title %}本地报告 · PaperLoom{% endblock %}
 {% block content %}
-  <header class="page-heading">
+  <header class="page-heading report-page-heading">
     <div><p class="section-kicker">LOCAL LIBRARY</p><h1>本地报告</h1><p>深度阅读结果、论文 PDF 与方法图均保存在本机。</p></div>
-    <div><a class="button secondary" href="/compare">跨论文比较</a> <a class="button primary" href="/generate"><i class="fas fa-plus" aria-hidden="true"></i>生成新报告</a></div>
+    <div class="report-heading-actions"><a class="button secondary" href="/compare"><i class="fas fa-columns" aria-hidden="true"></i>跨论文比较</a><a class="button primary" href="/generate"><i class="fas fa-plus" aria-hidden="true"></i>生成新报告</a></div>
   </header>
 
-  <form class="library-search" method="get">
+  <form class="library-search{% if catalog_ready %} report-search{% endif %}" method="get">
     <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
     <input name="q" value="{{ query }}" placeholder="搜索标题、作者或 arXiv ID">
-    {% if query %}<a href="/reports" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+    {% if query %}<a href="/reports{% if direction %}?direction={{ direction|urlencode }}{% endif %}" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+    {% if catalog_ready %}<select name="direction" aria-label="按研究方向筛选"><option value="">全部方向</option>{% for id, name in directions %}<option value="{{ id }}" {% if id == direction %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>{% endif %}
     <button type="submit">搜索</button>
   </form>
 
   {% if reports %}
   <section class="report-table" aria-label="本地报告列表">
-    <header><span>论文</span><span>出版信息</span><span>生成日期</span><span>操作</span></header>
+    <header><span>论文</span><span>出版与依据</span><span>生成日期</span><span>操作</span></header>
     {% for report in reports %}
     <article class="report-row">
       <div class="report-paper">
-        <span class="report-id">{{ report.arxiv_id }}{% if report.version %} · v{{ report.version }}{% endif %} · {{ report.profile_id or '历史报告' }}</span>
-        <h2><a href="{{ report.report_url }}" target="_blank">{{ report.title }}</a></h2>
+        <span class="report-id">{{ report.arxiv_id }}{% if report.version %} · v{{ report.version }}{% endif %}</span>
+        <h2><a href="{{ report.report_url }}">{{ report.title }}</a></h2>
+        {% if catalog_ready %}<div class="report-directions"><span>所属方向</span>{% for item in report.directions %}<span class="report-direction">{{ item.name }}</span>{% endfor %}</div>{% endif %}
         <p>{{ report.authors[:5]|join(', ') }}{% if report.authors|length > 5 %} et al.{% endif %}</p>
         <p class="report-quality">{% if report.report_quality == 'full' %}全文分析{% elif report.report_quality == 'abstract' %}摘要级回退 · 可补生成{% else %}历史报告 · 质量未记录{% endif %}{% if report.model %} · {{ report.model }}{% endif %}{% if report.parsed_pages is not none %} · 提取 {{ report.parsed_pages }} 页{% endif %}</p>
-        {% if report.errors %}<details><summary>查看 {{ report.errors|length }} 条运行提示</summary><ul>{% for error in report.errors %}<li>{{ error }}</li>{% endfor %}</ul></details>{% endif %}
+        {% if report.errors %}<details class="report-notes"><summary>运行提示 <span>{{ report.errors|length }} 条</span></summary><ul>{% for error in report.errors %}<li>{{ error }}</li>{% endfor %}</ul></details>{% endif %}
       </div>
       <div class="report-venue">
-        {% if report.evidence %}<p>已定位 {{ report.evidence.validated_citations }} 条原文摘录 · {{ report.evidence.cited_pages|length }} 页</p>{% endif %}
-        {% if report.evidence.numeric_audit and report.evidence.numeric_audit.issues %}<p>实验数值待核对：{{ report.evidence.numeric_audit.issues|length }} 项，详见报告。</p>{% endif %}
         <strong>{{ report.venue }}</strong>
         <span class="human-status {% if report.venue_status == 'verified_metadata' %}verified{% elif report.venue_status == 'declared_in_arxiv' %}declared{% endif %}">{% if report.venue_status == 'verified_metadata' %}<i class="fas fa-check-circle" aria-hidden="true"></i>外部元数据已核实{% elif report.venue_status == 'declared_in_arxiv' %}<i class="fas fa-info-circle" aria-hidden="true"></i>作者在 arXiv 声明{% else %}<i class="far fa-clock" aria-hidden="true"></i>出版信息待核实{% endif %}</span>
+        {% if report.evidence %}<div class="report-evidence">
+          <span>原文摘录 <b>{{ report.evidence.validated_citations }}</b> 条 · <b>{{ report.evidence.cited_pages|length }}</b> 页</span>
+          {% if report.evidence.publication_gate and report.evidence.publication_gate.status == 'review_required' %}<span class="report-evidence-review">需人工核对{% if report.evidence.publication_gate.unverified_claims %} · 未核数值 {{ report.evidence.publication_gate.unverified_claims }} 项{% endif %}{% if report.evidence.publication_gate.conflicting_claims %} · 归属冲突 {{ report.evidence.publication_gate.conflicting_claims }} 项{% endif %}{% if report.evidence.publication_gate.partial_tables or report.evidence.publication_gate.missing_tables %} · 表格未匹配或仅摘录 {{ report.evidence.publication_gate.partial_tables + report.evidence.publication_gate.missing_tables }} 张{% endif %}{% if report.evidence.publication_gate.table_completeness_unassessed %} · 表格完整性待核 {{ report.evidence.publication_gate.table_completeness_unassessed }} 张{% endif %}</span>{% elif report.evidence.numeric_audit and report.evidence.numeric_audit.issues %}<span class="report-evidence-review">数值待核对 <b>{{ report.evidence.numeric_audit.issues|length }}</b> 项 · 详见报告</span>{% endif %}
+        </div>{% endif %}
       </div>
       <time>{{ report.date }}</time>
       <div class="report-actions">
-        <a href="{{ report.report_url }}" target="_blank"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
-        {% if report.version %}<form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit">{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
+        <a class="report-action-open" href="{{ report.report_url }}"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
+        {% if report.version %}<form class="job-form report-action-regenerate" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit">{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
         {% if report.in_library %}
-        <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
+        <span class="saved-status report-action-library"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
         {% else %}
-        <form class="library-add-form" action="/api/library/add" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
+        <form class="library-add-form report-action-library" action="/api/library/add" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
         {% endif %}
-        <form class="zotero-form" action="/api/zotero/save-report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button></form>
-        {% if report.method_figure_count %}<span><i class="far fa-images" aria-hidden="true"></i>{{ report.method_figure_count }} 张方法图</span>{% endif %}
+        <form class="zotero-form report-action-zotero" action="/api/zotero/save-report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button></form>
+        {% if report.method_figure_count %}<span class="report-action-figures"><i class="far fa-images" aria-hidden="true"></i>{{ report.method_figure_count }} 张方法图</span>{% endif %}
+        {% if catalog_ready %}<form class="report-delete-form report-action-delete" action="/reports/delete" method="post"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><input type="hidden" name="q" value="{{ query }}"><input type="hidden" name="direction" value="{{ direction }}"><button type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>删除报告</button></form>{% endif %}
       </div>
     </article>
     {% endfor %}
   </section>
   {% else %}
-  <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>没有匹配的报告</h1><p>输入 arXiv ID 后即可生成第一份完整报告。</p><a class="button primary" href="/generate">生成报告</a></section>
+  <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>没有匹配的报告</h1><p>{% if query or direction %}换个搜索词或研究方向试试。{% else %}输入 arXiv ID 后即可生成第一份完整报告。{% endif %}</p><a class="button primary" href="/generate">生成报告</a></section>
   {% endif %}
 {% endblock %}

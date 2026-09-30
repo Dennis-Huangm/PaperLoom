@@ -46,6 +46,9 @@ class JobStore:
     def save(self, value):
         write_json(self.root / f"{value['job']['id']}.json", value)
 
+    def delete(self, job_id: str):
+        (self.root / f"{job_id}.json").unlink()
+
     def close(self):
         if not self.handle.closed:
             # Closing the file releases its OS lock, including after process loss.

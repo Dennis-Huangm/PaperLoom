@@ -112,3 +112,17 @@ def test_local_origin_reaches_handler(local_client):
     # No form data: handler validation still runs for legitimate local requests.
     response = local_client.post("/settings/config", headers={"Origin": "http://localhost:8765"})
     assert response.status_code == 400
+
+
+def test_profile_form_preserves_origin_on_same_origin_submission(local_client):
+    page = local_client.get("/profiles")
+    assert page.status_code == 200
+    assert 'action="/profiles/create"' in page.text
+    assert page.headers["Referrer-Policy"] == "same-origin"
+
+    # An empty form reaches handler validation when the browser supplies its origin.
+    response = local_client.post(
+        "/profiles/create",
+        headers={"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"},
+    )
+    assert response.status_code == 400

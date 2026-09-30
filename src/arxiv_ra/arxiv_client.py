@@ -211,42 +211,65 @@ class ArxivClient:
         return papers
 
     def download_pdf(self, paper: Paper, destination: Path) -> None:
+        self._download_pdf(paper.pdf_url, destination, paper.arxiv_id)
+
+    def _download_pdf(self, url: str, destination: Path, label: str) -> None:
+        """Retry the whole stream: a successful header does not mean a complete PDF."""
         destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(f".~{uuid.uuid4().hex[:12]}.part")
-        try:
-            with self.client.stream("GET", paper.pdf_url) as response:
-                response.raise_for_status()
-                with temporary.open("wb") as handle:
-                    for chunk in response.iter_bytes():
-                        handle.write(chunk)
-            if temporary.stat().st_size <= 10 * 1024:
-                raise ValueError(
-                    f"arXiv PDF 响应过小，疑似错误页面：{paper.arxiv_id}"
-                )
-            temporary.replace(destination)
-        finally:
-            temporary.unlink(missing_ok=True)
+        retry_range = False
+        for attempt in range(self.max_retries + 1):
+            temporary = destination.with_name(f".~{uuid.uuid4().hex[:12]}.part")
+            try:
+                # Some cached full responses repeatedly truncate at the same byte.
+                # Request the entire range after a protocol failure, keeping the
+                # exact version URL and discarding all bytes from the failed attempt.
+                headers = {"Range": "bytes=0-", "Accept-Encoding": "identity"} if retry_range else {}
+                with self.client.stream("GET", url, headers=headers) as response:
+                    response.raise_for_status()
+                    expected_size = None
+                    if response.status_code == 206:
+                        span = re.fullmatch(r"bytes 0-(\d+)/(\d+)", response.headers.get("Content-Range", ""))
+                        if not span or int(span[1]) + 1 != int(span[2]):
+                            raise httpx.RemoteProtocolError("arXiv PDF 返回了不完整的文件范围")
+                        expected_size = int(span[2])
+                    received_size = 0
+                    with temporary.open("wb") as handle:
+                        for chunk in response.iter_bytes():
+                            handle.write(chunk)
+                            received_size += len(chunk)
+                    if expected_size is not None and received_size != expected_size:
+                        raise httpx.RemoteProtocolError(
+                            f"arXiv PDF 文件范围长度不符：received {received_size}, expected {expected_size}"
+                        )
+                if temporary.stat().st_size <= 10 * 1024:
+                    raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{label}")
+                temporary.replace(destination)
+                return
+            except httpx.TransportError as exc:
+                if isinstance(exc, httpx.RemoteProtocolError):
+                    retry_range = True
+                if attempt == self.max_retries:
+                    raise RuntimeError(
+                        f"arXiv PDF 下载失败：{label}，已自动重试 {self.max_retries} 次；"
+                        f"最后一次错误：{type(exc).__name__}: {exc}"
+                    ) from exc
+            finally:
+                temporary.unlink(missing_ok=True)
+            time.sleep(min(self.retry_base_delay * (2**attempt), 30.0))
 
     def download_version(self, arxiv_id: str, version: int, destination) -> None:
         destination = destination.resolve()
         if destination.exists() and destination.stat().st_size > 10 * 1024:
             return
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_suffix(destination.suffix + ".part")
         url = f"https://arxiv.org/pdf/{arxiv_id}v{version}"
         for attempt in range(2):
-            with self.client.stream("GET", url) as response:
-                if response.status_code == 429 and attempt == 0:
+            try:
+                self._download_pdf(url, destination, f"{arxiv_id}v{version}")
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt == 0:
                     time.sleep(5)
                     continue
-                response.raise_for_status()
-                with temporary.open("wb") as handle:
-                    for chunk in response.iter_bytes():
-                        handle.write(chunk)
-            if temporary.stat().st_size <= 10 * 1024:
-                temporary.unlink(missing_ok=True)
-                raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{arxiv_id}v{version}")
-            temporary.replace(destination)
+                raise
             time.sleep(1)
             return
         raise RuntimeError(f"arXiv PDF 下载频率受限：{arxiv_id}v{version}")

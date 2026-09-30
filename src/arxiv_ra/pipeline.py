@@ -181,10 +181,12 @@ class DailyPipeline:
         self._annotate_feedback_reasons(candidates)
         for paper in candidates:
             finish_explanation(paper)
-            suffix = paper.source_label + "。"
             if paper.resolution_note:
-                suffix += paper.resolution_note + "。"
-            paper.recommendation_reason = f"{paper.recommendation_reason}；{suffix}" if paper.recommendation_reason else suffix
+                note = paper.resolution_note.rstrip("。") + "。"
+                paper.recommendation_reason = (
+                    f"{paper.recommendation_reason}；{note}"
+                    if paper.recommendation_reason else note
+                )
         suffix = self.config.profile_id or "default"
         write_json(run_dir / f"candidates-{suffix}.json", [paper.to_dict() for paper in candidates])
         return candidates
@@ -555,7 +557,7 @@ class DailyPipeline:
                                            full_report=report_quality == "full")
         numeric_issues = evidence.get("numeric_audit", {}).get("issues", [])
         if numeric_issues:
-            task_warning("报告数值核对", f"{len(numeric_issues)} 个实验数值条目存在依据或归属问题，相关数值/陈述已暂不展示；原始内容和处理详情保存在 evidence.json。")
+            task_warning("报告数值核对", f"{len(numeric_issues)} 个实验数值条目需核对：未确认内容已保留并标注，明确归属冲突的单元格已隔离；详情保存在 evidence.json。")
         write_json(paper_dir / "evidence.json", evidence)
         task_progress("报告内容已生成，正在保存和渲染…", 88)
         report_path = paper_dir / "report.md"

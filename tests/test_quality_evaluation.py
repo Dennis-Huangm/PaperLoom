@@ -182,7 +182,7 @@ def test_report_warning_persistence_and_comparison_uses_fixed_revision(tmp_path)
     metadata = read_json(artifact.report_path.with_name("metadata.json"))
     assert metadata["report_quality"] == "full"  # Execution mode, not a truthfulness grade.
     assert metadata["evidence"]["numeric_audit"]["issues"]
-    assert "91.2%" not in artifact.report_path.read_text(encoding="utf-8")
+    assert "**[待核对]** 准确率为 91.2%" in artifact.report_path.read_text(encoding="utf-8")
     assert "91.2%" in metadata["evidence"]["numeric_audit"]["issues"][0]["original"]
     assert any(component == "报告数值核对" for component, _ in warnings)
     PaperLibraryStore(Path(cfg.output_dir), "alpha").add({"paper":{"arxiv_id":"2407.05601", "version":1, "title":"Other"}}, "Alpha")

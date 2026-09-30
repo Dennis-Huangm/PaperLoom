@@ -12,6 +12,7 @@ from .storage import read_recommendations
 from .utils import read_json
 from .library import PaperLibraryStore
 from .feedback import FeedbackStore
+from .paper_data import base_id
 from .report_store import profile_matches, quality_rank
 from .version_sync import STEP_LABELS, STATUS_LABELS
 
@@ -113,6 +114,7 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
                 "arxiv_id": paper.get("arxiv_id", ""),
                 "version": paper.get("version"),
                 "profile_id": payload.get("profile_id", ""),
+                "profile_name": payload.get("profile_name", ""),
                 "report_quality": payload.get("report_quality", "unknown"),
                 "evidence": payload.get("evidence") or {},
                 "model": payload.get("model", ""),
@@ -140,6 +142,43 @@ def report_library(output_root: Path) -> list[dict[str, Any]]:
         )
     reports.sort(key=lambda item: (item["date"], item["generated_at"] or item["updated_at"]), reverse=True)
     return reports
+
+
+def grouped_report_library(reports: list[dict[str, Any]],
+                           profile_names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Show one best available report for each arXiv ID with all known directions."""
+    names = profile_names or {}
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for report in reports:
+        arxiv_id = base_id(str(report.get("arxiv_id") or ""))
+        by_id.setdefault(arxiv_id or report["report_id"], []).append(report)
+
+    grouped = []
+    for arxiv_id, attempts in by_id.items():
+        def rank(item: dict[str, Any]) -> tuple[int, int, int]:
+            try:
+                version = int(item.get("version") or 0)
+            except (TypeError, ValueError):
+                version = 0
+            return (version, quality_rank(item), item["report_path"].stat().st_mtime_ns)
+
+        chosen = dict(max(attempts, key=rank))
+        directions: dict[str, str] = {}
+        for attempt in attempts:
+            profile_id = str(attempt.get("profile_id") or "")
+            direction_id = profile_id or "__legacy__"
+            directions.setdefault(direction_id,
+                                  names.get(profile_id) or attempt.get("profile_name")
+                                  or (profile_id if profile_id else "历史报告"))
+        chosen["arxiv_id"] = base_id(str(chosen.get("arxiv_id") or ""))
+        chosen["directions"] = [
+            {"id": direction_id, "name": direction_name}
+            for direction_id, direction_name in sorted(directions.items(), key=lambda item: item[1].casefold())
+        ]
+        chosen["report_count"] = len(attempts)
+        grouped.append(chosen)
+    grouped.sort(key=lambda item: (item["date"], item["generated_at"] or item["updated_at"]), reverse=True)
+    return grouped
 
 
 def preferred_report_index(reports: list[dict], profile_id: str) -> dict[tuple, dict]:

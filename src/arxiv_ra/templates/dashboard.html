@@ -1,4 +1,16 @@
 {% extends "base.html" %}
+{% macro summary_without_source(value, source, empty_text) -%}
+  {%- set text = value|clean_summary_text -%}
+  {%- set source = source or '' -%}
+  {%- set suffix = '；' ~ source ~ '。' -%}
+  {%- if source and text == source ~ '。' -%}
+    {%- set text = empty_text -%}
+  {%- elif source and text.endswith(suffix) -%}
+    {%- set text = text[:-(suffix|length)] -%}
+    {%- if text[-1:] not in ['。', '！', '？', '.', '!', '?'] -%}{%- set text = text ~ '。' -%}{%- endif -%}
+  {%- endif -%}
+  {{- text|summary_html|safe -}}
+{%- endmacro %}
 {% block title %}文献推荐 · PaperLoom{% endblock %}
 {% block content %}
   <section class="literature-toolbar" aria-label="文献搜索与筛选">
@@ -30,6 +42,13 @@
       </button>
     </div>
     <a class="filter-clear" href="/feedback">反馈与筛选记录</a>
+    {% if recommendations %}
+    <form class="recommendations-clear-form" action="/recommendations/clear" method="post" data-date="{{ selected_date }}">
+      <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+      <input type="hidden" name="date_label" value="{{ selected_date }}">
+      <button class="filter-clear" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>清除当日推荐</button>
+    </form>
+    {% endif %}
     <form class="zotero-form batch-zotero-form" action="/api/zotero/save-today" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="date_label" value="{{ selected_date }}"><button class="filter-clear" type="submit"><i class="fas fa-book" aria-hidden="true"></i>{% if is_latest %}今日{% else %}当日{% endif %}推荐存入 Zotero</button></form>
     <button class="filter-clear" type="button" id="clear-paper-filters"><i class="fas fa-undo-alt" aria-hidden="true"></i>清除</button>
   </section>
@@ -80,7 +99,7 @@
           </span>
           <span class="row-category">{{ item.paper.primary_category }}</span>
           <span class="row-score">{{ '%.1f'|format(item.paper.final_score) }}</span>
-          <span class="row-date">{{ (item.paper.published or '')[5:10] or '待核实' }}</span>
+          <span class="row-date">{{ (item.paper.published or '')[:10] or '待核实' }}</span>
         </button>
         {% endfor %}
       </div>
@@ -90,22 +109,24 @@
     <article class="paper-inspector" aria-live="polite">
       <header class="inspector-head">
         <div><span id="inspector-position">1 / {{ recommendations|length }}</span><strong id="inspector-title">{{ selected.paper.title }}</strong></div>
-        <a id="inspector-arxiv" href="{{ selected.paper.abs_url }}" target="_blank" rel="noreferrer" aria-label="在 arXiv 打开"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
+        <a id="inspector-arxiv" href="{{ selected.paper.abs_url }}" rel="noreferrer" aria-label="在 arXiv 打开"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
       </header>
 
       <div class="inspector-scroll">
       <section class="inspector-section evidence-section">
         <h2><i class="far fa-clipboard" aria-hidden="true"></i>推荐依据</h2>
-        <p id="inspector-source">{{ selected.paper.source_label or '历史记录，来源待核实' }}</p>
-        <div id="inspector-reason" class="paper-summary">{{ (selected.paper.recommendation_detail or selected.paper.recommendation_reason)|summary_html|safe }}</div>
-        <details><summary>查看匹配词与分数构成</summary><div id="inspector-ranking"></div></details>
-        <details><summary>本次推荐的收藏引导</summary><div id="inspector-interest"></div></details>
-        <details class="topic-feedback"><summary>屏蔽主题词</summary><label for="feedback-terms">明确填写词或短语，以逗号分隔</label><input id="feedback-terms" maxlength="810" placeholder="例如 medical segmentation"><p>同时排除此论文，后续屏蔽标题或摘要中命中任一词的论文。</p><button class="button secondary" type="button" data-feedback="not_relevant" data-scope="topic">应用主题屏蔽</button></details>
+        <div class="evidence-origin"><span>来源</span><span id="inspector-source">{{ selected.paper.source_label or '历史记录，来源待核实' }}</span></div>
+        <div id="inspector-reason" class="paper-summary evidence-reason">{{ summary_without_source(selected.paper.recommendation_detail or selected.paper.recommendation_reason or '依据研究主题、关键词与发布时间完成自动筛选。', selected.paper.source_label, '暂无详细推荐依据。') }}</div>
+        <div class="evidence-details">
+          <details><summary>查看匹配词与分数构成</summary><div id="inspector-ranking"></div></details>
+          <details><summary>本次推荐的收藏引导</summary><div id="inspector-interest"></div></details>
+          <details class="topic-feedback"><summary>屏蔽主题词</summary><label for="feedback-terms">明确填写词或短语，以逗号分隔</label><input id="feedback-terms" maxlength="810" placeholder="例如 medical segmentation"><p>同时排除此论文，后续屏蔽标题或摘要中命中任一词的论文。</p><button class="button secondary" type="button" data-feedback="not_relevant" data-scope="topic">应用主题屏蔽</button></details>
+        </div>
       </section>
 
       <section class="inspector-section abstract-section">
         <h2><i class="far fa-file-alt" aria-hidden="true"></i>摘要精要</h2>
-        <div id="inspector-abstract" class="paper-summary">{{ (selected.paper.abstract_zh or selected.paper.abstract)|summary_html|safe }}</div>
+        <div id="inspector-abstract" class="paper-summary">{{ summary_without_source(selected.paper.abstract_zh or selected.paper.abstract, selected.paper.source_label, '摘要精要待补全。') }}</div>
       </section>
 
       <section class="inspector-section publication-section">
@@ -147,20 +168,20 @@
           <input type="hidden" name="source_date" value="{{ selected_date }}">
           <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span id="inspector-report-label">{% if selected.has_report %}重新生成报告{% else %}生成完整报告{% endif %}</span></button>
         </form>
-        <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" target="_blank" rel="noreferrer" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
+        <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
         <form class="zotero-form" action="/api/zotero/save-paper" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
           <input id="inspector-zotero-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}{% if selected.paper.version %}v{{ selected.paper.version }}{% endif %}">
           <input type="hidden" name="origin" value="recommendation">
           <input type="hidden" name="source_date" value="{{ selected_date }}">
           <button class="button secondary" type="submit"><i class="fas fa-book" aria-hidden="true"></i>存入 Zotero</button>
         </form>
-        <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" target="_blank" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
+        <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
       </footer>
     </article>
   </section>
   <script id="recommendations-data" type="application/json">{{ recommendations|tojson }}</script>
   {% for entry in recommendations %}
-  <template id="paper-summary-{{ loop.index0 }}"><div data-summary="reason">{{ (entry.paper.recommendation_detail or entry.paper.recommendation_reason or '依据研究主题、关键词与发布时间完成自动筛选。')|summary_html|safe }}</div><div data-summary="abstract">{{ (entry.paper.abstract_zh or entry.paper.abstract)|summary_html|safe }}</div></template>
+  <template id="paper-summary-{{ loop.index0 }}"><div data-summary="reason">{{ summary_without_source(entry.paper.recommendation_detail or entry.paper.recommendation_reason or '依据研究主题、关键词与发布时间完成自动筛选。', entry.paper.source_label, '暂无详细推荐依据。') }}</div><div data-summary="abstract">{{ summary_without_source(entry.paper.abstract_zh or entry.paper.abstract, entry.paper.source_label, '摘要精要待补全。') }}</div></template>
   {% endfor %}
   {% else %}
   <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>{% if selected_date %}{{ selected_date }} 没有推荐结果{% else %}还没有推荐结果{% endif %}</h1><p>{% if recommendation_history %}可从“每日记录”切换到已有结果的日期。{% else %}运行一次真实检索后，论文会出现在这里。{% endif %}</p><a class="button primary" href="/generate">前往运行任务</a></section>

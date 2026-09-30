@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}编辑研究方向 · PaperLoom{% endblock %}
+{% block content %}
+<div class="draft-workspace profile-edit-workspace">
+  <header class="page-heading"><div><p class="section-kicker">研究方向 / 编辑</p><h1>编辑研究方向</h1><p>{{ profile.name }}</p></div><a href="/profiles#saved-profiles">返回已保存方向</a></header>
+  <form method="post" action="/profiles/{{ profile.id }}/edit" class="settings-form draft-panel">
+    <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+    <input type="hidden" name="profile_revision" value="{{ profile_revision }}">
+    <div class="draft-section-heading"><h2>研究主题</h2></div>
+    <label>方向名称<input name="name" value="{{ profile.name }}" maxlength="80" required></label>
+    <label>研究主题<textarea name="description" rows="4" maxlength="4000" required>{{ profile.description or profile.discovery.interest_description }}</textarea></label>
+
+    {% if versioned %}
+    <div class="draft-section-heading"><h2>检索与筛选条件</h2></div>
+    {% for kind, label in condition_kinds.items() %}
+    {% set items = profile.plan.conditions|selectattr('kind','equalto',kind)|list %}
+    {% if items %}<details class="draft-group"><summary>{{ label }} <span>{{ items|length }} 条</span></summary>
+      <div class="draft-condition-list">{% for c in items %}
+      <details class="draft-condition"><summary><span class="draft-condition-text">{{ c.text }}</span><span class="draft-condition-state">{{ '已采用' if c.confirmed else '待确认' }}</span></summary>
+        <div class="draft-condition-fields"><div class="form-columns">
+          <label>条件<input name="text-{{ c.id }}" value="{{ c.text }}" maxlength="200" required></label>
+          <label>用途<select name="kind-{{ c.id }}">{% for option, title in condition_kinds.items() %}<option value="{{ option }}" {% if option == c.kind %}selected{% endif %}>{{ title }}</option>{% endfor %}</select></label>
+        </div><label>检索表达（每行一个）<textarea name="aliases-{{ c.id }}" rows="2">{{ c.aliases|join('\n') }}</textarea></label>
+        <div class="draft-checks"><label><input type="checkbox" name="confirmed-{{ c.id }}" {% if c.confirmed %}checked{% endif %}>采用</label><label><input type="checkbox" name="delete-{{ c.id }}">删除</label></div></div>
+      </details>{% endfor %}</div>
+    </details>{% endif %}{% endfor %}
+    <details class="draft-group"><summary>添加条件</summary><div class="form-columns draft-condition-fields"><label>新增条件<input name="new_text" maxlength="200"></label><label>用途<select name="new_kind">{% for kind, label in condition_kinds.items() %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select></label></div></details>
+    {% else %}
+    <div class="draft-section-heading"><h2>关键词</h2></div>
+    <label>重点关键词<textarea name="keywords" rows="4">{{ profile.discovery.positive_keywords|join('\n') }}</textarea></label>
+    <label>降低优先级的关键词<textarea name="negative_keywords" rows="3">{{ profile.discovery.negative_keywords|join('\n') }}</textarea></label>
+    {% endif %}
+
+    <details class="draft-group"><summary>检索范围与数量</summary><div class="draft-condition-fields">
+      <label>arXiv 类别（每行一个）<textarea name="categories" rows="2" required>{{ profile.discovery.arxiv_categories|join('\n') }}</textarea></label>
+      <div class="form-columns"><label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ profile.discovery.lookback_days }}" required></label><label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ profile.discovery.recommendation_count }}" required></label></div>
+      <label>候选上限<input type="number" name="max_candidates" min="1" max="5000" value="{{ profile.discovery.max_candidates }}" required></label>
+      {% if versioned %}<div class="draft-section-heading"><h3>检索路线</h3></div>
+      {% for key, label in [('core','核心主题'),('context','主题与场景'),('adjacent','相邻方法')] %}<label>{{ label }}<textarea name="branch-{{ key }}" rows="2">{% for b in profile.plan.branches if b.id == key %}{% for group in b.groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}{% endfor %}</textarea></label>{% endfor %}{% endif %}
+    </div></details>
+    <div class="profile-edit-actions"><a class="button secondary" href="/profiles#saved-profiles">取消</a><button class="button primary" type="submit"><i class="far fa-save" aria-hidden="true"></i>保存方向</button></div>
+  </form>
+</div>
+{% endblock %}

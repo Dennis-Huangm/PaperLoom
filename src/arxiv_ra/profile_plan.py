@@ -154,6 +154,14 @@ def edit_draft(draft, changes):
     suppressed.update(condition(c["kind"], c["text"])["id"] for c in removed)
     draft["suppressed"] = sorted(suppressed)
     draft["plan"]["conditions"] = items
+    if "name" in changes:
+        value = changes["name"]
+        if not isinstance(value, str) or not 0 < len(value.strip()) <= 80:
+            raise ValueError("方向名称必须是 1–80 字的文本")
+        value = " ".join(value.split())
+        if value != draft["name"]:
+            draft["name"] = value
+            draft["name_user_edited"] = True
     if "description" in changes:
         if not isinstance(changes["description"], str) or not 0 < len(changes["description"].strip()) <= 4000:
             raise ValueError("研究主题必须是 1–4000 字")
@@ -183,6 +191,9 @@ def merge_regenerated_draft(draft, fresh):
     fresh.update(source=draft["source"], suppressed=draft.get("suppressed", []),
                  preview=draft.get("preview"), reference_check=draft.get("reference_check"),
                  ranking=copy.deepcopy(draft["ranking"]))
+    if draft.get("name_user_edited"):
+        fresh["name"] = draft["name"]
+        fresh["name_user_edited"] = True
     fresh["discovery"]["interest_description"] = draft["description"]
     fresh["discovery"]["arxiv_categories"] = draft["discovery"]["arxiv_categories"]
     for key in ("max_candidates", "lookback_days"):
@@ -201,7 +212,8 @@ def new_draft(config, profile_id, name, keywords, negative, references, descript
     diagnostics = []
     for ref in references:
         if not ref["title"] or not ref["abstract"]:
-            diagnostics.append(f"参考资料不可用或不完整：{ref['arxiv_id']}")
+            reason = ref.get("error") or "缺少标题或摘要"
+            diagnostics.append(f"参考资料不可用或不完整：{ref['arxiv_id']}（{reason}）")
     try:
         if not isinstance(generated, dict):
             raise ValueError("模型必须返回 JSON 对象")
@@ -212,12 +224,17 @@ def new_draft(config, profile_id, name, keywords, negative, references, descript
         for item in suggestions:
             if not isinstance(item, dict) or not isinstance(item.get("kind"), str) or item["kind"] not in KINDS:
                 raise ValueError("模型条件类型无效")
-            if not isinstance(item.get("basis"), str) or item["basis"] not in valid_basis:
+            basis = item.get("basis")
+            if isinstance(basis, str):
+                # The prompt labels references as arXiv:<id>; accept that label,
+                # but never strip revisions or infer an unprovided reference.
+                basis = re.sub(r"^arxiv:\s*", "", basis.strip(), flags=re.I)
+            if not isinstance(basis, str) or basis not in valid_basis:
                 raise ValueError("模型引用了未提供或未解析的依据")
             evidence = strings([item.get("evidence")])[0]
             text = strings([item.get("text")])[0]
             candidate = condition(item["kind"], text, origin="model", aliases=item.get("aliases"),
-                                  evidence=f"{item['basis']}：{evidence}", confirmed=item["kind"] not in HARD_KINDS)
+                                  evidence=f"{basis}：{evidence}", confirmed=item["kind"] not in HARD_KINDS)
             if candidate["id"] not in {c["id"] for c in conditions}:
                 conditions.append(candidate)
         for key in ("positive_keywords", "negative_keywords", "arxiv_query_terms"):
@@ -245,11 +262,20 @@ def new_draft(config, profile_id, name, keywords, negative, references, descript
     if count is not None:
         discovery["recommendation_count"] = count
         discovery["prefilter_count"] = max(discovery["prefilter_count"], count)
-    draft = {"id": profile_id, "name": name, "revision": 1, "generation_error": error,
+    if error:
+        # A partially validated model response is not a usable plan. Keep user
+        # input and the first failure; its dependent branches cannot be checked.
+        conditions = [c for c in conditions if c["origin"] == "user"]
+    suggested_name = generated.get("profile_name") if isinstance(generated, dict) and not error else None
+    if isinstance(suggested_name, str):
+        suggested_name = " ".join(suggested_name.split())
+    if not isinstance(suggested_name, str) or not 0 < len(suggested_name) <= 80:
+        suggested_name = name
+    draft = {"id": profile_id, "name": suggested_name, "revision": 1, "generation_error": error,
              "diagnostics": diagnostics, "references": references,
-             "source": {"keywords": keywords, "negative_keywords": negative,
+             "source": {"name_hint": name, "keywords": keywords, "negative_keywords": negative,
                         "reference_papers": [{"arxiv_id": r["arxiv_id"], "title": r["title"]} for r in references]},
-             "plan": {"version": 2, "conditions": conditions, "branches": generated.get("branches", []) if isinstance(generated, dict) else []},
+             "plan": {"version": 2, "conditions": conditions, "branches": generated.get("branches", []) if isinstance(generated, dict) and not error else []},
              "discovery": discovery, "ranking": asdict(RankingConfig())}
     if error:
         diagnostics.append(error)

@@ -12,6 +12,7 @@ from .llm import LLMClient
 from .utils import extract_json_object, normalize_space, read_json, write_json
 from .task_runtime import task_warning
 from .report_store import matching_report
+from .summary_cleaning import clean_summary_text
 
 
 _CACHE_LOCK = threading.Lock()
@@ -51,16 +52,16 @@ def _report_section(output_root: Path, profile_id: str, paper: dict, heading: st
             markdown,
         )
         if match:
-            summary = normalize_space(
+            summary = clean_summary_text(normalize_space(
                 re.sub(r"(?m)^\s*[-*]\s+", "", re.sub(r"[*_`>]", "", match.group(1)))
-            )
+            ))
             if summary:
                 return summary
     return ""
 
 
 def _clip(value: str, maximum: int) -> str:
-    value = normalize_space(value)
+    value = normalize_space(clean_summary_text(value))
     if len(value) <= maximum:
         return value
     prefix = value[:maximum]
@@ -95,10 +96,8 @@ def localize_abstracts(
             and cached.get("recommendation_detail")
             and (not generate or cached.get("source") == "llm-localization")
         ):
-            paper["abstract_zh"] = str(cached["abstract_zh"])
-            paper["recommendation_detail"] = str(
-                cached["recommendation_detail"]
-            )
+            paper["abstract_zh"] = clean_summary_text(str(cached["abstract_zh"]))
+            paper["recommendation_detail"] = clean_summary_text(str(cached["recommendation_detail"]))
         elif (
             paper.get("abstract")
             or _report_section(output_root, config.profile_id, paper, "一句话总结")
@@ -128,17 +127,17 @@ def localize_abstracts(
 
 要求：
 1. `abstract_zh`：2-3 句、120-220 字，不逐句翻译；依次交代研究问题、核心方法和摘要中明确给出的关键结果。专有名词、指标和重要数值不得丢失。
-2. `recommendation_detail`：2-3 句、100-180 字；明确说明它与上述研究方向的连接点、最值得关注的具体机制/证据，以及可能带来的研究启发。禁止使用“主题相关、值得阅读、具有重要意义”等空泛表述。
-3. 摘要没有提供数值或局限时不要自行补充。
+2. `recommendation_detail`：2-3 句、100-180 字；明确说明它与上述研究方向的连接点、最值得关注的具体机制/证据，以及可能带来的研究启发。禁止使用“主题相关、值得阅读、具有重要意义”等空泛表述；不要重复“arXiv发现”等检索来源标签。
+3. 摘要没有提供数值或局限时不要自行补充。两段文字都不要添加 PDF 页码、原文编号等定位引用，也不要输出 Markdown 分隔线。
 4. 只返回 JSON：{{"papers":[{{"id":"arXiv ID","abstract_zh":"摘要精要","recommendation_detail":"推荐依据"}}]}}。""",
                     json_mode=True,
                 )
                 payload = extract_json_object(raw)
                 translated = {
                     str(item.get("id") or ""): {
-                        "abstract_zh": _clip(str(item.get("abstract_zh") or ""), 220),
+                        "abstract_zh": _clip(clean_summary_text(str(item.get("abstract_zh") or "")), 220),
                         "recommendation_detail": _clip(
-                            str(item.get("recommendation_detail") or ""), 180
+                            clean_summary_text(str(item.get("recommendation_detail") or "")), 180
                         ),
                     }
                     for item in payload.get("papers", [])
@@ -187,6 +186,8 @@ def localize_abstracts(
             recommendation_detail = _clip(
                 str(paper.get("recommendation_reason") or abstract_zh), 180
             )
+        abstract_zh = clean_summary_text(abstract_zh)
+        recommendation_detail = clean_summary_text(recommendation_detail)
         paper["abstract_zh"] = abstract_zh
         paper["recommendation_detail"] = recommendation_detail
         if generate:

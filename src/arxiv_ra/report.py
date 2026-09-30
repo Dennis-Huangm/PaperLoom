@@ -7,18 +7,21 @@ from .llm import LLMClient
 from .models import FigureCandidate, Paper, ParsedPaper, VerifiedMetadata
 from .utils import normalize_space
 from .task_runtime import task_warning, task_progress, task_checkpoint
-from .report_checkpoint import current_report_checkpoint, file_digest
-from .evidence import EVIDENCE_GUIDANCE
+from .report_checkpoint import CheckpointWriteError, current_report_checkpoint, file_digest
+from .evidence import EVIDENCE_GUIDANCE, restore_table_row_citations, source_table_inventory
+from .citation_repair import repair_numeric_citations
 from .quality import QUALITY_GUIDANCE
 from .source_spans import (source_spans, span_batches, span_material, cited_span_material,
                            ground_note_quotes, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
 from .report_metadata import protect_metadata
+from .report_completeness import restore_note_tables
 
 
 CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论文片段抽取信息，不得补写不存在的结论。
 保留数据集、指标、模型、公式和数值的原名；保留连续原文摘录以便后续定位。输出简洁中文。
 如果片段包含关键公式（包括附录中的指标定义），必须同时提取公式、符号定义、它连接的输入输出以及作者给出的设计目的。
 保留本片段出现的作者机构、代码/数据集/项目链接和复现参数，不要因其位于脚注或附录而省略。
+逐表保留实验表格，使用含原文 Table 编号的标题和 Markdown 表格，保留各模型行、表头、条件、单位与脚注；不要只摘最优结果。跨片段表格标注摘录，不猜测缺失部分。
 片段编号是内部处理顺序，不是 PDF 页码，也不是可引用的原文位置。"""
 
 
@@ -312,6 +315,11 @@ class ReportGenerator:
         evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
         metadata_text = self._metadata_text(paper, metadata)
         evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(evidence_notes))
+        table_inventory = source_table_inventory(parsed)
+        table_inventory_text = "\n".join(
+            f'- Table {item["number"]}（PDF 第 {item["page"]} 页）：{item["title"]}'
+            for item in table_inventory
+        ) or "PDF 文本未提取到表题。"
         figure_text = (
             "实验章节之前的可靠方法图：\n"
             + "\n".join(
@@ -340,6 +348,9 @@ class ReportGenerator:
 
 ## 分片证据笔记
 {evidence_text}
+
+## PDF 原文表格目录（程序从物理页面提取；表题不是数值依据）
+{table_inventory_text}
 
 ## 笔记引用的原文片段（程序取回，ID 和文本不能改写）
 {cited_material}
@@ -377,12 +388,29 @@ class ReportGenerator:
 12. 不得将内部片段编号当作页码或证据出处；最终输出不出现“第 N/M 片段”。保留原文章节/表号及有效 ID，由系统定位。
 13. 写“未提供”前核对全部分片和直接原文补充；仅笔记未保留、公式解析不清或材料截断时，写“当前材料未能确认”，不能断言论文没有提供。
 14. 原文明确给出的作者机构和资源网址应保留并注明来自论文；资源链接未经在线可用性验证。不得把参考文献网址当作本文资源，不补造或猜测网址。
-15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。表格优先报告与研究结论相关的代表性行，保留模型、任务、难度、单位和表号，不必复制所有基线。
-16. 对“随难度增加均下降”“单调退化”等趋势，逐模型、逐指标检查相邻难度；总体趋势不能写成每一行都成立。存在回升或指标间分歧时给出反例；原文作者的概括与表格观察分开表述，不能把作者概括强化成“不可避免”。
+15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。优先用标准 Markdown 表格语法重现论文主结果表、与人类评价对齐表、关键消融和鲁棒性表，不以截图、图片链接或纯文字概括代替表格；有不同实验条件、任务或指标的表应分别呈现。保留表号、原始模型名、行列指标、轮次、单位和比较基线，不可只挑最优模型。每个数值行保留对应原文片段 ID；确实无法建立行列归属时注明待核对，不要猜测。
+16. 写完后对照“PDF 原文表格目录”检查实验表格覆盖；未重现的关键实验表格说明原因。目录中的表号和标题只用于查漏，不能作为数值依据。
+17. 对“随难度增加均下降”“单调退化”等趋势，逐模型、逐指标检查相邻难度；总体趋势不能写成每一行都成立。存在回升或指标间分歧时给出反例；原文作者的概括与表格观察分开表述，不能把作者概括强化成“不可避免”。
 """,
         )
         if checkpoint:
             checkpoint.publish(report_ready=True)
+        report = restore_note_tables(report, evidence_notes, table_inventory)
+        report = restore_table_row_citations(report, evidence_notes, parsed, synthesis_spans)
+        task_progress("正在回查实验数值引用…", 85)
+        try:
+            repair_batch = 0
+
+            def chat_repair(system: str, user: str) -> str:
+                nonlocal repair_batch
+                repair_batch += 1
+                return self._chat(f"numeric-citation-repair-v1-{repair_batch}", system, user)
+
+            report = repair_numeric_citations(report, parsed, chat_repair)
+        except CheckpointWriteError:
+            raise
+        except Exception as exc:
+            task_warning("报告数值引用补核", f"自动补核未完成，未确认内容将标注待核对：{type(exc).__name__}: {exc}")
         return protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
 
     def _explain_figures(self, paper: Paper, figures: list[FigureCandidate]) -> None:

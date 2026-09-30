@@ -92,7 +92,7 @@ def publish_graph(folder: Path, graph: dict, render) -> Path:
     (destination / 'index.html').write_text(render(graph), encoding='utf-8')
     # Both browser loading modes use the very same local, versioned assets.
     assets = Path(__file__).parent / 'static'
-    for name in ('graph.js', 'graph.css'):
+    for name in ('graph.js', 'graph.css', 'app-icon.ico'):
         if (assets / name).exists():
             (destination / name).write_bytes((assets / name).read_bytes())
     task_checkpoint()

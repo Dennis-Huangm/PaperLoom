@@ -80,7 +80,7 @@ def _math_block(state, start, end, silent):
 
 
 _FORMULA_CITATION = re.compile(
-    r'\[(原文\s+\d+(?:\s*·\s*PDF\s*第\s*\d+\s*页)?)\]\((paper\.pdf#page=\d+)\)')
+    r'\[((?:原文\s+\d+(?:\s*·\s*PDF\s*第\s*\d+\s*页)?)|\d+)\]\((paper\.pdf#page=\d+)\)')
 
 
 def _formula_citations(content):

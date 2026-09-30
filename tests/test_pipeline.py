@@ -156,6 +156,7 @@ def test_daily_pipeline_publishes_only_after_localization(
     published = read_json(recommendation_path, [])
     assert published[0]["paper"]["title"] == paper.title
     assert published[0]["paper"]["abstract_zh"] == "已完成的中文摘要。"
+    assert published[0]["paper"]["source_label"] not in published[0]["paper"]["recommendation_reason"]
     assert (
         tmp_path
         / "run"

@@ -118,8 +118,6 @@ const renderJob = (job) => {
   if (job.result_url) {
     const link = document.createElement('a');
     link.href = job.result_url;
-    link.target = '_blank';
-    link.rel = 'noreferrer';
     link.textContent = '打开结果';
     actions.append(link);
   }
@@ -208,6 +206,40 @@ document.querySelector('#job-list')?.addEventListener('click', async (event) => 
   }
 });
 
+document.querySelector('#clear-job-history')?.addEventListener('click', async (event) => {
+  if (!window.confirm('清除所有已结束的后台任务记录？生成的报告和推荐结果会保留，运行中的任务不会受影响。')) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await scopedFetch('/api/jobs/completed', {method: 'DELETE'});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || '无法清除任务记录');
+    if (payload.deleted) {
+      window.location.assign('/generate');
+    } else {
+      toast('没有可清除的已结束任务');
+      button.disabled = false;
+    }
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message);
+  }
+});
+
+document.querySelector('.recommendations-clear-form')?.addEventListener('submit', (event) => {
+  const day = event.currentTarget.dataset.date;
+  if (!window.confirm(`清除当前研究方向 ${day} 的推荐记录？此操作不可撤销。收藏、阅读报告和已处理状态会保留；重新推荐旧论文需勾选“忽略已处理状态”。已导出的 Obsidian/Zotero 内容不会删除。`)) {
+    event.preventDefault();
+  }
+});
+
+document.querySelector('.report-table')?.addEventListener('submit', (event) => {
+  if (!event.target.matches('.report-delete-form')) return;
+  if (!window.confirm('删除这篇论文的所有本地报告及对应 PDF、方法图？文献库收藏会保留。')) {
+    event.preventDefault();
+  }
+});
+
 document.querySelectorAll('.job-form').forEach((form) => {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -235,6 +267,70 @@ document.querySelectorAll('.job-form').forEach((form) => {
     }
   });
 });
+
+const profileForm = document.querySelector('.profile-form');
+if (profileForm) {
+  const button = profileForm.querySelector('button[type="submit"]');
+  const status = profileForm.querySelector('.profile-submit-status');
+  const icon = status.querySelector('i');
+  const message = status.querySelector('.profile-submit-message');
+  const detail = status.querySelector('.profile-submit-detail');
+  const elapsed = status.querySelector('.profile-submit-elapsed');
+  const originalButton = button.innerHTML;
+
+  profileForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (button.disabled) return;
+
+    const body = new URLSearchParams(new FormData(profileForm));
+    const fields = [...profileForm.elements].filter((field) => field !== button);
+    const hasReferences = profileForm.elements.reference_ids.value.trim() !== '';
+    const started = Date.now();
+    const updateElapsed = () => {
+      const seconds = Math.floor((Date.now() - started) / 1000);
+      elapsed.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      if (seconds >= 30) detail.textContent = '仍在等待服务器响应，表单内容已保留';
+    };
+
+    status.hidden = false;
+    status.classList.remove('is-error');
+    icon.className = 'fas fa-circle-notch fa-spin';
+    message.textContent = '正在生成草稿';
+    detail.textContent = hasReferences ? '正在处理参考论文并生成检索方案' : '正在整理主题线索并生成检索方案';
+    updateElapsed();
+    status.scrollIntoView({block: 'nearest'});
+    const timer = window.setInterval(updateElapsed, 1000);
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>生成中';
+    fields.forEach((field) => { field.disabled = true; });
+
+    try {
+      const response = await scopedFetch(profileForm.action, {method: 'POST', body});
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(typeof payload.detail === 'string' ? payload.detail : '服务器处理失败，请稍后重试');
+      }
+      const destination = new URL(response.url);
+      if (!response.redirected || destination.origin !== window.location.origin || !destination.pathname.startsWith('/profiles/drafts/')) {
+        throw new Error('草稿已提交，但未收到草稿页面，请查看待检查的草稿');
+      }
+      icon.className = 'fas fa-check';
+      message.textContent = '草稿已生成';
+      detail.textContent = '正在打开草稿';
+      window.location.assign(destination.href);
+    } catch (error) {
+      status.classList.add('is-error');
+      icon.className = 'fas fa-exclamation-circle';
+      message.textContent = '生成失败';
+      detail.textContent = error instanceof TypeError ? '连接中断，请检查待检查的草稿后重试' : error.message;
+    } finally {
+      window.clearInterval(timer);
+      fields.forEach((field) => { field.disabled = false; });
+      button.disabled = false;
+      button.innerHTML = originalButton;
+    }
+  });
+}
 
 const batchForm = document.querySelector('#version-batch-form');
 const batchDialog = document.querySelector('#batch-preview-dialog');
@@ -888,3 +984,127 @@ document.querySelectorAll('.reading-form').forEach((form) => {
     } finally { button.disabled = false; }
   });
 });
+
+const draftEditor = document.querySelector('#draft-editor');
+if (draftEditor) {
+  const savedFields = new URLSearchParams(new FormData(draftEditor)).toString();
+  const isDraftDirty = () => new URLSearchParams(new FormData(draftEditor)).toString() !== savedFields;
+  const dirtyStatus = document.querySelector('#draft-dirty-status');
+  const savedLabel = dirtyStatus.textContent;
+  const taskStatus = document.querySelector('#draft-task-status');
+  const previewForms = [...document.querySelectorAll('.draft-preview-form')];
+  let previewBusy = false;
+  const formatDraftTimes = () => document.querySelectorAll('.draft-result-time').forEach((node) => {
+    const date = new Date(node.dateTime);
+    if (!Number.isNaN(date.getTime())) node.textContent = date.toLocaleString('zh-CN', {hour12: false});
+  });
+  formatDraftTimes();
+  draftEditor.addEventListener('input', () => {
+    dirtyStatus.textContent = isDraftDirty() ? '有未保存的修改，请先保存再试搜或启用' : savedLabel;
+  });
+  document.querySelectorAll('[data-draft-action]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      if (isDraftDirty()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dirtyStatus.textContent = '请先保存修改；此操作会使用已保存的草稿';
+        dirtyStatus.scrollIntoView({block: 'center', behavior: 'smooth'});
+        toast('请先保存草稿修改');
+      }
+    });
+  });
+  const setDraftBusy = (busy) => {
+    previewBusy = busy;
+    previewForms.forEach((form) => {
+      const button = form.querySelector('button');
+      if (busy) button.dataset.wasDisabled = String(button.disabled);
+      button.disabled = busy || button.dataset.wasDisabled === 'true';
+    });
+  };
+  const watchDraftJob = async (jobId) => {
+    try {
+      const response = await scopedFetch(`/api/jobs/${jobId}`);
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.detail || '无法读取试搜进度');
+      if (activeJobStatuses.includes(job.status)) {
+        taskStatus.textContent = job.status === 'queued' ? '已排队，正在等待执行…' : '正在检索和筛选论文，完成后自动显示结果…';
+        window.setTimeout(() => watchDraftJob(jobId), 1500);
+        return;
+      }
+      if (!['succeeded', 'succeeded_with_warnings'].includes(job.status)) throw new Error(job.detail || '任务未完成，请重试');
+      const page = await scopedFetch(window.location.pathname, {cache: 'no-store'});
+      if (!page.ok) throw new Error('任务已完成，请刷新查看结果');
+      const html = new DOMParser().parseFromString(await page.text(), 'text/html');
+      const results = html.querySelector('#draft-results');
+      if (!results) throw new Error('任务已完成，请刷新查看结果');
+      document.querySelector('#draft-results').replaceWith(results);
+      formatDraftTimes();
+      taskStatus.textContent = '本次检查已结束，结果已更新。';
+      if (!isDraftDirty()) results.scrollIntoView({block: 'start', behavior: 'smooth'});
+    } catch (error) {
+      taskStatus.textContent = error.message;
+    }
+    setDraftBusy(false);
+  };
+  previewForms.forEach((form) => form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (previewBusy) return;
+    const body = new FormData(form);
+    setDraftBusy(true);
+    taskStatus.textContent = '正在提交检查…';
+    try {
+      const response = await scopedFetch(form.action, {method: 'POST', body});
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.detail || '提交失败');
+      watchDraftJob(job.id);
+    } catch (error) {
+      taskStatus.textContent = error.message;
+      setDraftBusy(false);
+    }
+  }));
+  document.querySelector('[data-draft-action][action$="/regenerate"]')?.addEventListener('submit', (event) => {
+    const button = event.currentTarget.querySelector('button');
+    button.disabled = true;
+    button.textContent = '正在读取参考论文并生成建议…';
+  });
+}
+
+const draftDeleteDialog = document.querySelector('#draft-delete-dialog');
+if (draftDeleteDialog) {
+  let draftToDelete = null;
+  let deleteRequestActive = false;
+  const confirmDelete = draftDeleteDialog.querySelector('#draft-delete-confirm');
+  document.querySelectorAll('.draft-delete-form').forEach((form) => form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (deleteRequestActive) return;
+    draftToDelete = form;
+    draftDeleteDialog.querySelector('#draft-delete-name').textContent = form.dataset.draftName;
+    draftDeleteDialog.showModal();
+    draftDeleteDialog.querySelector('#draft-delete-cancel').focus();
+  }));
+  draftDeleteDialog.querySelector('#draft-delete-cancel').addEventListener('click', () => draftDeleteDialog.close());
+  draftDeleteDialog.addEventListener('close', () => { if (!deleteRequestActive) draftToDelete = null; });
+  confirmDelete.addEventListener('click', async () => {
+    if (!draftToDelete || deleteRequestActive) return;
+    deleteRequestActive = true;
+    confirmDelete.disabled = true;
+    confirmDelete.textContent = '正在删除…';
+    try {
+      const response = await scopedFetch(draftToDelete.action.replace('/profiles/drafts/', '/api/profile-drafts/'), {method: 'POST', body: new FormData(draftToDelete)});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || '删除失败，请重试');
+      window.location.hash = 'deleted-drafts';
+      window.location.reload();
+    } catch (error) {
+      toast(error.message);
+      deleteRequestActive = false;
+      confirmDelete.disabled = false;
+      confirmDelete.textContent = '删除草稿';
+      draftDeleteDialog.close();
+    }
+  });
+}
+if (window.location.hash === '#deleted-drafts') {
+  const deletedDrafts = document.querySelector('#deleted-drafts');
+  if (deletedDrafts) deletedDrafts.open = true;
+}

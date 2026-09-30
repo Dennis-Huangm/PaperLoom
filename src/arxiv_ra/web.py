@@ -11,7 +11,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request, status
@@ -23,6 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from . import __version__
 from .abstracts import localize_abstracts
 from .render import summary_html
+from .summary_cleaning import clean_summary_text
 from .config import AppConfig, VersionSyncConfig, load_config
 from .citation_graph import CitationExplorer
 from .feedback import FeedbackStore, VERDICTS
@@ -30,11 +31,13 @@ from .library import PaperLibraryStore
 from .reading_state import READING_STATUSES, ReadingConflict
 from .models import Paper
 from .paper_data import local_paper_item, base_id, requested_version
+from .report_store import delete_report_attempts
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .pipeline import DailyPipeline
 from .profiles import ProfileManager
 from .web_profiles import register_profile_routes
 from .utils import read_json
+from .storage import clear_recommendations
 from .weekly import WeeklySynthesizer
 from .activity import collect_activity
 from .backup import BackupService
@@ -60,6 +63,7 @@ from .web_catalog import (
     recommendation_history,
     recommendations_for_date,
     report_library,
+    grouped_report_library,
     preferred_report_index,
     result_artifact_url,
     version_tracking_data,
@@ -158,6 +162,7 @@ def create_app(config_path: Path | str) -> FastAPI:
     package_root = Path(__file__).parent
     templates = Jinja2Templates(directory=str(package_root / "templates"))
     templates.env.filters["summary_html"] = summary_html
+    templates.env.filters["clean_summary_text"] = clean_summary_text
     jobs = JobManager(output_root, config.jobs.max_parallel)
     scheduler = ProfileScheduler(config_path, output_root, jobs)
 
@@ -185,6 +190,10 @@ def create_app(config_path: Path | str) -> FastAPI:
     app.state.scheduler = scheduler
     app.mount("/static", StaticFiles(directory=str(package_root / "static")), name="static")
     app.mount("/artifacts", ReportStaticFiles(directory=str(output_root), html=True), name="artifacts")
+
+    @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+    def favicon() -> FileResponse:
+        return FileResponse(package_root / "static" / "app-icon.ico", media_type="image/x-icon")
 
     request_config: ContextVar[AppConfig | None] = ContextVar("request_config", default=None)
 
@@ -234,7 +243,7 @@ def create_app(config_path: Path | str) -> FastAPI:
             request_config.reset(token)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Referrer-Policy"] = "same-origin"
         if request.url.path.startswith("/artifacts/") and (request.url.path.endswith("/report.html") or "/citations/" in request.url.path):
             # Also protect legacy reports which have not been regenerated.
             response.headers["Content-Security-Policy"] = (
@@ -413,10 +422,23 @@ def create_app(config_path: Path | str) -> FastAPI:
                 recommendation_history=history,
                 selected_date=date_label or "",
                 is_latest=is_latest,
-                recent_reports=report_library(output_root)[:4],
+                recent_reports=grouped_report_library(report_library(output_root))[:4],
                 recent_weekly=weekly_library(output_root, current.profile_id)[:2],
             ),
         )
+
+    @app.post("/recommendations/clear")
+    def clear_daily_recommendations(date_label: str = Form(...),
+                                    profile_id: str = Form(...)) -> RedirectResponse:
+        if profile_id != current_config().profile_id:
+            raise HTTPException(409, "研究方向已切换，请刷新页面后重试")
+        if jobs.active_for("digest", profile_id):
+            raise HTTPException(409, "当前研究方向正在刷新推荐，请等待任务结束后再清除")
+        try:
+            clear_recommendations(output_root, date_label, profile_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse("/", status_code=303)
 
     @app.get("/library", response_class=HTMLResponse)
     def paper_library(request: Request, q: str = "", reading_status: str = "") -> HTMLResponse:
@@ -567,9 +589,17 @@ def create_app(config_path: Path | str) -> FastAPI:
         return RedirectResponse("/library", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.get("/reports", response_class=HTMLResponse)
-    def reports(request: Request, q: str = "") -> HTMLResponse:
+    def reports(request: Request, q: str = "", direction: str = "") -> HTMLResponse:
         current = current_config()
-        items = report_library(output_root)
+        profile_names = {profile["id"]: profile["name"] for profile in profiles.list()}
+        all_items = grouped_report_library(report_library(output_root), profile_names)
+        directions = sorted(
+            {item["id"]: item["name"] for report in all_items for item in report["directions"]}.items(),
+            key=lambda item: item[1].casefold(),
+        )
+        items = all_items
+        if direction:
+            items = [item for item in items if any(part["id"] == direction for part in item["directions"])]
         saved_papers = PaperLibraryStore(output_root, current.profile_id).all()
         for item in items:
             item["in_library"] = str(item.get("arxiv_id") or "") in saved_papers
@@ -582,8 +612,29 @@ def create_app(config_path: Path | str) -> FastAPI:
         return templates.TemplateResponse(
             request,
             "reports.html",
-            context(request, "reports", reports=items, query=q),
+            context(request, "reports", reports=items, query=q, direction=direction,
+                    directions=directions, catalog_ready=True),
         )
+
+    @app.post("/reports/delete")
+    def delete_report(arxiv_id: str = Form(...), report_id: str = Form(...),
+                      q: str = Form(""), direction: str = Form("")) -> RedirectResponse:
+        if not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id:
+            raise HTTPException(status_code=400, detail="无效的 arXiv ID")
+        current = next((item for item in grouped_report_library(report_library(output_root))
+                        if item["arxiv_id"] == arxiv_id), None)
+        if current is None:
+            raise HTTPException(status_code=404, detail="本地报告不存在")
+        if current["report_id"] != report_id:
+            raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")
+        if jobs.active_report_for(arxiv_id):
+            raise HTTPException(status_code=409, detail="这篇论文正在生成报告，请等待任务结束后再删除")
+        removed = delete_report_attempts(output_root, arxiv_id)
+        if not removed:
+            raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")
+        jobs.forget_result_urls({artifact_url(output_root / item, output_root) for item in removed})
+        query = urlencode({key: value for key, value in {"q": q, "direction": direction}.items() if value})
+        return RedirectResponse(f"/reports?{query}" if query else "/reports", status_code=303)
 
     @app.get("/generate", response_class=HTMLResponse)
     def generate(request: Request, history_page: int = 1) -> HTMLResponse:
@@ -826,7 +877,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         )
 
     @app.get("/profiles", response_class=HTMLResponse)
-    def profile_page(request: Request, saved: str = "", switched: str = "") -> HTMLResponse:
+    def profile_page(request: Request, saved: str = "", switched: str = "", updated: str = "") -> HTMLResponse:
         return templates.TemplateResponse(
             request,
             "profiles.html",
@@ -835,9 +886,11 @@ def create_app(config_path: Path | str) -> FastAPI:
                 "profiles",
                 profiles=profiles.list(),
                 drafts=profiles.drafts(),
+                deleted_drafts=profiles.deleted_drafts(),
                 draft_request_id=uuid.uuid4().hex,
                 saved=saved,
                 switched=switched,
+                updated=updated,
             ),
         )
 
@@ -1346,6 +1399,10 @@ def create_app(config_path: Path | str) -> FastAPI:
             identity=task.identity("obsidian"), profile_id=current.profile_id
         )
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
+
+    @app.delete("/api/jobs/completed", response_class=JSONResponse)
+    def clear_completed_jobs() -> JSONResponse:
+        return JSONResponse({"deleted": jobs.clear_finished()})
 
     @app.get("/api/jobs/{job_id}", response_class=JSONResponse)
     def job_status(job_id: str) -> JSONResponse:

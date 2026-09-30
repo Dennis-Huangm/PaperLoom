@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .config import DiscoveryConfig, RankingConfig
 from .discovery import DiscoveryService, DiscoveryError
@@ -13,8 +13,17 @@ from .recent_interest import prefilter_candidates
 from .research_clients import ResearchClients
 
 
-def preview_profile(draft, config, *, references_only=False):
+def preview_profile(draft, config, *, references_only=False, lookback_days=90):
+    if type(lookback_days) is not int or not 1 <= lookback_days <= 365:
+        raise ValueError("试搜范围必须为 1–365 天")
     discovery = DiscoveryConfig(**draft["discovery"])
+    now = datetime.now(timezone.utc)
+    scope = {"lookback_days": None if references_only else lookback_days,
+             "daily_lookback_days": discovery.lookback_days,
+             "date_from": (now - timedelta(days=lookback_days)).date().isoformat(),
+             "date_to": now.date().isoformat(), "categories": list(discovery.arxiv_categories)}
+    if not references_only:
+        discovery.lookback_days = lookback_days
     discovery.max_candidates = min(30, discovery.max_candidates)
     discovery.prefilter_count = min(30, discovery.prefilter_count)
     discovery.alphaxiv_max_candidates = min(5, discovery.alphaxiv_max_candidates)
@@ -34,6 +43,7 @@ def preview_profile(draft, config, *, references_only=False):
                 result = DiscoveryService(discovery, clients.arxiv, clients.alphaxiv).discover()
             except DiscoveryError as exc:
                 return {"revision": draft["revision"], "status": "failed", "error": str(exc),
+                        "created_at": now.isoformat(), "scope": scope, "references_only": references_only,
                         "sources": exc.discovery_result.sources, "selected": [], "rejected": []}
             papers, sources = result.papers, result.sources
         ranked = rank_papers(papers, discovery, config.ranking)
@@ -68,9 +78,10 @@ def preview_profile(draft, config, *, references_only=False):
         partial = any(s["status"] in {"failed", "partial", "skipped"} for s in sources.values())
         warnings = list(dict.fromkeys(p.ranking_explanation.get("condition_error", "") for p in candidates
                                      if p.ranking_explanation.get("condition_error")))
-        status = "empty" if not papers else "uncertain" if uncertain and not selected else "filtered" if not selected else "partial" if partial else "ok"
+        status = "partial" if partial else "empty" if not papers else "uncertain" if uncertain and not selected else "filtered" if not selected else "ok"
         return {"revision": draft["revision"], "created_at": datetime.now(timezone.utc).isoformat(),
                 "status": status, "sources": sources, "references_only": references_only, "warnings": warnings,
+                "scope": scope,
                 "reference_verdicts": reference_verdicts,
                 "budget": {"arxiv": discovery.max_candidates, "alphaxiv": discovery.alphaxiv_max_candidates},
                 "counts": {"retrieved": len(papers), "evaluated": len(candidates), "eligible": len(selected),

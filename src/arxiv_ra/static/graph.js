@@ -176,9 +176,9 @@
     content.append(evidence);
     const abstract = section('摘要'); abstract.append(element('p', n.abstract || '暂无摘要。')); content.append(abstract);
     const url = paperUrl(n);
-    if (url) { const link = element('a', '打开论文 ↗', 'paper-link'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; content.append(link); }
+    if (url) { const link = element('a', '打开论文 ↗', 'paper-link'); link.href = url; link.rel = 'noreferrer'; content.append(link); }
     const semantic = safeUrl(n.url);
-    if (semantic && semantic !== url) { const link = element('a', '在 Semantic Scholar 查看 ↗', 'secondary-link'); link.href = semantic; link.target = '_blank'; link.rel = 'noopener noreferrer'; content.append(link); }
+    if (semantic && semantic !== url) { const link = element('a', '在 Semantic Scholar 查看 ↗', 'secondary-link'); link.href = semantic; link.rel = 'noreferrer'; content.append(link); }
   }
   function select(n, show = false) {
     selected = n; selectedEdge = null; renderDetail(n);

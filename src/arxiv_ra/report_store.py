@@ -1,9 +1,13 @@
 """Select report evidence by stored identity, never by a filename's sort order."""
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 from datetime import datetime
 
 from .utils import read_json
+from .paper_data import base_id
+from .reading_state import _locked
 
 
 def quality_rank(metadata: dict) -> int:
@@ -42,3 +46,30 @@ def matching_report(output_root: Path, profile_id: str,
         except (OSError, ValueError, TypeError):
             continue
     return max(candidates)[-1] if candidates else None
+
+
+def delete_report_attempts(output_root: Path, arxiv_id: str) -> list[str]:
+    """Delete only dated report directories whose metadata names this paper."""
+    root = output_root.resolve()
+    removed = []
+    with _locked(root / "report-catalog.lock"):
+        for metadata_path in root.glob("????-??-??/reports/*/metadata.json"):
+            try:
+                payload = read_json(metadata_path, {})
+                paper = payload.get("paper") if isinstance(payload, dict) else None
+                if base_id(str((paper or {}).get("arxiv_id") or "")) != arxiv_id:
+                    continue
+                folder = metadata_path.parent
+                relative = folder.resolve().relative_to(root)
+                if (len(relative.parts) != 3 or relative.parts[1] != "reports"
+                        or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", relative.parts[0])
+                        or folder.is_symlink()):
+                    continue
+                report_id = (folder / "report.html").relative_to(root).as_posix()
+            except (OSError, ValueError, TypeError, AttributeError):
+                # A damaged or inaccessible artifact must never widen deletion
+                # to another directory; leave it for explicit inspection.
+                continue
+            shutil.rmtree(folder)
+            removed.append(report_id)
+    return removed

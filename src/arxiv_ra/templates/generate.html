@@ -42,8 +42,8 @@
   </section>
 
   <section class="queue-section">
-    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><span>最多并行 {{ config.jobs.max_parallel }} 个任务</span></header>
-    <p>任务记录在重启后保留，未完成任务标记为已中断，不会自动重跑。重新执行可能再次调用模型或同步；推荐任务恢复时不发送邮件。</p>
+    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><div class="queue-header-actions"><span>最多并行 {{ config.jobs.max_parallel }} 个任务</span><button id="clear-job-history" type="button">清除已结束记录</button></div></header>
+    <p>任务记录在重启后保留，未完成任务标记为已中断，不会自动重跑。重新执行可能再次调用模型或同步；推荐任务恢复时不发送邮件。清除记录不会删除生成的报告和推荐结果。</p>
     {% for error in job_load_errors %}<p role="alert">{{ error }}</p>{% endfor %}
     <div id="job-list" class="job-list">
       {% for job in jobs %}
@@ -57,7 +57,7 @@
             {% elif job.recoverable and job.profile_id == config.profile_id %}<button class="job-cancel" type="button" data-retry-job="{{ job.id }}">{{ '继续全文分析' if job.kind == 'report' else '重新执行' }}</button>
             {% elif job.recoverable %}<span>切换到 {{ job.profile_id }} 后恢复</span>{% endif %}
           {% endif %}
-          {% if job.result_url %}<a href="{{ job.result_url }}" target="_blank" rel="noreferrer">打开结果</a>{% endif %}
+          {% if job.result_url %}<a href="{{ job.result_url }}">打开结果</a>{% endif %}
           {% if job.status in ['queued', 'running'] %}<button class="job-cancel" type="button" data-cancel-job="{{ job.id }}">取消任务</button>{% elif job.status == 'cancelling' %}<span class="job-cancelling-label">取消中</span>{% endif %}
         </span>
         {% if job.status in ['interrupted', 'failed', 'cancelled'] or (job.status == 'succeeded_with_warnings' and job.report_progress.resumable) %}<p class="job-recovery-note">{{ job.recovery_note }}</p>{% endif %}

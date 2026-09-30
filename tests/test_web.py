@@ -4,6 +4,7 @@ import threading
 import time
 
 import yaml
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from arxiv_ra.abstracts import localize_abstracts
@@ -306,6 +307,65 @@ def test_dashboard_can_switch_to_historical_recommendation_date(
     assert invalid.status_code == 400
 
 
+def test_dashboard_shows_discovery_source_only_once_in_recommendation_evidence(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.setattr("arxiv_ra.web.localize_abstracts", lambda *_args, **_kwargs: None)
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    date_dir = tmp_path / "run" / "2026-09-28"
+    date_dir.mkdir(parents=True)
+    papers = [
+        {
+            "arxiv_id": "2609.00001",
+            "title": "First Paper",
+            "recommendation_detail": "通过 arXiv 发现的方法值得比较。原文 2 · PDF 第 1 页；原文 4 · PDF 第 2 页。 ---",
+            "source_label": "arXiv发现",
+        },
+        {
+            "arxiv_id": "2609.00002",
+            "title": "Second Paper",
+            "recommendation_reason": "提出结构化 SVG 生成框架；arXiv发现。原文 3 · PDF 第 1 页。 ---",
+            "source_label": "arXiv发现",
+        },
+    ]
+    write_json(
+        date_dir / "recommendations.json",
+        [
+            {
+                "paper": {
+                    **paper,
+                    "authors": [],
+                    "abstract": "Abstract.",
+                    "abstract_zh": "中文摘要。原文 2 · PDF 第 1 页、原文 3 · PDF 第 1 页。 ---",
+                    "primary_category": "cs.CV",
+                    "categories": ["cs.CV"],
+                    "published": "2026-09-28T00:00:00+00:00",
+                    "updated": "2026-09-28T00:00:00+00:00",
+                    "abs_url": f"https://arxiv.org/abs/{paper['arxiv_id']}",
+                    "pdf_url": f"https://arxiv.org/pdf/{paper['arxiv_id']}",
+                    "final_score": 9.0,
+                },
+                "verified": {},
+            }
+            for paper in papers
+        ],
+    )
+
+    with TestClient(create_app(config_path)) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    page = BeautifulSoup(response.text, "html.parser")
+    assert page.select_one("#inspector-source").get_text(strip=True) == "arXiv发现"
+    assert page.select_one("#inspector-reason").get_text(strip=True) == "通过 arXiv 发现的方法值得比较。"
+    assert page.select_one("#inspector-abstract").get_text(strip=True) == "中文摘要。"
+    assert all(node.get_text(strip=True) == "2026-09-28" for node in page.select(".row-date"))
+    second = BeautifulSoup(page.select_one("#paper-summary-1").decode_contents(), "html.parser")
+    assert second.select_one('[data-summary="reason"]').get_text(strip=True) == "提出结构化 SVG 生成框架。"
+    assert second.select_one('[data-summary="abstract"]').get_text(strip=True) == "中文摘要。"
+
+
 def test_historical_recommendation_actions_find_paper_and_keep_source_date(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -375,7 +435,7 @@ def test_localized_abstracts_are_generated_once_and_cached(tmp_path: Path, monke
         def chat(self, _system: str, user: str, json_mode: bool = False) -> str:
             calls.append(user)
             assert json_mode is True
-            return '{"papers":[{"id":"2407.05600","abstract_zh":"该论文研究智能体图像生成，并通过统一策略协调推理、工具调用与图像输出。","recommendation_detail":"它将推理、工具调用与图像输出置于同一策略中，可直接用于分析 AgenticT2I 的统一决策机制。"}]}'
+            return '{"papers":[{"id":"2407.05600","abstract_zh":"该论文研究智能体图像生成，并通过统一策略协调推理、工具调用与图像输出。原文 2 · PDF 第 1 页。 ---","recommendation_detail":"它将推理、工具调用与图像输出置于同一策略中，可直接用于分析 AgenticT2I 的统一决策机制。原文 3 · PDF 第 2 页。"}]}'
 
     monkeypatch.setattr("arxiv_ra.abstracts.LLMClient", FakeLLM)
     output_root = tmp_path / "run"
@@ -396,6 +456,9 @@ def test_localized_abstracts_are_generated_once_and_cached(tmp_path: Path, monke
 
     assert recommendations[0]["paper"]["abstract_zh"].startswith("该论文研究")
     assert "AgenticT2I" in recommendations[0]["paper"]["recommendation_detail"]
+    assert "PDF 第" not in recommendations[0]["paper"]["abstract_zh"]
+    assert "---" not in recommendations[0]["paper"]["abstract_zh"]
+    assert "PDF 第" not in recommendations[0]["paper"]["recommendation_detail"]
     assert len(calls) == 1
 
 
@@ -564,7 +627,7 @@ def test_dashboard_marks_existing_report_and_uses_chinese_summary(tmp_path: Path
     )
     (report_dir / "report.html").write_text("<html></html>", encoding="utf-8")
     (report_dir / "report.md").write_text(
-        "# GenArtist\n\n## 一句话总结\n\n该论文统一协调推理、工具调用与图像生成。\n\n## 核心方法\n\n方法。\n",
+        "# GenArtist\n\n## 一句话总结\n\n该论文统一协调推理、工具调用与图像生成。原文 2 · PDF 第 1 页。\n\n---\n\n## 核心方法\n\n方法。\n",
         encoding="utf-8",
     )
     app = create_app(config_path)
@@ -579,6 +642,8 @@ def test_dashboard_marks_existing_report_and_uses_chinese_summary(tmp_path: Path
     assert response.status_code == 200
     assert "摘要精要" in response.text
     assert "该论文统一协调推理、工具调用与图像生成" in response.text
+    summary = BeautifulSoup(response.text, "html.parser").select_one("#inspector-abstract").get_text(strip=True)
+    assert summary == "该论文统一协调推理、工具调用与图像生成。"
     assert "重新生成报告" in response.text
     assert "打开报告" in response.text
     assert "加入文献库" in reports_before.text
@@ -788,7 +853,7 @@ def test_redesigned_ui_uses_research_workspace_and_local_icon_library(tmp_path: 
     assert "primary-nav" in home.text
     assert "vendor/fontawesome/css/all.min.css" in home.text
     assert "app-icon.ico" in home.text
-    assert "20260927-summary" in home.text
+    assert "app.css?v=" in home.text and "app.js?v=" in home.text
     assert "literature-workspace" not in home.text  # empty test data uses the intentional empty state
     assert "paper-grid" not in home.text
     assert "report-table" not in reports.text  # empty report library uses the intentional empty state

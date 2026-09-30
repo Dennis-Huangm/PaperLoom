@@ -1,53 +1,80 @@
 {% extends "base.html" %}
 {% block title %}研究方向 · PaperLoom{% endblock %}
 {% block content %}
+<div class="profile-workspace">
   <header class="page-heading profile-heading">
-    <div><p class="section-kicker">RESEARCH PROFILES</p><h1>研究方向</h1><p>把一组关键词和参考论文整理成可随时切换的检索档案。</p></div>
+    <div><p class="section-kicker">研究工作台</p><h1>研究方向</h1><p>管理已启用的方向，继续检查草稿，或创建新的研究主题。</p></div>
     <div><span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>当前：{{ config.profile_name }}</span> <a class="button secondary" href="/schedules">多方向调度</a></div>
   </header>
   {% if saved %}<div class="notice success">✓ 新方向已生成并保存；{% if saved == active_profile %}现在已启用。{% else %}可在下方手动启用。{% endif %}</div>{% endif %}
+  {% if updated %}<div class="notice success">方向修改已保存。</div>{% endif %}
   {% if switched %}<div class="notice success">✓ 已切换研究方向。后续手动任务使用新档案，多方向调度仍按各自计划运行。</div>{% endif %}
 
+  <nav class="profile-section-nav" aria-label="方向管理"><a href="#profile-drafts">检索草稿 <span>{{ drafts|length }}</span></a><a href="#saved-profiles">已保存方向 <span>{{ profiles|length }}</span></a><a href="#profile-create">＋ 创建草稿</a></nav>
   <div class="profile-layout">
-    <section class="profile-create-card">
-      <p class="section-kicker">CREATE WITH AI</p>
+    <section class="profile-create-card" id="profile-create">
+      <p class="section-kicker">新研究主题</p>
       <h2>创建检索草稿</h2>
-      <p class="profile-intro">系统会读取参考论文的标题、摘要与 arXiv 类别，再结合关键词生成检索词、概念组和排序配置。</p>
+      <p class="profile-intro">填写研究主题，生成可检查和修改的草稿。生成后不会自动切换当前方向。</p>
       <form method="post" action="/profiles/create" class="profile-form"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <input type="hidden" name="request_id" value="{{ draft_request_id }}">
-        <label>方向名称<input name="name" placeholder="例如：具身智能中的世界模型" maxlength="80" required></label>
+        <label>暂定主题名称<input name="name" placeholder="例如：具身智能中的世界模型" maxlength="80" required><small>作为主题线索，模型会结合描述和参考论文提炼最终方向名称。</small></label>
         <label>一句话描述（可选）<textarea name="description" rows="3" placeholder="你具体想解决什么问题，关注哪些方法或场景"></textarea></label>
-        <label>重点关键词<textarea name="keywords" rows="5" placeholder="每行一个，或使用逗号分隔&#10;world model&#10;embodied agent&#10;video prediction"></textarea></label>
-        <label>参考论文 arXiv ID<textarea name="reference_ids" rows="5" placeholder="每行一个，例如：&#10;2407.05600"></textarea><small>最多分析前 12 篇；描述、关键词和参考论文至少填写一项。</small></label>
+        <label>重点关键词<textarea name="keywords" rows="3" placeholder="每行一个，或使用逗号分隔&#10;world model&#10;embodied agent&#10;video prediction"></textarea></label>
+        <label>参考论文 arXiv ID<textarea name="reference_ids" rows="3" placeholder="每行一个，例如：&#10;2407.05600"></textarea><small>最多分析前 12 篇；描述、关键词和参考论文至少填写一项。</small></label>
+        <details class="profile-optional"><summary>偏好与限制（可选）</summary>
         <label>不感兴趣的方向（可选）<textarea name="negative_keywords" rows="3" placeholder="survey, medical imaging"></textarea></label>
         <label>必要条件（可选）<textarea name="required" rows="2" placeholder="只有满足这些要求才允许推荐，每行一个"></textarea></label>
         <label>明确排除条件（可选）<textarea name="excluded" rows="2" placeholder="以这些主题为研究对象的论文不推荐，每行一个"></textarea></label>
+        </details>
         <div class="profile-form-footer">
           <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
           <button class="button primary" type="submit"><i class="fas fa-magic" aria-hidden="true"></i>生成草稿</button>
+        </div>
+        <div class="profile-submit-status" role="status" aria-live="polite" hidden>
+          <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+          <div><strong class="profile-submit-message">正在生成草稿</strong><small class="profile-submit-detail"></small></div>
+          <time class="profile-submit-elapsed" aria-hidden="true">00:00</time>
         </div>
       </form>
     </section>
 
     <section class="profile-library">
-      {% if drafts %}<h2>待检查的草稿</h2>{% for draft in drafts %}<article class="profile-card"><a href="/profiles/drafts/{{ draft.id }}">{{ draft.name }}</a><p>第 {{ draft.revision }} 版 · {{ {'ready':'可启用','needs_input':'需要补全','failed':'生成失败'}[draft.status] }}</p></article>{% endfor %}{% endif %}
-      <header><div><p class="section-kicker">SAVED PROFILES</p><h2>已保存方向</h2></div><span>{{ profiles|length }} 个档案</span></header>
+      <section id="profile-drafts" class="profile-group">
+        <header class="profile-group-heading"><div><h2>检索草稿</h2><p>尚在整理的方案，检查后再启用。</p></div><span>{{ drafts|length }} 份</span></header>
+        <div class="draft-card-list">
+        {% for draft in drafts %}<article class="draft-list-card">
+          <div class="draft-list-card-heading"><h3><a href="/profiles/drafts/{{ draft.id }}">{{ draft.name }}</a></h3><span class="draft-badge {{ draft.status }}">{% if draft.get('activated_revision') == draft.revision %}已启用此版本{% else %}{{ {'ready':'待检查','needs_input':'待补全','failed':'生成失败'}[draft.status] }}{% endif %}</span></div>
+          <p class="draft-list-description">{{ draft.description or '尚未填写主题描述' }}</p>
+          <div class="draft-list-meta"><span>第 {{ draft.revision }} 版</span><span>{{ draft.references|length }} 篇参考论文</span><span>{{ draft.plan.conditions|selectattr('confirmed')|list|length }} 条已采用条件</span></div>
+          {% if draft.status == 'failed' %}<p class="draft-list-error">{{ draft.generation_error or '请打开草稿检查生成结果' }}</p>{% endif %}
+          <footer><a class="button secondary" href="/profiles/drafts/{{ draft.id }}">{{ '检查并修正' if draft.status == 'failed' else '查看草稿' }}</a><form method="post" action="/profiles/drafts/{{ draft.id }}/delete" class="draft-delete-form" data-draft-name="{{ draft.name }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button type="submit" class="draft-delete-button">删除草稿</button></form></footer>
+        </article>{% else %}<div class="profile-empty"><strong>还没有待整理的草稿</strong><p>创建草稿后，可检查主题、试搜论文，再启用为研究方向。</p><a href="#profile-create">创建第一个草稿 →</a></div>{% endfor %}
+        </div>
+      </section>
+      <section id="saved-profiles" class="profile-group">
+      <header class="profile-group-heading"><div><h2>已保存方向</h2><p>切换后用于后续手动任务。</p></div><span>{{ profiles|length }} 个</span></header>
       <div class="profile-list">
         {% for profile in profiles %}
         <article class="profile-card {% if profile.active %}active{% endif %}">
           <div class="profile-card-top">
-            <div><span class="profile-id">{{ profile.id }}</span><h3>{{ profile.name }}</h3></div>
+            <div><h3><a href="/profiles/{{ profile.id }}/edit">{{ profile.name }}</a></h3></div>
             {% if profile.active %}<span class="profile-state"><i class="fas fa-check" aria-hidden="true"></i>当前方向</span>{% else %}
             <form method="post" action="/profiles/{{ profile.id }}/activate"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button subtle" type="submit">切换到此方向</button></form>{% endif %}
           </div>
           <p>{{ profile.description or '尚未填写方向描述。' }}</p>
-          <form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="button subtle">复制为新草稿</button></form>
+          <div class="profile-card-actions"><a class="button secondary" href="/profiles/{{ profile.id }}/edit"><i class="far fa-edit" aria-hidden="true"></i>编辑方向</a><form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="button subtle">复制为新草稿</button></form></div>
           <div class="profile-tags">{% for keyword in profile.keywords[:8] %}<span>{{ keyword }}</span>{% endfor %}</div>
           {% if profile.references %}<div class="profile-references"><strong>参考论文</strong>{% for paper in profile.references[:4] %}<span>arXiv:{{ paper.arxiv_id }} · {{ paper.title }}</span>{% endfor %}</div>{% endif %}
-          <footer><span><i class="far fa-calendar" aria-hidden="true"></i>回溯 {{ profile.lookback_days }} 天</span><span><i class="far fa-file-alt" aria-hidden="true"></i>每日 {{ profile.recommendation_count }} 篇</span><code>{{ profile.path }}</code></footer>
+          <footer><span><i class="far fa-calendar" aria-hidden="true"></i>回溯 {{ profile.lookback_days }} 天</span><span><i class="far fa-file-alt" aria-hidden="true"></i>每日 {{ profile.recommendation_count }} 篇</span></footer>
         </article>
         {% endfor %}
       </div>
+      </section>
+      <details id="deleted-drafts" class="profile-trash"><summary>已删除草稿 <span>{{ deleted_drafts|length }} 份 · 可恢复</span></summary><p>这里只删除草稿副本，不影响已保存方向、阅读记录或报告。</p>
+      {% for draft in deleted_drafts %}<div class="profile-trash-row"><div><strong>{{ draft.name }}</strong><small>第 {{ draft.revision }} 版</small></div><form method="post" action="/profiles/drafts/{{ draft.id }}/restore"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button class="button secondary" type="submit">恢复草稿</button></form></div>{% else %}<p>暂无已删除草稿。</p>{% endfor %}</details>
     </section>
   </div>
+</div>
+<dialog id="draft-delete-dialog" class="draft-delete-dialog" aria-labelledby="draft-delete-title"><h2 id="draft-delete-title">删除这份草稿？</h2><p id="draft-delete-name"></p><p>草稿会移入“已删除草稿”，可随时恢复。已保存的研究方向、论文和报告不受影响。</p><footer><button type="button" class="button secondary" id="draft-delete-cancel">取消</button><button type="button" class="button primary" id="draft-delete-confirm">删除草稿</button></footer></dialog>
 {% endblock %}

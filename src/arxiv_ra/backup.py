@@ -65,7 +65,7 @@ def allowed(value: str) -> bool:
     if data[0] == ".jobs":
         return bool(re.fullmatch(r"[a-f0-9]+\.json", data[1]))
     if (len(data) == 5 and data[0] == 'citations' and data[2] == 'snapshots'
-            and re.fullmatch(r'[a-f0-9]{32}', data[3]) and data[4] in {'graph.js', 'graph.css'}):
+            and re.fullmatch(r'[a-f0-9]{32}', data[3]) and data[4] in {'graph.js', 'graph.css', 'app-icon.ico'}):
         return True
     return (data[0] in DATA_DIRS or bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", data[0]))) and Path(data[-1]).suffix.lower() in EXTENSIONS
 
