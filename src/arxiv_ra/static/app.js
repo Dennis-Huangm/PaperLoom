@@ -1135,11 +1135,28 @@ if (window.location.hash === '#deleted-drafts') {
 }
 
 // Durable collection actions use the same profile boundary as other mutations.
+document.querySelectorAll('.collection-submit').forEach((form) => {
+  const choices = [...form.querySelectorAll('input[type="checkbox"]:not(:disabled)')];
+  const button = form.querySelector('button[type="submit"]');
+  const update = () => {
+    const selected = choices.filter((choice) => choice.checked);
+    choices.forEach((choice) => choice.closest('.collection-target')?.classList.toggle('selected', choice.checked));
+    const names = selected.map((choice) => choice.name === 'zotero' ? 'Zotero' : 'Obsidian');
+    const hint = form.querySelector('[data-collection-selection]');
+    if (hint) hint.textContent = names.length ? '已选择 ' + names.join(' 与 ') : '请选择收录目标';
+    const label = form.querySelector('[data-collection-submit-label]');
+    if (label) label.textContent = names.length === 1 ? '收录到 ' + names[0] : '收录所选目标';
+    if (button) button.disabled = !names.length;
+  };
+  choices.forEach((choice) => choice.addEventListener('change', update));
+  update();
+});
 document.querySelectorAll('.collection-action').forEach((form) => {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = event.submitter || form.querySelector('button[type="submit"]');
     if (button) button.disabled = true;
+    form.setAttribute('aria-busy', 'true');
     try {
       const response = await scopedFetch(form.action, {method: 'POST', body: new FormData(form)});
       const payload = await response.json();
@@ -1148,6 +1165,7 @@ document.querySelectorAll('.collection-action').forEach((form) => {
     } catch (error) {
       toast(error.message);
       if (button) button.disabled = false;
+      form.removeAttribute('aria-busy');
     }
   });
 });

@@ -378,22 +378,49 @@ class ObsidianExporter:
         vault, root = self._paths(create=False)
         result = []
         for path in root.rglob("*.md"):
-            try:
-                path = self._safe_target(path)
-                text = path.read_text(encoding="utf-8")
-                front = re.match(r"\A---\n(.*?)\n---", text, re.S)
-                fields = yaml.safe_load(front.group(1)) if front else {}
-                if (not isinstance(fields, dict) or fields.get("type") != "paper-note"
-                        or fields.get("arxiv_id") != arxiv_id
-                        or fields.get("profile_id") != (self.config.profile_id or "default")):
-                    continue
-                valid = (text.count(MANAGED_START) == text.count(MANAGED_END) == 1
-                         and text.index(MANAGED_START) < text.index(MANAGED_END))
-                result.append({"path": path.relative_to(vault).as_posix(),
-                               "version": fields.get("version"), "valid": valid})
-            except (OSError, ValueError, yaml.YAMLError):
-                continue
+            candidate = self._inspect_note(path, arxiv_id, vault, root)
+            if candidate:
+                result.append(candidate)
         return result
+
+    def _inspect_note(self, path: Path, arxiv_id: str, vault: Path, root: Path) -> dict:
+        try:
+            path = path.resolve()
+            if not path.is_relative_to(root):
+                return {}
+            text = path.read_text(encoding="utf-8")
+            front = re.match(r"\A---\n(.*?)\n---", text, re.S)
+            fields = yaml.safe_load(front.group(1)) if front else {}
+            if (not isinstance(fields, dict) or fields.get("type") != "paper-note"
+                    or fields.get("arxiv_id") != arxiv_id or not self._entry_belongs_to_profile(fields)):
+                return {}
+            valid = (text.count(MANAGED_START) == text.count(MANAGED_END) == 1
+                     and text.index(MANAGED_START) < text.index(MANAGED_END))
+            return {"path": path.relative_to(vault).as_posix(), "version": fields.get("version"), "valid": valid}
+        except (OSError, ValueError, yaml.YAMLError):
+            return {}
+
+    def inspect_paper_note(self, arxiv_id: str, relative_path: str = '') -> dict:
+        """Verify one recorded note without creating folders or changing its association."""
+        if not self.settings.enabled:
+            return {'status': 'unconfigured', 'error': 'Obsidian 尚未启用'}
+        try:
+            vault, root = self._paths(create=False)
+            if not relative_path:
+                manifest = read_json(root / '.arxiv-ra-manifest.json', {}) or {}
+                if not isinstance(manifest, dict):
+                    raise ObsidianError('笔记索引格式无效，请检查关联')
+                entry = self._paper_entry(manifest, arxiv_id)
+                relative_path = entry.get('note', '') + '.md' if entry.get('note') else ''
+            if not relative_path:
+                return {'status': 'unlinked'}
+            candidate = self._inspect_note(vault / relative_path, arxiv_id, vault, root)
+            if candidate.get('valid'):
+                return {**candidate, 'status': 'verified', 'arxiv_id': arxiv_id, 'target': 'obsidian'}
+            return {'status': 'needs_attention', 'path': relative_path,
+                    'error': '原笔记已移动、缺失或标记无法验证，请检查关联'}
+        except (OSError, ValueError, ObsidianError) as exc:
+            return {'status': 'needs_attention', 'error': str(exc)}
 
     @_serialized_sync
     def associate_paper_note(self, arxiv_id: str, relative_path: str) -> dict:

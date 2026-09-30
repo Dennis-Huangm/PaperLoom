@@ -458,6 +458,11 @@ class PaperCollection:
                     and association.get('library_id') == identity and association.get('status') == 'verified'):
                 links['zotero'] = 'zotero://select/library/items/' + association['item_key']
         association = data['associations'].get(self._obsidian_key({'arxiv_id': aid}))
+        if (not self._restore_pending(data, aid)
+                and (not association or association.get('status') in {'verified', 'unlinked'})):
+            with ObsidianExporter(self.config, self.project_root, clients=self.clients) as exporter:
+                observed = exporter.inspect_paper_note(aid, (association or {}).get('path', ''))
+            association = {**(association or {}), **observed}
         if association and association.get('path') and association.get('status') == 'verified':
             vault = Path(self.config.obsidian.vault_path).resolve()
             path = (vault / association['path']).resolve()
@@ -471,7 +476,8 @@ class PaperCollection:
             links = {}
         expected = requested_version(arxiv_id)
         for entry in associations.values():
-            entry['update_needed'] = bool(expected and entry.get('version') != expected)
+            entry['update_needed'] = bool(expected and (entry.get('path') or entry.get('item_key'))
+                                          and entry.get('version') != expected)
         for op in operations:
             note = op['targets'].get('obsidian')
             if note and note.get('status') == 'succeeded':

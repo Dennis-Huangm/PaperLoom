@@ -1,5 +1,6 @@
 """Collection behavior through the Web boundary, with a temporary vault."""
 import json
+from html import unescape
 from pathlib import Path
 
 import httpx
@@ -144,6 +145,65 @@ def test_collection_page_previews_snapshot_and_receipts(workspace):
         page = client.get('/collection', params={'arxiv_id': '2609.00001v2'})
         assert 'obsidian://open?' in page.text
         assert '/api/collection/retry' in page.text
+
+
+def test_unlinked_note_does_not_claim_a_version_mismatch(workspace):
+    config, _ = workspace
+    with TestClient(create_app(config)) as client:
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['associations']['obsidian']['status'] == 'unlinked'
+        assert not state['associations']['obsidian']['update_needed']
+
+
+def test_existing_auto_export_is_visible_without_a_collection_receipt(workspace):
+    from arxiv_ra.config import load_config
+    from arxiv_ra.obsidian import ObsidianExporter
+    config, _ = workspace
+    with TestClient(create_app(config)):
+        pass
+    cfg = load_config(config)
+    paper = json.loads((config.parent / 'run/2026-09-01/recommendations.json').read_text('utf-8'))[0]['paper']
+    with ObsidianExporter(cfg, config.parent) as exporter:
+        note = exporter.sync_collection(paper, {}, None, None)
+    before = note.read_bytes()
+    with TestClient(create_app(config)) as client:
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['operations'] == []
+        assert state['associations']['obsidian']['status'] == 'verified'
+        assert state['associations']['obsidian']['version'] == 2
+        assert state['links']['obsidian'].startswith('obsidian://open?')
+        assert not (config.parent / 'run/collaboration.json').exists()
+        assert note.read_bytes() == before
+
+
+def test_root_destination_is_readable_and_missing_root_is_not_created(workspace):
+    config, vault = workspace
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['obsidian']['root_folder'] = '.'
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    with TestClient(create_app(config)) as client:
+        page = client.get('/collection', params={'arxiv_id': '2609.00001v2', 'origin': 'recommendation',
+                                                'source_date': '2026-09-01'})
+        assert '知识库根目录' in page.text
+        assert vault.name in unescape(page.text)
+        assert '与本次所选版本不同' not in page.text
+    values['obsidian']['root_folder'] = 'not-created-by-reading'
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    with TestClient(create_app(config)) as client:
+        assert client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).status_code == 200
+    assert not (vault / 'not-created-by-reading').exists()
+
+
+def test_readonly_inspection_hides_a_note_with_changed_identity(workspace):
+    config, vault = workspace
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client).json()
+        note = vault / receipt['targets']['obsidian']['path']
+        content = note.read_text('utf-8').replace("arxiv_id: '2609.00001'", "arxiv_id: '2609.00002'")
+        note.write_text(content, encoding='utf-8')
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['associations']['obsidian']['status'] == 'needs_attention'
+        assert 'obsidian' not in state['links']
 
 
 def test_existing_zotero_save_uses_durable_receipt(workspace, zotero_server):
@@ -297,6 +357,9 @@ def test_user_selected_duplicate_note_remains_selected_on_retry(workspace):
         duplicate.write_text(note.read_text('utf-8'), encoding='utf-8')
         checked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'}).json()
         assert checked['associations']['obsidian']['status'] == 'needs_attention'
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert state['associations']['obsidian']['status'] == 'needs_attention'
+        assert 'obsidian' not in state['links']
         picked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2',
             'selected_path': duplicate.relative_to(vault).as_posix()}).json()
         assert picked['associations']['obsidian']['status'] == 'verified'
