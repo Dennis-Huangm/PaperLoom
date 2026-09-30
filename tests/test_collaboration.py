@@ -2,6 +2,7 @@
 import json
 from html import unescape
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import httpx
 import pytest
@@ -55,6 +56,9 @@ def test_collect_note_survives_restart_and_preserves_personal_text(workspace):
         assert len(list(vault.rglob('*.md'))) >= 1
         assert state['links']['obsidian'].startswith('obsidian://open?')
         assert '%26' in state['links']['obsidian']
+        # Obsidian decodes URI escapes, not form-encoded '+' characters.
+        query = urlsplit(state['links']['obsidian']).query
+        assert unquote(query.removeprefix('path=')) == str(note.resolve())
 
 
 def test_obsidian_shortcut_requires_report_for_selected_revision(workspace):
@@ -159,6 +163,33 @@ def test_moved_note_is_repaired_without_recreating_deleted_note(workspace):
         refused = collect(client).json()
         assert refused['targets']['obsidian']['status'] == 'needs_attention'
         assert not old.exists() and not moved.exists()
+
+
+@pytest.mark.parametrize('name', ['Vector Bench.md', '中文 + & 100%.md', 'Vector-Bench.md'])
+def test_obsidian_links_use_uri_encoding_on_collection_and_report_pages(workspace, name):
+    config, vault = workspace
+    folder = config.parent / 'run/2026-09-01/reports/shared'
+    write_json(folder / 'metadata.json', {'paper': {
+        'arxiv_id': '2609.00001', 'version': 2, 'title': 'Shared Paper', 'authors': []}})
+    (folder / 'report.html').write_text('<html>Report</html>', encoding='utf-8')
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client).json()
+        old = vault / receipt['targets']['obsidian']['path']
+        moved = old.parent / 'code native agentic text2image 的SVG方向' / name
+        moved.parent.mkdir()
+        old.rename(moved)
+        checked = client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'}).json()
+        assert checked['associations']['obsidian']['status'] == 'verified'
+        expected = str(moved.resolve())
+        state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
+        assert unquote(urlsplit(state['links']['obsidian']).query.removeprefix('path=')) == expected
+        for route in ('/collection?arxiv_id=2609.00001v2', '/reports'):
+            page = BeautifulSoup(client.get(route).text, 'html.parser')
+            link = page.select_one('a[href^="obsidian://open?"]')
+            assert link is not None
+            assert unquote(urlsplit(link['href']).query.removeprefix('path=')) == expected
+            assert '+' not in link['href']
+            assert '%20' in link['href']
 
 
 def test_collection_page_previews_snapshot_and_receipts(workspace):

@@ -9,7 +9,7 @@ import json
 import re
 import uuid
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from .obsidian import ObsidianExporter
 from .paper_data import base_id, requested_version
@@ -437,7 +437,7 @@ class PaperCollection:
                 continue
             path = (vault / association['path']).resolve()
             if path.is_relative_to(vault) and path.is_file():
-                links.setdefault(aid, {})['obsidian'] = 'obsidian://open?' + urlencode({'path': str(path)})
+                links.setdefault(aid, {})['obsidian'] = 'obsidian://open?' + urlencode({'path': str(path)}, quote_via=quote)
         return links
 
     def _status(self, data, arxiv_id, aid):
@@ -467,7 +467,7 @@ class PaperCollection:
             vault = Path(self.config.obsidian.vault_path).resolve()
             path = (vault / association['path']).resolve()
             if path.is_relative_to(vault) and path.is_file():
-                links['obsidian'] = 'obsidian://open?' + urlencode({'path': str(path)})
+                links['obsidian'] = 'obsidian://open?' + urlencode({'path': str(path)}, quote_via=quote)
         associations = {'obsidian': association or {'status': 'unlinked'}}
         for entry in data['associations'].values():
             if entry.get('target') == 'zotero' and entry.get('arxiv_id') == aid and entry.get('library_id') == identity:
