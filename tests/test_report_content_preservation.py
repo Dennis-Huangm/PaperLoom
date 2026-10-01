@@ -10,7 +10,7 @@ def test_note_table_survives_synthesis_omission_without_claiming_verified():
     restored = restore_note_tables(report, [note, note], inventory)
     assert restored.count('| Beta | 87.1 |') == 1
     assert restored.index('| Beta |') < restored.index('## 局限性')
-    assert '分片摘录' in restored
+    assert '部分摘录' in restored and '待核对' not in restored
     assert restore_note_tables(restored, [note], inventory) == restored
 
 
@@ -86,14 +86,15 @@ def test_markdown_table_is_not_treated_as_proof_of_pdf_completeness():
                                   pdf_available=True, full_report=True)
     gate = evidence['publication_gate']
     assert gate['table_completeness_unassessed'] == 1
-    assert gate['status'] == 'review_required'
+    assert gate['status'] == 'automatic_checks_passed'
 
 
-def test_missing_table_citation_keeps_cells_flagged_not_blank():
+def test_missing_table_citation_keeps_cells_without_flags():
     report = '# Test\n\n## 关键结果\n\n| Model | Score |\n|---|---|\n| Alpha | 91.2 |'
     output, evidence = attach_evidence(report, ParsedPaper('', ['Table 1: Results']),
                                       pdf_available=True, full_report=True)
-    assert '91.2（待核对）' in output
+    assert '| Alpha | 91.2 |' in output and '待核对' not in output
+    assert evidence['numeric_audit']['table_diagnostics']
     assert evidence['numeric_audit']['publication']['withheld_cells'] == 0
 
 

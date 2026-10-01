@@ -266,6 +266,142 @@ def test_pdf_does_not_retry_permanent_http_error(tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_pdf_reports_byte_progress_during_stream(tmp_path, monkeypatch):
+    from arxiv_ra.task_runtime import TaskHooks, bind_task_hooks
+
+    payload = b"%PDF-1.7\n" + b"x" * (2 * 1024 * 1024)
+    clock = [0.0]
+    updates = []
+
+    class SlowStream(httpx.SyncByteStream):
+        def __iter__(self):
+            for start in range(0, len(payload), 1024 * 1024):
+                clock[0] += 2
+                yield payload[start:start + 1024 * 1024]
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.monotonic", lambda: clock[0])
+    client = ArxivClient(min_interval=0)
+    client.client.close()
+    hooks = TaskHooks(progress=lambda detail, percent: updates.append((detail, percent)),
+                      warning=lambda *_: None, is_cancelled=lambda: False)
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(
+        200, headers={"Content-Length": str(len(payload))}, stream=SlowStream()
+    ))) as transport, bind_task_hooks(hooks):
+        client.client = transport
+        client.download_pdf(parse_feed(ATOM)[0], tmp_path / "paper.pdf")
+
+    byte_updates = [(detail, percent) for detail, percent in updates if "MiB" in detail]
+    assert len(byte_updates) >= 2
+    assert any("1.0 / 2.0 MiB" in detail for detail, _ in byte_updates)
+    assert all("KiB/s" in detail for detail, _ in byte_updates)
+    assert byte_updates[0][1] < byte_updates[-1][1] == 39
+    assert (tmp_path / "paper.pdf").read_bytes() == payload
+
+
+def test_pdf_cancellation_stops_stream_and_cleans_partial_file(tmp_path):
+    from arxiv_ra.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+
+    cancelled = [False]
+    chunks = []
+
+    class CancelledStream(httpx.SyncByteStream):
+        def __iter__(self):
+            chunks.append(1)
+            yield b"%PDF-1.7\n" + b"x" * 16384
+            cancelled[0] = True
+            chunks.append(2)
+            yield b"x" * 16384
+            chunks.append(3)
+            yield b"x" * 16384
+
+    client = ArxivClient(min_interval=0)
+    client.client.close()
+    hooks = TaskHooks(progress=lambda *_: None, warning=lambda *_: None,
+                      is_cancelled=lambda: cancelled[0])
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(
+        200, stream=CancelledStream()
+    ))) as transport, bind_task_hooks(hooks):
+        client.client = transport
+        with pytest.raises(TaskCancelled):
+            client.download_pdf(parse_feed(ATOM)[0], tmp_path / "paper.pdf")
+
+    assert chunks == [1, 2]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("ignore_range", [False, True])
+def test_pdf_resumes_known_partial_body_or_restarts_if_range_ignored(tmp_path, monkeypatch, ignore_range):
+    payload = b"%PDF-1.7\n" + b"a" * 16384 + b"b" * 16384
+    prefix = payload[:16384]
+    requests = []
+
+    class InterruptedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield prefix
+            raise httpx.RemoteProtocolError("peer closed connection before complete body")
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, headers={"Content-Length": str(len(payload)), "ETag": '"pdf-v2"'},
+                                  stream=InterruptedStream())
+        assert request.headers["Range"] == f"bytes={len(prefix)}-"
+        assert request.headers["If-Range"] == '"pdf-v2"'
+        if ignore_range:
+            return httpx.Response(200, content=payload)
+        return httpx.Response(206, content=payload[len(prefix):], headers={
+            "Content-Range": f"bytes {len(prefix)}-{len(payload) - 1}/{len(payload)}",
+            "ETag": '"pdf-v2"',
+        })
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", lambda _: None)
+    client = ArxivClient(min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        client.download_pdf(parse_feed(ATOM)[0], tmp_path / "paper.pdf")
+    assert (tmp_path / "paper.pdf").read_bytes() == payload
+    assert len(requests) == 2
+    assert list(tmp_path.glob("*.part")) == []
+
+
+@pytest.mark.parametrize("invalid", ["offset", "size", "etag"])
+def test_pdf_rejects_mismatched_resume_without_replacing_existing_file(tmp_path, monkeypatch, invalid):
+    payload = b"%PDF-1.7\n" + b"x" * 32768
+    prefix = payload[:16384]
+    destination = tmp_path / "paper.pdf"
+    destination.write_bytes(b"previous complete file")
+    requests = []
+
+    class InterruptedStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield prefix
+            raise httpx.RemoteProtocolError("incomplete body")
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, headers={"Content-Length": str(len(payload)), "ETag": '"original"'},
+                                  stream=InterruptedStream())
+        start = 0 if invalid == "offset" else len(prefix)
+        total = len(payload) + 1 if invalid == "size" else len(payload)
+        return httpx.Response(206, content=payload[len(prefix):], headers={
+            "Content-Range": f"bytes {start}-{total - 1}/{total}",
+            "ETag": '"changed"' if invalid == "etag" else '"original"',
+        })
+
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", lambda _: None)
+    client = ArxivClient(max_retries=1, min_interval=0)
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
+        client.client = transport
+        with pytest.raises(RuntimeError, match="不完整或不匹配"):
+            client.download_pdf(parse_feed(ATOM)[0], destination)
+    assert destination.read_bytes() == b"previous complete file"
+    assert len(requests) == 2
+    assert list(tmp_path.glob("*.part")) == []
+
+
 @pytest.mark.parametrize("content_range", [
     None, "bytes 100-20000/20001", "bytes 0-12000/24000", "bytes 0-24000/24001",
 ])

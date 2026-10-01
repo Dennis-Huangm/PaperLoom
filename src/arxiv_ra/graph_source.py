@@ -16,7 +16,7 @@ from .arxiv_categories import ARXIV_CATEGORIES
 from .arxiv_client import ArxivClient, parse_feed
 from .graph_store import normalize_paper
 from .graph_model import combine
-from .rate_limit import shared_rate_limit
+from .rate_limit import shared_rate_limit, defer_rate_limit
 from .task_runtime import task_checkpoint, task_warning
 
 FIELDS = 'paperId,title,abstract,year,venue,citationCount,externalIds,url,authors'
@@ -66,6 +66,13 @@ class GraphSource:
                     delay = min(30, max(0, float(exc.response.headers.get('Retry-After', delay))))
                 except ValueError:
                     pass
+                if exc.response.status_code == 429 and arxiv_client is None:
+                    try:
+                        requested = float(exc.response.headers.get('Retry-After', 0))
+                    except (TypeError, ValueError):
+                        requested = 0
+                    delay = max(1.2, delay, requested if math.isfinite(requested) else 0)
+                    defer_rate_limit('semantic-scholar', delay)
                 if attempt == self.config.citations.max_retries:
                     raise
             except httpx.TransportError:

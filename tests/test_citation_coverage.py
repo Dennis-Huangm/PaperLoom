@@ -47,7 +47,7 @@ def test_synthesis_recovers_exact_note_row_when_model_omits_its_citation():
               f'| Alpha | 91.20 | 88.40 | [[证据ID:{key}]] |\n'
               '| Beta | 87.10 | 82.60 | 当前材料缺少可定位原文依据 |')
     raw_output, raw_evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
-    assert raw_evidence['numeric_audit']['issues'] and '| Beta | 87.10（待核对）' in raw_output
+    assert raw_evidence['numeric_audit']['table_diagnostics'] and '| Beta | 87.10 |' in raw_output
 
     restored = restore_table_row_citations(report, [note], parsed, spans)
     output, evidence = attach_evidence(restored, parsed, pdf_available=True, full_report=True)
@@ -96,8 +96,9 @@ def test_completed_row_still_rejects_wrong_owner_order_and_scale(values):
 
 def test_unrelated_citation_cannot_expand_back_to_previous_row():
     output, evidence = row_report(start=PAGE.index('Beta'))
-    assert '| Alpha | 0.313 |' not in output
-    assert evidence['numeric_audit']['issues']
+    assert '| Alpha | 0.313 |' in output
+    assert evidence['numeric_audit']['table_diagnostics']
+    assert not evidence['numeric_audit']['completed_row_citations']
 
 
 def test_independently_cited_training_clause_survives_bad_sibling():

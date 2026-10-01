@@ -8,6 +8,15 @@ from arxiv_ra.config import AppConfig, CitationConfig
 from arxiv_ra.utils import read_json
 
 
+@pytest.fixture(autouse=True)
+def isolate_mock_graph_requests_from_real_process_quota(monkeypatch):
+    from arxiv_ra.rate_limit import _thread_rate_limit
+    # These tests use MockTransport and often zero intervals. Cross-process
+    # timing has its own subprocess regression test; no real quota is consumed.
+    monkeypatch.setattr('arxiv_ra.graph_source.shared_rate_limit', _thread_rate_limit)
+    monkeypatch.setattr('arxiv_ra.graph_source.defer_rate_limit', lambda *_: None)
+
+
 @pytest.mark.parametrize('kind,http_status,budget', [
     ('required', 200, 6), ('exclude', 200, 6), ('required', 429, 7), ('required', 200, 5),
 ])

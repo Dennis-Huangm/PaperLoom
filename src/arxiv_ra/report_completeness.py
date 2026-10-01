@@ -51,7 +51,7 @@ def restore_note_tables(report: str, notes: list[str], inventory: list[dict]) ->
             # synthesized report and earlier note chunks.
             header = note[rows[0]['header_start']:rows[0]['start']].rstrip()
             block = header + '\n' + '\n'.join(row['raw'] for row in unseen)
-            additions.append(f'### Table {number}（分片摘录，完整性待核对）\n\n'
+            additions.append(f'### Table {number}（分片部分摘录）\n\n'
                              + context.strip() + '\n\n' + block)
             existing.setdefault(number, set()).update(row_key(row) for row in unseen)
     if not additions:

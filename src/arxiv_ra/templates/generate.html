@@ -10,7 +10,7 @@
       <header><span class="task-icon"><i class="far fa-file-alt" aria-hidden="true"></i></span><div><h2>生成完整阅读报告</h2><p>下载全文、核验元数据、提取实验前方法图并阅读全文。</p></div></header>
       <form class="job-form task-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <label for="arxiv-id">arXiv ID</label>
-        <div class="joined-control"><input id="arxiv-id" name="arxiv_id" placeholder="例如：2407.05600" required><button class="button primary" type="submit">开始生成</button></div>
+        <div class="joined-control"><input id="arxiv-id" name="arxiv_id" placeholder="例如：2407.05600" required><button class="button primary" type="submit"><i class="fas fa-play" aria-hidden="true"></i>开始生成</button></div>
         <small>生成结果只保存在本地，不会作为附件发送到邮箱。</small>
       </form>
     </article>
@@ -20,7 +20,7 @@
       <form class="job-form task-form" action="/api/jobs/digest" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <label class="check-row"><input type="checkbox" name="force" value="true"><span><strong>忽略已处理状态</strong><small>允许重新推荐同一时间窗内的论文</small></span></label>
         <label class="check-row"><input type="checkbox" name="send_email" value="true"><span><strong>完成后发送 QQ 日报</strong><small>只发送推荐摘要，不发送完整报告</small></span></label>
-        <button class="button secondary full-width" type="submit">执行检索</button>
+        <button class="button secondary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>执行检索</button>
       </form>
     </article>
 
@@ -28,7 +28,7 @@
       <header><span class="task-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></span><div><h2>生成研究活动周报</h2><p>汇总近 {{ config.weekly.days }} 天推荐、收藏、阅读进度、报告和版本更新。</p></div></header>
       <form class="job-form task-form" action="/api/jobs/weekly" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <small>输出论文综述与活动记录，默认不附个人笔记。可在<a href="/weekly">周报页</a>选择附入笔记，或前往<a href="/compare">跨论文比较</a>。</small>
-        <button class="button secondary full-width" type="submit">生成研究周报</button>
+        <button class="button secondary" type="submit"><i class="fas fa-chart-line" aria-hidden="true"></i>生成研究周报</button>
       </form>
     </article>
 
@@ -36,14 +36,14 @@
       <header><span class="task-icon"><i class="fas fa-gem" aria-hidden="true"></i></span><div><h2>同步 Obsidian 知识库</h2><p>同步每日推荐、论文笔记、图片、周报、研究方向、概念页和 MOC 索引。</p></div></header>
       <form class="job-form task-form" action="/api/jobs/obsidian" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <small>{% if config.obsidian.enabled %}目标：{{ config.obsidian.vault_path }}\{{ config.obsidian.root_folder }}{% else %}请先在配置中心启用并选择 Obsidian vault。{% endif %}</small>
-        <button class="button secondary full-width" type="submit" {% if not config.obsidian.enabled %}disabled{% endif %}>立即同步</button>
+        <button class="button secondary" type="submit" {% if not config.obsidian.enabled %}disabled{% endif %}><i class="fas fa-sync-alt" aria-hidden="true"></i>立即同步</button>
       </form>
     </article>
   </section>
 
   <section class="queue-section">
-    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><div class="queue-header-actions"><span>最多并行 {{ config.jobs.max_parallel }} 个任务</span><button id="clear-job-history" type="button">清除已结束记录</button></div></header>
-    <p>任务记录在重启后保留，未完成任务标记为已中断，不会自动重跑。重新执行可能再次调用模型或同步；推荐任务恢复时不发送邮件。清除记录不会删除生成的报告和推荐结果。</p>
+    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><div class="queue-header-actions"><span><i class="fas fa-stream" aria-hidden="true"></i>最多并行 {{ config.jobs.max_parallel }} 个任务</span><button id="clear-job-history" type="button"><i class="far fa-trash-alt" aria-hidden="true"></i>清除已结束记录</button></div></header>
+    <details class="queue-notice"><summary><i class="fas fa-info-circle" aria-hidden="true"></i>任务保留与恢复说明</summary><p>任务记录在重启后保留，未完成任务标记为已中断，不会自动重跑。重新执行可能再次调用模型或同步；推荐任务恢复时不发送邮件。清除记录不会删除生成的报告和推荐结果。</p></details>
     {% for error in job_load_errors %}<p role="alert">{{ error }}</p>{% endfor %}
     <div id="job-list" class="job-list">
       {% for job in jobs %}

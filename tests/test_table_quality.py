@@ -23,6 +23,20 @@ def review(source, headers, rows):
 SOURCE = "| Model | Accuracy (%) | F1 (%) |\n|---|---|---|\n| Alpha | 91.2 | 88.4 |\n| Beta | 88.4 | 91.2 |\n"
 
 
+def test_short_model_table_separator_is_repaired_before_numeric_audit():
+    from arxiv_ra.report import finalize_report_structure
+    source = "No source table is available to confirm these extracted values."
+    report = "## 关键结果\n\n| Model | Score | 原文依据 |\n| :--- | :--- |\n| **Models** | |\n| Alpha | 99.9 | 缺少依据 |\n| Beta | 88.8 | 缺少依据 |"
+    output, evidence = attach_evidence(finalize_report_structure(report, []),
+                                      ParsedPaper(source, [source]), pdf_available=True, full_report=True)
+    tree = BeautifulSoup(markdown_with_math(output)[0], "html.parser")
+    assert len(tree.select('tbody tr')) == 3
+    assert [[c.get_text(strip=True) for c in row.select('td')] for row in tree.select('tbody tr')] == [
+        ['Models', '', ''], ['Alpha', '99.9', '缺少依据'], ['Beta', '88.8', '缺少依据']]
+    assert '**[待核对]** |' not in output
+    assert evidence['numeric_audit']['table_diagnostics']
+
+
 def test_column_and_model_swaps_are_caught_even_when_all_numbers_exist():
     _, audit, rows = review(SOURCE, ["Model", "Accuracy (%)", "F1 (%)"],
                             [["Alpha", "88.4", "91.2"], ["Beta", "91.2", "88.4"]])
@@ -109,14 +123,16 @@ def test_missing_row_condition_and_damaged_numbers_are_not_guessed():
     damaged = "Table 1: Results\nAlpha\n1.22\n33.90\n1656.5010.20\n34.87\n"
     _, audit, rows = review(damaged, ["Model", "ACC", "MSE", "CCR"], [["Alpha", "1.22", "10.20", "34.87"]])
     assert audit["table_checks"][0]["status"] == "unassessed"
-    assert rows[0][:4] == ["Alpha", "1.22", "10.20（待核对）", "34.87"]
+    assert rows[0][:4] == ["Alpha", "1.22", "10.20", "34.87"]
+    assert audit['table_diagnostics'] and not audit['issues']
 
 
 def test_bad_cell_does_not_remove_correct_siblings_or_break_escaped_pipes():
     source = "The Alpha model achieved 91.2% accuracy on the test set."
     _, audit, rows = review(source, ["Model", "Accuracy", "Unknown", "Note"], [["Alpha", "91.2%", "99.9%", r"a\|b"]])
-    assert rows[0][:4] == ["Alpha", "91.2%", "99.9%（待核对）", "a|b"]
-    assert audit["publication"]["flagged_cells"] == 1
+    assert rows[0][:4] == ["Alpha", "91.2%", "99.9%", "a|b"]
+    assert audit["publication"]["flagged_cells"] == 0
+    assert audit['table_diagnostics'][0]['numbers'] == ['99.9%']
 
 
 def test_optional_outer_pipes_preserve_table_and_good_cells():
@@ -124,8 +140,9 @@ def test_optional_outer_pipes_preserve_table_and_good_cells():
     report = f"## 关键结果\n\nModel | Score | Other | 依据\n---|---|---|---\nAlpha | 91.2% | 99.9% | [[证据:{source}]]"
     output, evidence = attach_evidence(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     tree = BeautifulSoup(markdown_with_math(output)[0], "html.parser")
-    assert [c.get_text(strip=True) for c in tree.select("tbody td")][:3] == ["Alpha", "91.2%", "99.9%（待核对）"]
-    assert evidence["numeric_audit"]["publication"]["flagged_cells"] == 1
+    assert [c.get_text(strip=True) for c in tree.select("tbody td")][:3] == ["Alpha", "91.2%", "99.9%"]
+    assert evidence["numeric_audit"]["publication"]["flagged_cells"] == 0
+    assert evidence['numeric_audit']['table_diagnostics']
 
 
 def test_unverified_prose_keeps_content_and_explicit_warning():
@@ -165,4 +182,4 @@ def test_same_page_unrelated_quote_cannot_validate_a_different_row():
     report = report.replace("| Model | Accuracy (%) |", "| Model | Accuracy (%) | 依据 |").replace("|---|---|", "|---|---|---|")
     _, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert evidence["numeric_audit"]["table_checks"][0]["status"] == "unassessed"
-    assert evidence["numeric_audit"]["issues"][0]["numbers"] == ["91.2"]
+    assert evidence["numeric_audit"]["table_diagnostics"][0]["numbers"] == ["91.2"]

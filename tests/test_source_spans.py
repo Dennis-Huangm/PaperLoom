@@ -43,7 +43,8 @@ def test_id_attaches_exact_source_and_numeric_audit_still_rejects_wrong_value():
     assert citation['quote'] == ' '.join(SOURCE.split())
     assert citation['start'] == 0 and citation['end'] == len(SOURCE)
     assert evidence['source_spans']['cited'] == 1
-    assert [x['numbers'] for x in evidence['numeric_audit']['issues']] == [['8527']]
+    assert not evidence['numeric_audit']['issues']
+    assert [x['numbers'] for x in evidence['numeric_audit']['table_diagnostics']] == [['8527']]
     assert '[[证据ID:' not in report and 'paper.pdf#page=1' in report
 
 

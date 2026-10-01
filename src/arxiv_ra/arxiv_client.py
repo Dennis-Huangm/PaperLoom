@@ -5,6 +5,7 @@ import time
 import uuid
 import math
 import ssl
+import os
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -16,6 +17,7 @@ import httpx
 from . import __version__
 from .models import Author, Paper
 from .rate_limit import defer_rate_limit, shared_rate_limit
+from .task_runtime import task_checkpoint, task_progress
 from .utils import normalize_space
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -214,48 +216,108 @@ class ArxivClient:
         self._download_pdf(paper.pdf_url, destination, paper.arxiv_id)
 
     def _download_pdf(self, url: str, destination: Path, label: str) -> None:
-        """Retry the whole stream: a successful header does not mean a complete PDF."""
+        """Resume interrupted identity streams only with a known size and validator."""
+        backend = os.environ.get("ARXIV_PDF_BACKEND", "httpx").strip().lower()
+        if backend == "curl-direct":
+            from .pdf_download import download_with_curl
+            download_with_curl(url, destination, label, self.max_retries)
+            return
+        if backend != "httpx":
+            raise ValueError("ARXIV_PDF_BACKEND 仅支持 httpx 或 curl-direct")
         destination.parent.mkdir(parents=True, exist_ok=True)
         retry_range = False
-        for attempt in range(self.max_retries + 1):
-            temporary = destination.with_name(f".~{uuid.uuid4().hex[:12]}.part")
-            try:
-                # Some cached full responses repeatedly truncate at the same byte.
-                # Request the entire range after a protocol failure, keeping the
-                # exact version URL and discarding all bytes from the failed attempt.
-                headers = {"Range": "bytes=0-", "Accept-Encoding": "identity"} if retry_range else {}
-                with self.client.stream("GET", url, headers=headers) as response:
-                    response.raise_for_status()
-                    expected_size = None
-                    if response.status_code == 206:
-                        span = re.fullmatch(r"bytes 0-(\d+)/(\d+)", response.headers.get("Content-Range", ""))
-                        if not span or int(span[1]) + 1 != int(span[2]):
-                            raise httpx.RemoteProtocolError("arXiv PDF 返回了不完整的文件范围")
-                        expected_size = int(span[2])
-                    received_size = 0
-                    with temporary.open("wb") as handle:
-                        for chunk in response.iter_bytes():
-                            handle.write(chunk)
-                            received_size += len(chunk)
-                    if expected_size is not None and received_size != expected_size:
-                        raise httpx.RemoteProtocolError(
-                            f"arXiv PDF 文件范围长度不符：received {received_size}, expected {expected_size}"
-                        )
-                if temporary.stat().st_size <= 10 * 1024:
-                    raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{label}")
-                temporary.replace(destination)
-                return
-            except httpx.TransportError as exc:
-                if isinstance(exc, httpx.RemoteProtocolError):
-                    retry_range = True
-                if attempt == self.max_retries:
-                    raise RuntimeError(
-                        f"arXiv PDF 下载失败：{label}，已自动重试 {self.max_retries} 次；"
-                        f"最后一次错误：{type(exc).__name__}: {exc}"
-                    ) from exc
-            finally:
-                temporary.unlink(missing_ok=True)
-            time.sleep(min(self.retry_base_delay * (2**attempt), 30.0))
+        temporary = destination.with_name(f".~{uuid.uuid4().hex[:12]}.part")
+        total_size = None
+        validator = None
+        started = time.monotonic()
+        try:
+            for attempt in range(self.max_retries + 1):
+                resume_size = temporary.stat().st_size if temporary.exists() and total_size and validator else 0
+                task_progress(
+                    f"正在连接论文 PDF，续传 {resume_size / (1024 * 1024):.1f} MiB…"
+                    if resume_size else "正在连接论文 PDF…", 27,
+                )
+                try:
+                    headers = {"Accept-Encoding": "identity"}
+                    if resume_size:
+                        headers.update({"Range": f"bytes={resume_size}-", "If-Range": validator[1]})
+                    elif retry_range:
+                        headers["Range"] = "bytes=0-"
+                    with self.client.stream("GET", url, headers=headers) as response:
+                        response.raise_for_status()
+                        identity = response.headers.get("Content-Encoding", "identity") == "identity"
+                        if response.status_code == 206:
+                            span = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", response.headers.get("Content-Range", ""))
+                            if (not span or int(span[1]) != resume_size
+                                    or int(span[2]) + 1 != int(span[3]) or not identity
+                                    or resume_size and total_size != int(span[3])
+                                    or resume_size and response.headers.get(validator[0], validator[1]) != validator[1]):
+                                total_size, validator = None, None
+                                raise httpx.RemoteProtocolError("arXiv PDF 返回了不完整或不匹配的文件范围")
+                            total_size = int(span[3])
+                        else:
+                            # A 200 response to If-Range is a fresh complete body.
+                            resume_size = 0
+                            content_length = response.headers.get("Content-Length", "")
+                            total_size = int(content_length) if identity and content_length.isdecimal() else None
+                        etag = response.headers.get("ETag", "")
+                        if etag and not etag.startswith("W/"):
+                            validator = ("ETag", etag)
+                        elif response.headers.get("Last-Modified"):
+                            validator = ("Last-Modified", response.headers["Last-Modified"])
+                        elif not resume_size:
+                            validator = None
+                        received_size = resume_size
+                        last_update = time.monotonic() - 1.0
+
+                        def publish_progress(now: float) -> None:
+                            elapsed = max(now - started, 0.001)
+                            size = f"{received_size / (1024 * 1024):.1f}"
+                            if total_size:
+                                size += f" / {total_size / (1024 * 1024):.1f}"
+                            percent = 27 + int(12 * min(received_size / total_size, 1)) if total_size else 27
+                            task_progress(
+                                f"正在下载论文 PDF：{size} MiB · "
+                                f"{received_size / 1024 / elapsed:.0f} KiB/s · 已用 {elapsed:.0f} 秒",
+                                percent,
+                            )
+
+                        with temporary.open("ab" if resume_size else "wb") as handle:
+                            for chunk in response.iter_bytes():
+                                task_checkpoint()
+                                handle.write(chunk)
+                                received_size += len(chunk)
+                                now = time.monotonic()
+                                if now - last_update >= 1.0:
+                                    publish_progress(now)
+                                    last_update = now
+                        if total_size is not None and received_size != total_size:
+                            raise httpx.RemoteProtocolError(
+                                f"arXiv PDF 文件长度不符：received {received_size}, expected {total_size}"
+                            )
+                        publish_progress(time.monotonic())
+                    if temporary.stat().st_size <= 10 * 1024:
+                        raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{label}")
+                    temporary.replace(destination)
+                    return
+                except httpx.TransportError as exc:
+                    if isinstance(exc, httpx.RemoteProtocolError):
+                        retry_range = True
+                    if attempt == self.max_retries:
+                        raise RuntimeError(
+                            f"arXiv PDF 下载失败：{label}，已自动重试 {self.max_retries} 次；"
+                            f"最后一次错误：{type(exc).__name__}: {exc}"
+                        ) from exc
+                    if not (total_size and validator and temporary.exists()
+                            and 0 < temporary.stat().st_size < total_size):
+                        temporary.unlink(missing_ok=True)
+                    task_progress(
+                        f"PDF 下载连接中断（{type(exc).__name__}），准备第 {attempt + 1}/{self.max_retries} 次重试…",
+                        27,
+                    )
+                time.sleep(min(self.retry_base_delay * (2**attempt), 30.0))
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def download_version(self, arxiv_id: str, version: int, destination) -> None:
         destination = destination.resolve()

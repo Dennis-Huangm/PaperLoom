@@ -82,6 +82,74 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 .comparison-footer, .notes-option { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .comparison-footer { justify-content: space-between; margin-top: 18px; }
 #comparison-question, #comparison-search { width: 100%; box-sizing: border-box; margin: 8px 0; }
+/* Task workspace; scoped to keep shared job lists unchanged. */
+.page-generate .app-main { max-width: 1360px; padding-top: 24px; }
+.page-generate .page-heading { margin: 0 0 22px; }
+.page-generate .page-heading h1 { font-size: 25px; margin: 5px 0 8px; }
+.page-generate .page-heading p:not(.section-kicker) { font-size: 13px; }
+.page-generate .section-kicker { letter-spacing: 0; }
+.page-generate .task-layout { background: transparent; border: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px; }
+.page-generate .task-pane { padding: 20px 22px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); display: flex; flex-direction: column; gap: 18px; }
+.page-generate .primary-task { border-top: 3px solid var(--accent); padding-top: 18px; }
+.page-generate .task-pane > header { margin: 0; gap: 12px; }
+.page-generate .task-icon { width: 36px; height: 36px; border: 0; background: #f3f4f5; color: #526779; }
+.page-generate .primary-task .task-icon { background: var(--accent-soft); color: var(--accent); }
+.page-generate .obsidian-task-pane .task-icon { background: #edf6f2; color: #39775e; }
+.page-generate .task-pane h2 { font-size: 16px; line-height: 1.5; margin: 0 0 4px; }
+.page-generate .task-pane header p { font-size: 12px; line-height: 1.7; }
+.page-generate .task-form { gap: 10px; margin-top: auto; }
+.page-generate .task-form > label:not(.check-row) { font-size: 12px; }
+.page-generate .task-form > small { font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.page-generate .task-form > small a { color: var(--accent); }
+.page-generate .joined-control { grid-template-columns: minmax(0, 1fr) 126px; }
+.page-generate .joined-control input { height: 42px; min-height: 42px; font-size: 13px; }
+.page-generate .task-form > .button { justify-self: start; min-width: 144px; height: 36px; font-size: 12px; }
+.page-generate .button:disabled { opacity: .5; cursor: not-allowed; }
+.page-generate .check-row { padding: 0; border: 0; gap: 9px; align-items: flex-start; }
+.page-generate .check-row input { width: 15px; height: 15px; flex: 0 0 auto; margin: 3px 0 0; }
+.page-generate .check-row strong { font-size: 12px; font-weight: 600; }
+.page-generate .check-row small { font-size: 11px; }
+.page-generate .weekly-task-pane.task-pane { grid-column: auto; display: flex; align-items: stretch; gap: 16px; }
+.page-generate .queue-section > header { align-items: center; margin-bottom: 12px; gap: 16px; flex-wrap: wrap; }
+.page-generate .queue-section h2 { font-size: 18px; }
+.page-generate .queue-header-actions i { margin-right: 6px; }
+.page-generate .queue-header-actions button { display: inline-flex; align-items: center; min-height: 34px; }
+.page-generate .queue-notice { margin: 0 0 14px; font-size: 11px; color: var(--muted); }
+.page-generate .queue-notice summary { cursor: pointer; width: fit-content; padding: 3px 0; }
+.page-generate .queue-notice summary i { margin: 0 5px; }
+.page-generate .queue-notice p { margin: 8px 0 0; max-width: 880px; line-height: 1.8; }
+.page-generate .job { padding: 16px 18px; gap: 12px 16px; min-height: 80px; }
+.page-generate .job-running { border-left: 3px solid var(--accent); padding-left: 15px; background: #fffcf8; }
+.page-generate .job strong { font-size: 13px; }
+.page-generate .job p { font-size: 11px; line-height: 1.7; margin-top: 4px; }
+.page-generate .job time { font-size: 11px; white-space: nowrap; }
+.page-generate .job-actions { gap: 8px; max-width: 220px; }
+.page-generate .job-actions > a, .page-generate .job-cancel { padding: 6px 9px; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; text-decoration: none; }
+.page-generate .job-cancel { color: var(--muted); background: var(--surface); }
+.page-generate .job-cancel[data-cancel-job]:hover { color: var(--red); border-color: var(--red); }
+.page-generate .job-cancel[data-retry-job] { color: #396783; }
+.page-generate .job-actions > a:hover, .page-generate .job-cancel[data-retry-job]:hover { background: #f3f6f8; border-color: #a5b5c0; }
+.page-generate .queue-empty { min-height: 120px; font-size: 12px; }
+@media (max-width: 940px) {
+  .page-generate .app-main { padding: 20px 16px 30px; }
+  .page-generate .task-pane { padding: 18px; }
+  .page-generate .primary-task { padding-top: 16px; }
+  .page-generate .job { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .page-generate .job-actions { grid-column: 2 / -1; justify-content: flex-start; max-width: none; }
+}
+@media (max-width: 600px) {
+  .page-generate .task-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 24px; }
+  .page-generate .task-pane { gap: 16px; }
+  .page-generate .joined-control { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .page-generate .joined-control input, .page-generate .joined-control .button { border-radius: var(--radius) !important; }
+  .page-generate .task-form > .button { width: 100%; }
+  .page-generate .job { grid-template-columns: 26px minmax(0, 1fr); padding: 14px; gap: 8px 12px; }
+  .page-generate .job-running { padding-left: 11px; }
+  .page-generate .job time, .page-generate .job-actions { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-generate .job-indicator i { animation: none; }
+}
 /* Durable task recovery. */
 .job-interrupted .job-indicator { color: var(--amber); background: var(--amber-soft); }
 .job > .job-recovery-note { grid-column: 2 / -1; }

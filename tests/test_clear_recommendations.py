@@ -7,10 +7,87 @@ from arxiv_ra.utils import read_json, write_json
 from arxiv_ra.web import create_app
 from arxiv_ra.web_catalog import recommendation_history
 from arxiv_ra.models import Paper
+from arxiv_ra.pipeline import DailyPipeline
+from types import SimpleNamespace
 
 
 def item(profile="alpha"):
     return {"profile_id": profile, "paper": {"arxiv_id": "2407.05600", "version": 1}}
+
+
+@pytest.mark.parametrize("profile", ["alpha", ""])
+def test_clear_allows_old_paper_to_be_selected_again(tmp_path, profile):
+    name = f"recommendations-{profile}.json" if profile else "recommendations.json"
+    state_path = tmp_path / (f"state-{profile}.json" if profile else "state.json")
+    write_json(tmp_path / "2026-09-28" / name, [item(profile)])
+    write_json(state_path, {"processed": ["2407.05600", "unrelated"], "extra": "preserved"})
+    pipeline = DailyPipeline.__new__(DailyPipeline)
+    pipeline.output_root = tmp_path
+    pipeline.config = SimpleNamespace(profile_id=profile,
+        discovery=SimpleNamespace(min_score=0, recommendation_count=5),
+        ranking=SimpleNamespace(llm_min_score=0))
+    paper = SimpleNamespace(arxiv_id="2407.05600", final_score=1, llm_score=None)
+    assert pipeline._select_candidates([paper], force=False)[0] == []
+    clear_recommendations(tmp_path, "2026-09-28", profile)
+    assert pipeline._processed_ids() == {"unrelated"}
+    assert pipeline._select_candidates([paper], force=False)[0] == [paper]
+    assert read_json(state_path)["extra"] == "preserved"
+    clear_recommendations(tmp_path, "2026-09-28", profile)
+    assert pipeline._processed_ids() == {"unrelated"}
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_clear_preserves_dedup_when_other_day_still_recommends_paper(tmp_path, legacy):
+    write_json(tmp_path / "2026-09-28/recommendations-alpha.json", [item()])
+    name = "recommendations.json" if legacy else "recommendations-alpha.json"
+    write_json(tmp_path / "2026-09-29" / name, [item()])
+    state = {"processed": ["2407.05600", "unrelated"]}
+    write_json(tmp_path / "state-alpha.json", state)
+    clear_recommendations(tmp_path, "2026-09-28", "alpha")
+    assert read_json(tmp_path / "state-alpha.json") == state
+
+
+def test_other_profile_and_cleared_legacy_do_not_keep_dedup(tmp_path):
+    write_json(tmp_path / "2026-09-28/recommendations-alpha.json", [item()])
+    write_json(tmp_path / "2026-09-29/recommendations-beta.json", [item("beta")])
+    write_json(tmp_path / "2026-09-29/recommendations.json", [item("beta")])
+    write_json(tmp_path / "2026-09-27/recommendations-alpha.json", [])
+    write_json(tmp_path / "2026-09-27/recommendations.json", [item()])
+    write_json(tmp_path / "state-alpha.json", {"processed": ["2407.05600"]})
+    write_json(tmp_path / "state-beta.json", {"processed": ["2407.05600"]})
+    clear_recommendations(tmp_path, "2026-09-28", "alpha")
+    assert read_json(tmp_path / "state-alpha.json")["processed"] == []
+    assert read_json(tmp_path / "state-beta.json")["processed"] == ["2407.05600"]
+
+
+def test_malformed_surviving_history_is_rejected_before_clear(tmp_path):
+    rows = [item()]
+    write_json(tmp_path / "2026-09-28/recommendations-alpha.json", rows)
+    write_json(tmp_path / "2026-09-29/recommendations-alpha.json", {"bad": True})
+    write_json(tmp_path / "state-alpha.json", {"processed": ["2407.05600"]})
+    with pytest.raises(ValueError):
+        clear_recommendations(tmp_path, "2026-09-28", "alpha")
+    assert read_json(tmp_path / "2026-09-28/recommendations-alpha.json") == rows
+    assert read_json(tmp_path / "state-alpha.json")["processed"] == ["2407.05600"]
+
+
+def test_untagged_legacy_history_releases_profile_dedup(tmp_path):
+    write_json(tmp_path / "2026-09-28/recommendations.json", [item("")])
+    write_json(tmp_path / "state-alpha.json", {"processed": ["2407.05600"]})
+    clear_recommendations(tmp_path, "2026-09-28", "alpha")
+    assert read_json(tmp_path / "state-alpha.json")["processed"] == []
+    assert read_recommendations(tmp_path, "2026-09-28", "alpha") == []
+    assert read_recommendations(tmp_path, "2026-09-28", "beta") == [item("")]
+
+
+@pytest.mark.parametrize("state", [[], {"processed": "2407.05600"}, {"processed": [1]}])
+def test_malformed_state_is_rejected_before_clear(tmp_path, state):
+    write_json(tmp_path / "2026-09-28/recommendations-alpha.json", [item()])
+    write_json(tmp_path / "state-alpha.json", state)
+    with pytest.raises(ValueError):
+        clear_recommendations(tmp_path, "2026-09-28", "alpha")
+    assert read_json(tmp_path / "state-alpha.json") == state
+    assert read_recommendations(tmp_path, "2026-09-28", "alpha") == [item()]
 
 
 def test_clear_day_preserves_other_days_profiles_and_personal_data(tmp_path):

@@ -174,6 +174,9 @@ def finalize_report_structure(
     main_figure: FigureCandidate | list[FigureCandidate] | None,
 ) -> str:
     """Apply the stable outline and place pre-experiment method figures in 核心方法."""
+    from .table_quality import normalize_table_separators
+    from .evidence import TOKEN
+    markdown_text = normalize_table_separators(markdown_text, TOKEN)
     markdown_text = _repair_inline_canonical_headings(markdown_text)
     method_figures = (
         main_figure

@@ -109,8 +109,9 @@ def test_numeric_table_rows_need_their_own_single_page_exact_evidence():
               "| missing | 10488 | |\n")
     _, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert evidence["validated_citations"] == 2
-    assert [issue["numbers"] for issue in evidence["numeric_audit"]["issues"]] == [["8527"], ["10488"]]
-    assert [issue["reason"] for issue in evidence["numeric_audit"]["issues"]] == ["not_in_quote", "no_located_quote"]
+    assert not evidence['numeric_audit']['issues']
+    assert [issue["numbers"] for issue in evidence["numeric_audit"]["table_diagnostics"]] == [["8527"], ["10488"]]
+    assert [issue["reason"] for issue in evidence["numeric_audit"]["table_diagnostics"]] == ["not_in_quote", "no_located_quote"]
 
     # A real but cross-page quote cannot yield a fabricated page link.
     split = ParsedPaper("", [header + " " + baseline, model])
@@ -128,7 +129,8 @@ def test_table_after_prose_or_nested_in_list_cannot_borrow_another_rows_quote():
                + indent + f'| A | 91.2% | [[证据:{quote}]] |\n'
                + indent + '| B | 91.2% | |\n')
         _, evidence = attach_evidence(raw, parsed, pdf_available=True, full_report=True)
-        issues = evidence['numeric_audit']['issues']
+        assert not evidence['numeric_audit']['issues']
+        issues = evidence['numeric_audit']['table_diagnostics']
         assert len(issues) == 1
         assert issues[0]['reason'] == 'no_located_quote' and '| B |' in issues[0]['claim']
 
@@ -140,8 +142,9 @@ def test_table_audit_preserves_multiline_quote_with_blank_lines_and_pipes():
     _, evidence = attach_evidence(raw, ParsedPaper('', [quote]), pdf_available=True, full_report=True)
     assert evidence['validated_citations'] == 1
     assert evidence['numeric_audit']['checked_claims'] == 2
-    assert len(evidence['numeric_audit']['issues']) == 1
-    assert '| B |' in evidence['numeric_audit']['issues'][0]['claim']
+    assert not evidence['numeric_audit']['issues']
+    assert len(evidence['numeric_audit']['table_diagnostics']) == 1
+    assert '| B |' in evidence['numeric_audit']['table_diagnostics'][0]['claim']
 
 
 def test_real_pdf_parser_and_pipeline_store_validated_evidence(tmp_path):

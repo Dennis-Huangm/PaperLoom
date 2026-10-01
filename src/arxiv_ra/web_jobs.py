@@ -116,6 +116,13 @@ class JobManager:
     def _save(self, job):
         self.store.save(self._record(job))
 
+    @staticmethod
+    def _pdf_failure(job: BackgroundJob) -> str | None:
+        if job.kind == "report":
+            return next((warning["message"] for warning in job.warnings
+                         if warning.get("component") == "PDF 下载与解析"), None)
+        return None
+
     def _restore(self):
         loaded = []
         for path, value, error in self.store.records():
@@ -145,6 +152,12 @@ class JobManager:
             self.cancel_events[job.id] = threading.Event()
             job.recoverable = bool(self.requests[job.id]) and job.kind in RECOVERABLE
             job.recovery_note = recovery_note(job.kind)
+            pdf_failure = self._pdf_failure(job)
+            if job.status == "succeeded_with_warnings" and pdf_failure:
+                job.status = "failed"
+                job.detail = f"任务失败：{pdf_failure}"
+                job.progress = None
+                self._save(job)
             if job.status in {"queued", "running", "cancelling"}:
                 previous = job.detail
                 job.status = "interrupted"
@@ -152,13 +165,12 @@ class JobManager:
                 job.progress = None
                 job.updated_at = datetime.now().isoformat(timespec="seconds")
                 self._save(job)
-        # Child is persisted before the parent link. Repair that small crash
-        # window from the child's immutable retry_of instead of scheduling twice.
-        for job in self.jobs.values():
+        # A persisted recovery replaces its finished parent, including when
+        # the application exited between creating the child and deleting it.
+        for job in list(self.jobs.values()):
             parent = self.jobs.get(job.retry_of)
-            if parent and not parent.retry_job_id:
-                parent.retry_job_id = job.id
-                self._save(parent)
+            if parent and parent.status in FINISHED_STATUSES and parent.profile_id == job.profile_id:
+                self._forget(parent.id)
 
     def _checkpoint_data(self, job_id, key, value):
         with self.lock:
@@ -271,19 +283,21 @@ class JobManager:
             with self.lock:
                 if cancel_event.is_set() and not committed:
                     raise TaskCancelled()
+                pdf_failure = self._pdf_failure(self.jobs[job_id])
                 self._update(
                     job_id,
                     status=(
-                        "succeeded_with_warnings"
+                        "failed" if pdf_failure else "succeeded_with_warnings"
                         if self.jobs[job_id].warnings
                         else "succeeded"
                     ),
                     detail=(
+                        f"任务失败：{pdf_failure}" if pdf_failure else
                         f"任务已完成，但有 {len(self.jobs[job_id].warnings)} 个组件异常"
                         if self.jobs[job_id].warnings
                         else "任务已完成"
                     ),
-                    progress=100,
+                    progress=None if pdf_failure else 100,
                     result_url=result_artifact_url(result, self.output_root) if result is not None else None,
                 )
         except TaskCancelled:
@@ -361,14 +375,17 @@ class JobManager:
             for job_id, job in list(self.jobs.items()):
                 if job.status not in FINISHED_STATUSES:
                     continue
-                self.store.delete(job_id)
-                del self.jobs[job_id]
-                self.identities.pop(job_id, None)
-                self.requests.pop(job_id, None)
-                self.checkpoints.pop(job_id, None)
-                self.cancel_events.pop(job_id, None)
+                self._forget(job_id)
                 deleted += 1
             return deleted
+
+    def _forget(self, job_id: str) -> None:
+        self.store.delete(job_id)
+        del self.jobs[job_id]
+        self.identities.pop(job_id, None)
+        self.requests.pop(job_id, None)
+        self.checkpoints.pop(job_id, None)
+        self.cancel_events.pop(job_id, None)
 
     def cancel(self, job_id: str) -> BackgroundJob | None:
         """Cancel queued work immediately or request cancellation at a safe boundary."""
@@ -441,6 +458,14 @@ class JobManager:
     def retry(self, job_id: str, profile_id: str) -> BackgroundJob:
         with self.lock:
             previous = self.jobs.get(job_id)
+            # Keep repeated recovery requests idempotent after removing the parent.
+            child = next((job for job in self.jobs.values() if job.retry_of == job_id), None)
+            if child:
+                if child.profile_id != profile_id:
+                    raise ValueError("请切换到该任务原来的研究方向后再恢复")
+                if previous and previous.status in FINISHED_STATUSES:
+                    self._forget(job_id)
+                return child
             if previous is None:
                 raise KeyError(job_id)
             if previous.profile_id != profile_id:
@@ -464,7 +489,7 @@ class JobManager:
                               # active request with the original submission hash.
                               identity=f"recovery:{job_id}", profile_id=profile_id, request=request,
                               retry_of=job_id, checkpoint=checkpoint)
-            self._update(job_id, retry_job_id=job.id)
+            self._forget(job_id)
             return job
 
     def close(self) -> None:

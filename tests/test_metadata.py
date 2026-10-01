@@ -93,6 +93,7 @@ def test_semantic_scholar_retries_429_and_honors_retry_after(monkeypatch) -> Non
         "arxiv_ra.metadata.shared_rate_limit", lambda *_args: nullcontext()
     )
     sleeps = []
+    monkeypatch.setattr("arxiv_ra.metadata.defer_rate_limit", lambda *_: None)
     monkeypatch.setattr("arxiv_ra.metadata.time.sleep", sleeps.append)
 
     result = verifier._semantic_scholar(_paper())

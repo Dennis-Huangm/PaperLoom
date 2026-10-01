@@ -203,6 +203,7 @@ def test_retry_uses_pinned_paper_and_saved_config_without_duplicate_attempts(tmp
     old = manager.submit("report", "old", interrupted, request=recipe, profile_id="alpha")
     assert wait_job(manager, old).status == "failed"
     assert "PRIVATE_RUNTIME_SECRET" not in (tmp_path / f".jobs/{old.id}.json").read_text(encoding="utf-8")
+    original = read_json(tmp_path / f".jobs/{old.id}.json")
     recipe["config"]["profile_id"] = "changed-after-submit"
     stop(manager)
     manager = JobManager(tmp_path)
@@ -224,18 +225,43 @@ def test_retry_uses_pinned_paper_and_saved_config_without_duplicate_attempts(tmp
         assert new.retry_of == old.id and new.id != old.id
         assert manager.retry(old.id, "alpha").id == new.id
         assert calls == ["alpha", ("2407.05600", 2)]
-        assert manager.get(old.id).status == "failed"
+        assert manager.get(old.id) is None
+        assert not (tmp_path / f".jobs/{old.id}.json").exists()
+        assert old.id not in {job.id for job in manager.recent()}
+        assert old.id not in {item["id"] for item in manager.history(1)["items"]}
+        with pytest.raises(ValueError, match="研究方向"):
+            manager.retry(old.id, "beta")
     finally:
         stop(manager)
-    # Simulate loss after child publication but before linking the parent record.
+    # Simulate loss after child publication but before removing the parent record.
     original_path = tmp_path / f".jobs/{old.id}.json"
-    original = read_json(original_path)
     original["job"]["retry_job_id"] = ""
     write_json(original_path, original)
     manager = JobManager(tmp_path)
     try:
-        assert manager.get(old.id).retry_job_id == new.id
+        assert manager.get(old.id) is None
+        assert not original_path.exists()
         assert manager.retry(old.id, "alpha").id == new.id
+    finally:
+        stop(manager)
+
+
+def test_failed_recovery_creation_preserves_original_record(tmp_path, monkeypatch):
+    manager = JobManager(tmp_path)
+    def fail():
+        raise RuntimeError("offline")
+    old = manager.submit("report", "old", fail, profile_id="alpha",
+                         request=request(tmp_path, arxiv_id="2407.05600", snapshot=None))
+    wait_job(manager, old)
+    def fail_save(value):
+        raise OSError("disk full")
+    monkeypatch.setattr(manager.store, "save", fail_save)
+    try:
+        with pytest.raises(OSError, match="disk full"):
+            manager.retry(old.id, "alpha")
+        assert manager.get(old.id).status == "failed"
+        assert (tmp_path / f".jobs/{old.id}.json").exists()
+        assert len(manager.jobs) == 1
     finally:
         stop(manager)
 
@@ -302,6 +328,9 @@ def test_api_restart_recovery_profile_guard_and_private_ledger(tmp_path, monkeyp
         assert wait_job(app.state.jobs, new).status == "succeeded"
         assert captured[0]["sources"][0]["paper"]["version"] == 2
         assert "config" not in response.json() and "request" not in response.json()
+        assert client.get(f"/api/jobs/{old.id}").status_code == 404
+        assert f'data-job-id="{old.id}"' not in client.get("/generate").text
+        assert client.post(f"/api/jobs/{old.id}/retry").json()["id"] == new.id
 
 
 def test_history_pages_retain_older_recoverable_failures_on_first_page(tmp_path):

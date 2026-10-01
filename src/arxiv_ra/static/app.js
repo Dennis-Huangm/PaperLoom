@@ -178,7 +178,11 @@ document.querySelector('#job-list')?.addEventListener('click', async (event) => 
       const response = await scopedFetch(`/api/jobs/${retry.dataset.retryJob}/retry`, {method: 'POST'});
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || '无法重新执行任务');
-      retry.replaceWith(document.createTextNode('已创建恢复任务'));
+      const previousId = retry.dataset.retryJob;
+      window.clearTimeout(jobPollTimers.get(previousId));
+      jobPollTimers.delete(previousId);
+      jobWarningCounts.delete(previousId);
+      retry.closest('[data-job-id]')?.remove();
       renderJob(payload);
       if (activeJobStatuses.includes(payload.status)) pollJob(payload.id);
       toast('已打开恢复任务');
@@ -228,7 +232,7 @@ document.querySelector('#clear-job-history')?.addEventListener('click', async (e
 
 document.querySelector('.recommendations-clear-form')?.addEventListener('submit', (event) => {
   const day = event.currentTarget.dataset.date;
-  if (!window.confirm(`清除当前研究方向 ${day} 的推荐记录？此操作不可撤销。收藏、阅读报告和已处理状态会保留；重新推荐旧论文需勾选“忽略已处理状态”。已导出的 Obsidian/Zotero 内容不会删除。`)) {
+  if (!window.confirm(`清除当前研究方向 ${day} 的推荐记录？此操作不可撤销。当日论文的历史去重记录会一并撤销，允许重新推荐；其他日期仍有推荐记录的论文继续去重。收藏、阅读报告与阅读进度会保留。已导出的 Obsidian/Zotero 内容不会删除。`)) {
     event.preventDefault();
   }
 });

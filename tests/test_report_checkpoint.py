@@ -57,6 +57,46 @@ def stop(manager):
     manager.executor.shutdown(wait=True)
 
 
+@pytest.mark.parametrize("stage", ["download", "parse", "empty_text"])
+def test_pdf_failure_is_failed_even_when_abstract_report_is_saved(tmp_path, monkeypatch, stage):
+    config, clients = setup(tmp_path)
+    monkeypatch.setattr("arxiv_ra.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))
+    if stage == "download":
+        clients.arxiv.download_pdf.side_effect = RuntimeError("PDF download failed")
+    elif stage == "parse":
+        clients.parser.parse.side_effect = ValueError("PDF parse failed")
+    else:
+        clients.parser.parse.return_value = ParsedPaper("", [])
+    root = Path(config.output_dir)
+    manager = JobManager(root)
+    recipe = capture_request("report", config, tmp_path, arxiv_id=paper().arxiv_id)
+    try:
+        job = manager.submit("report", "fixture",
+                             lambda: DailyPipeline(config, tmp_path, clients=clients).report_arxiv_id(paper().arxiv_id),
+                             request=recipe, profile_id="alpha")
+        failed = wait_job(manager, job.id)
+        assert failed.status == "failed"
+        assert failed.progress is None and "PDF" in failed.detail
+        assert failed.result_url and failed.recoverable
+        assert not failed.report_progress["parsed"]
+        assert failed.report_progress["resumable"]
+        assert next(root.glob("*/reports/*/report.md")).is_file()
+        # Old warning-success records are corrected when loading the queue.
+        record_path = root / ".jobs" / f"{job.id}.json"
+        record = read_json(record_path)
+        record["job"].update(status="succeeded_with_warnings", progress=100, detail="任务已完成")
+    finally:
+        stop(manager)
+    write_json(record_path, record)
+    manager = JobManager(root)
+    try:
+        restored = manager.get(job.id)
+        assert restored.status == "failed" and restored.progress is None
+        assert read_json(record_path)["job"]["status"] == "failed"
+    finally:
+        stop(manager)
+
+
 def test_fallback_after_restart_resumes_remaining_chunks_and_preserves_old_report(tmp_path, monkeypatch):
     config, clients = setup(tmp_path)
     monkeypatch.setattr("arxiv_ra.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))

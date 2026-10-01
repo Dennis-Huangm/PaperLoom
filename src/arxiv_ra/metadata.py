@@ -3,6 +3,7 @@ from __future__ import annotations
 from difflib import SequenceMatcher
 import re
 import time
+import math
 from typing import Any
 
 import httpx
@@ -10,7 +11,7 @@ import httpx
 from . import __version__
 from .config import MetadataConfig
 from .models import Author, Paper, VerifiedMetadata
-from .rate_limit import shared_rate_limit
+from .rate_limit import shared_rate_limit, defer_rate_limit
 from .utils import env, normalize_title
 from .task_runtime import task_warning
 
@@ -125,21 +126,24 @@ class MetadataVerifier:
             headers["x-api-key"] = key
         url = f"https://api.semanticscholar.org/graph/v1/paper/ARXIV:{paper.arxiv_id}"
         attempts = max(1, self.config.semantic_scholar_max_retries + 1)
-        with shared_rate_limit(
-            "semantic-scholar", self.config.semantic_scholar_min_interval
-        ):
-            for attempt in range(attempts):
+        for attempt in range(attempts):
+            with shared_rate_limit("semantic-scholar", self.config.semantic_scholar_min_interval):
                 response = self.client.get(url, params={"fields": fields}, headers=headers)
-                if response.status_code == 200:
-                    return response.json()
-                if response.status_code != 429 or attempt == attempts - 1:
-                    return None
-                retry_after = response.headers.get("Retry-After", "")
-                try:
-                    delay = float(retry_after)
-                except (TypeError, ValueError):
-                    delay = float(2**attempt)
-                time.sleep(max(0.0, min(delay, 30.0)))
+            if response.status_code == 200:
+                return response.json()
+            if response.status_code != 429:
+                return None
+            try:
+                requested_delay = float(response.headers.get("Retry-After", ""))
+            except (TypeError, ValueError):
+                requested_delay = 0.0
+            if not math.isfinite(requested_delay):
+                requested_delay = 0.0
+            delay = max(1.2, float(2**attempt), requested_delay)
+            defer_rate_limit('semantic-scholar', delay)
+            if attempt == attempts - 1:
+                return None
+            time.sleep(delay)
         return None
 
     def _merge_openalex(self, result: VerifiedMetadata, item: dict[str, Any], paper: Paper) -> None:

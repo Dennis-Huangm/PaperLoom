@@ -77,8 +77,9 @@ def test_long_document_table_and_physical_pages_remain_auditable(tmp_path):
     report += f"\n\n## 关键结果\n| 指标 | 值 |\n|---|---|\n| accuracy | 99.9% [[证据:{quote}]] |"
     result, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert evidence["cited_pages"] == [12]
-    assert evidence["numeric_audit"]["issues"][0]["numbers"] == ["99.9%"]
-    assert "实验数值待核对" in result[:200]
+    assert evidence["numeric_audit"]["table_diagnostics"][0]["numbers"] == ["99.9%"]
+    assert not evidence['numeric_audit']['issues']
+    assert '待核对' not in result
     assert "paper.pdf#page=12" in result
 
 

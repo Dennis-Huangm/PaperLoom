@@ -62,13 +62,42 @@ def tables(text, token):
         headers = [c[0] for c in header]
         header_start = offsets[i]
         i += 2
-        while i < len(lines) and (row := cells(lines[i])) and len(row) == len(headers):
+        while i < len(lines) and (row := cells(lines[i])) and len(row) <= len(headers):
             start = offsets[i]
+            # Markdown pads short rows with empty trailing cells. Keep auditing
+            # subsequent rows after a short category/group heading as a table.
+            end = len(lines[i].rstrip("\r\n"))
+            row += [("", end, end)] * (len(headers) - len(row))
             yield {"headers": headers, "cells": row, "start": start,
                    "header_start": header_start,
                    "end": start + len(lines[i].rstrip("\r\n")),
                    "raw": text[start:start + len(lines[i].rstrip("\r\n"))]}
             i += 1
+
+
+def normalize_table_separators(text, token):
+    """Pad missing separator cells, preserving headers and every data cell."""
+    lines = text.splitlines(keepends=True)
+    masked = mask_quotes(text, token).splitlines(keepends=True)
+    fence = None
+    for index in range(len(lines) - 1):
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", masked[index])
+        if marker:
+            if fence is None:
+                fence = marker[1]
+            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+        if fence or not masked[index].lstrip().startswith('|'):
+            continue
+        headers = cells(masked[index])
+        separator = cells(masked[index + 1])
+        if (separator and len(separator) < len(headers)
+                and all(re.fullmatch(r':?-{3,}:?', c[0]) for c in separator)):
+            newline = '\n' if lines[index + 1].endswith('\n') else ''
+            indent = re.match(r'\s*', lines[index + 1])[0]
+            values = [c[0] for c in separator] + ['---'] * (len(headers) - len(separator))
+            lines[index + 1] = indent + '| ' + ' | '.join(values) + ' |' + newline
+    return ''.join(lines)
 
 
 def label(text):
