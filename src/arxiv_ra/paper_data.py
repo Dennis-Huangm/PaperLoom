@@ -173,7 +173,9 @@ class PaperResolver:
                 # Exact revisions remain usable; a latest request must reveal stale fallback.
                 if intent == "latest" and requested_version(target) is None:
                     fallback = replace(fallback, resolution_note="arXiv 暂时不可用，使用本地数据；尚未确认是否为最新版本")
-                return versioned(with_sources(fallback, snapshot.discovery_sources, snapshot.conference_publications)) if snapshot else versioned(fallback)
+                if snapshot and snapshot.conference_publications:
+                    fallback = with_sources(fallback, snapshot.discovery_sources, snapshot.conference_publications)
+                return versioned(fallback)
             if self.config and alpha_enabled(self.config) and self.alphaxiv and self.alphaxiv.enabled:
                 try:
                     paper = self.alphaxiv.lookup(target)
