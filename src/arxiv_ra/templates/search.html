@@ -1,38 +1,53 @@
 {% extends "base.html" %}
 {% block title %}本地全文搜索 · PaperLoom{% endblock %}
 {% block content %}
-<header class="page-heading"><div><p class="section-kicker">LOCAL SEARCH</p><h1>本地全文搜索</h1><p>找回论文原文、报告与自己的研究笔记。全部在本机检索，不调用模型。</p></div><span class="active-profile-pill">{{ config.profile_name }} · 当前方向</span></header>
-<section class="feedback-panel search-index-panel">
-  <div><h2>本地资料索引</h2>
-  {% if index_status.error %}<p role="alert">{{ index_status.error }}</p>
-  {% elif index_status.updated_at %}<p>最近更新：{{ index_status.updated_at[:19]|replace('T', ' ') }} UTC · {{ index_status.sources }} 份材料 · {{ index_status.documents }} 个段落</p>
-  {% else %}<p>尚未建立索引。点击“更新索引”，完成后刷新本页开始搜索。</p>{% endif %}
-  <p>新增报告、修改笔记或移除资料后请更新索引。搜索结果反映上次索引快照；更新完成后刷新本页。无方向的历史资料按现有规则共享可见。</p>
-  </div>
-  <form class="job-form" action="/api/jobs/search-index" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button primary" type="submit">更新索引</button></form>
-  <details><summary>索引维护与范围</summary><p>标题、摘要、个人笔记与标签、单篇报告正文、报告目录及版本同步目录中的本地 PDF。只处理可提取文字的页面，不下载 PDF，不执行 OCR。周报、比较报告和外部 Zotero / Obsidian 文件暂不纳入。</p><form class="job-form" action="/api/jobs/search-index" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="rebuild" value="true"><button class="button secondary" type="submit">重建全部索引</button></form></details>
-  {% if index_status.warnings %}<details><summary>{{ index_status.warnings|length }} 条材料读取提示</summary><ul>{% for warning in index_status.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
-</section>
-<form class="search-filters feedback-panel" method="get" action="/search">
+<header class="page-heading research-heading"><div><p class="section-kicker">LOCAL SEARCH</p><h1>本地全文搜索</h1><p>找回论文原文、报告与自己的研究笔记。</p></div><span class="research-badge"><i class="fas fa-lock" aria-hidden="true"></i>本机检索 · 不调用模型</span></header>
+<form class="search-console research-panel" method="get" action="/search" role="search" aria-label="检索本地研究资料">
   <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
-  <label class="search-query">关键词<input type="search" name="q" value="{{ query }}" maxlength="200" placeholder="例如：强化学习 reward 或论文 ID" required></label>
-  <label>材料类型<select name="kind"><option value="">全部材料</option>{% for value,label in search_kinds.items() %}<option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-  <label>报告质量<select name="quality"><option value="">全部质量</option>{% for value,label in search_qualities.items() %}<option value="{{ value }}" {% if quality == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-  <label>修订版<input type="number" name="version" value="{{ version or '' }}" min="1" placeholder="不限"></label>
-  <button class="button primary" type="submit">搜索</button>
-  <p class="search-help">空格分隔的关键词须同时出现在同一段落或其标题中；支持中文短词、英文大小写和全角字符。不使用 AND / OR 等查询语法。每份材料显示一个命中段落。</p>
+  <label class="sr-only" for="local-query">关键词</label>
+  <div class="search-query-bar"><i class="fas fa-search" aria-hidden="true"></i><input id="local-query" aria-describedby="search-syntax" type="search" name="q" value="{{ query }}" maxlength="200" placeholder="搜索关键词、论文标题或 arXiv ID" required><button class="button primary" type="submit">搜索资料 <i class="fas fa-arrow-right" aria-hidden="true"></i></button></div>
+  <div class="search-filter-row">
+    <div class="search-filter-field"><label for="search-kind">材料类型</label><select id="search-kind" name="kind"><option value="">全部材料</option>{% for value,label in search_kinds.items() %}<option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="search-filter-field"><label for="search-quality">报告质量</label><select id="search-quality" name="quality"><option value="">全部质量</option>{% for value,label in search_qualities.items() %}<option value="{{ value }}" {% if quality == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="search-filter-field"><label for="search-version">修订版</label><input id="search-version" type="number" name="version" value="{{ version or '' }}" min="1" placeholder="不限"></div>
+    {% if kind or quality or version %}<a class="search-reset" href="{{ url_for('search_page').include_query_params(profile_id=config.profile_id, q=query) }}"><i class="fas fa-undo" aria-hidden="true"></i>清除筛选</a>{% else %}<span class="search-scope"><i class="fas fa-layer-group" aria-hidden="true"></i>{{ config.profile_name }}</span>{% endif %}
+  </div>
+  <p id="search-syntax" class="search-query-help"><i class="far fa-lightbulb" aria-hidden="true"></i>多个关键词以空格分隔，须同时命中同一段落或其标题；每份材料显示一个命中段落。</p>
+  <details class="search-syntax-details"><summary>检索规则</summary><p>支持中文短词、英文大小写和全角字符。不使用 AND / OR 等查询语法。全部在本机检索，不调用模型。</p></details>
 </form>
-{% if query %}
-<section class="search-results" aria-label="搜索结果"><h2>找到 {{ results.total }} 份材料</h2>
-{% for item in results['items'] %}<article class="feedback-panel search-hit">
-<p class="section-kicker">{{ search_kinds[item.kind] }}{% if item.page %} · PDF 第 {{ item.page }} 页{% endif %}</p>
-<h3><a href="{{ url_for('search_source', doc_id=item.id) }}?profile_id={{ config.profile_id|urlencode }}">{{ item.title }}</a></h3>
-<p>{{ item.aid }} · {% if item.version %}v{{ item.version }}{% else %}修订版未记录{% endif %}{% if item.quality != 'none' %} · {{ search_qualities[item.quality] }}{% endif %}</p>
-<p class="search-snippet">{{ item.snippet or '关键词命中标题或论文 ID。' }}</p>
-<a href="{{ url_for('search_source', doc_id=item.id) }}?profile_id={{ config.profile_id|urlencode }}">查看命中段落与来源 →</a>
-</article>{% else %}<div class="empty-state"><h3>没有找到匹配材料</h3><p>尝试更短的关键词、放宽筛选，或更新索引后刷新页面。PDF 无可提取文字的页面无法检索。</p></div>{% endfor %}
-{% if results.pages > 1 %}<nav class="search-pagination" aria-label="结果分页">{% if results.page > 1 %}<a class="button secondary" href="{{ request.url.include_query_params(page=results.page-1) }}">上一页</a>{% endif %}<span>第 {{ results.page }} / {{ results.pages }} 页</span>{% if results.page < results.pages %}<a class="button secondary" href="{{ request.url.include_query_params(page=results.page+1) }}">下一页</a>{% endif %}</nav>{% endif %}
-</section>
-{% endif %}
-<section class="queue-section"><header><h2>索引任务</h2><a href="/generate">全部后台任务</a></header><div id="job-list" class="job-list"><div class="queue-empty">提交后在这里查看进度；完成后刷新本页使用新索引。</div></div></section>
+<div class="search-workspace">
+  <section class="search-results" aria-label="搜索结果">
+    {% if query %}
+    <div class="research-section-heading search-results-heading"><div><h2>找到 {{ results.total }} 份材料</h2><p>关键词 <strong class="search-query-label">{{ query }}</strong>{% if kind %} · {{ search_kinds[kind] }}{% endif %}{% if quality %} · {{ search_qualities[quality] }}{% endif %}{% if version %} · v{{ version }}{% endif %}</p></div>{% if results.total %}<span class="research-count">{{ results.page }} / {{ results.pages }} 页</span>{% endif %}</div>
+    <div class="search-hit-list">
+    {% for item in results['items'] %}
+    {% set source_url = url_for('search_source', doc_id=item.id).include_query_params(profile_id=config.profile_id, q=query, kind=kind, quality=quality, version=version or '', page=results.page) %}
+    <article class="search-result-card">
+      <div class="search-hit-labels"><span class="search-kind-badge"><i class="fas fa-{{ {'pdf':'file-pdf','notes':'pen','report':'file-alt'}.get(item.kind, 'file') }}" aria-hidden="true"></i>{{ search_kinds[item.kind] }}</span>{% if item.page %}<span>PDF 第 {{ item.page }} 页</span>{% endif %}{% if item.quality != 'none' %}<span class="search-quality-badge">{{ search_qualities[item.quality] }}</span>{% endif %}</div>
+      <h3><a href="{{ source_url }}">{{ item.title }}</a></h3>
+      <p class="search-hit-meta">arXiv:{{ item.aid }} <span>·</span> {% if item.version %}v{{ item.version }}{% else %}修订版未记录{% endif %}</p>
+      <p class="search-snippet">{{ item.snippet or '关键词命中标题或论文 ID。' }}</p>
+      <footer><span>本地材料命中</span><a href="{{ source_url }}">查看命中段落与来源 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></footer>
+    </article>
+    {% else %}<div class="empty-state research-empty search-empty"><i class="fas fa-search" aria-hidden="true"></i><h2>没有找到匹配材料</h2><p>尝试更短的关键词或放宽筛选。若资料刚刚更新，请更新索引后刷新页面。</p><small>PDF 无可提取文字的页面无法检索。</small></div>{% endfor %}
+    </div>
+    {% if results.pages > 1 %}<nav class="search-pagination" aria-label="结果分页">{% if results.page > 1 %}<a class="button secondary" href="{{ request.url.include_query_params(page=results.page-1) }}"><i class="fas fa-chevron-left" aria-hidden="true"></i>上一页</a>{% endif %}<span>第 {{ results.page }} / {{ results.pages }} 页</span>{% if results.page < results.pages %}<a class="button secondary" href="{{ request.url.include_query_params(page=results.page+1) }}">下一页<i class="fas fa-chevron-right" aria-hidden="true"></i></a>{% endif %}</nav>{% endif %}
+    {% else %}
+    <div class="research-section-heading search-results-heading"><div><h2>从本地资料中找回线索</h2><p>输入关键词，定位原文、阅读报告和自己的思考。</p></div></div>
+    <div class="search-welcome research-panel"><span class="search-welcome-icon"><i class="fas fa-search" aria-hidden="true"></i></span><h2>让研究资料再次连接起来</h2><p>搜索一个研究概念、方法名称或论文 ID，直接查看对应段落与来源。</p><div class="search-materials"><span><i class="fas fa-file-pdf" aria-hidden="true"></i>论文原文</span><span><i class="far fa-file-alt" aria-hidden="true"></i>阅读报告</span><span><i class="fas fa-pen" aria-hidden="true"></i>个人笔记</span></div></div>
+    {% endif %}
+  </section>
+  <aside class="search-index-sidebar" aria-label="本地索引管理">
+    <section class="research-panel search-index-panel">
+      <header><span class="search-index-icon"><i class="fas fa-database" aria-hidden="true"></i></span><div><h2>本地资料索引</h2><span class="search-index-state {% if index_status.error %}has-error{% endif %}">{{ '需要维护' if index_status.error else ('已建立索引' if index_status.updated_at else '尚未建立') }}</span></div></header>
+      {% if index_status.error %}<p class="search-index-error" role="alert">{{ index_status.error }}</p>{% endif %}
+      {% if index_status.updated_at %}<dl class="search-index-stats"><div><dt>材料</dt><dd>{{ index_status.sources }}</dd></div><div><dt>段落</dt><dd>{{ index_status.documents }}</dd></div></dl><p class="search-index-updated">最近更新<br><time>{{ index_status.updated_at[:19]|replace('T', ' ') }} UTC</time></p>{% else %}<p>尚未建立索引。点击“更新索引”，完成后刷新本页开始搜索。</p>{% endif %}
+      <form class="job-form" action="/api/jobs/search-index" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button secondary full-width" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>更新索引</button></form>
+      <p class="search-index-note">新增报告、修改笔记或移除资料后请更新索引。搜索结果反映上次索引快照；更新完成后刷新本页。无方向的历史资料按现有规则共享可见。</p>
+      <details><summary>索引维护与范围</summary><p>标题、摘要、个人笔记与标签、单篇报告正文、报告目录及版本同步目录中的本地 PDF。只处理可提取文字的页面，不下载 PDF，不执行 OCR。周报、比较报告和外部 Zotero / Obsidian 文件暂不纳入。</p><form class="job-form" action="/api/jobs/search-index" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="rebuild" value="true"><button class="button secondary full-width" type="submit">重建全部索引</button></form></details>
+      {% if index_status.warnings %}<details class="search-index-warnings"><summary>{{ index_status.warnings|length }} 条材料读取提示</summary><ul>{% for warning in index_status.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+    </section>
+  </aside>
+</div>
+<section class="queue-section research-queue"><header><h2>索引任务</h2><a href="/generate">全部后台任务 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></header><div id="job-list" class="job-list" aria-live="polite"><div class="queue-empty">提交后在这里查看进度；完成后刷新本页使用新索引。</div></div></section>
 {% endblock %}

@@ -1,27 +1,42 @@
 {% extends "base.html" %}
 {% block title %}研究周报 · PaperLoom{% endblock %}
 {% block content %}
-  <header class="page-heading">
-    <div><p class="section-kicker">WEEKLY SYNTHESIS</p><h1>研究活动周报</h1><p>综合近 {{ config.weekly.days }} 天的推荐、收藏、阅读进度、报告生成与版本更新。</p></div>
-    <a class="button secondary" href="/compare">跨论文比较</a>
-  </header>
-
-  <section class="feedback-panel"><h2>本期活动概览</h2><p>{{ activity.start[:10] }} 至 {{ activity.end[:10] }} · 新增收藏 {{ activity.counts.get('saved', 0) }} · 标记已读 {{ activity.counts.get('completed', 0) }} · 生成报告 {{ activity.counts.get('report', 0) }} · 发现新版 {{ activity.counts.get('version', 0) }} · 笔记更新 {{ activity.counts.get('notes', 0) }}</p><p>{{ activity.history_note }} 生成报告不等于已经读完。</p>
-    <form class="job-form" action="/api/jobs/weekly" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><label class="notes-option"><input type="checkbox" name="include_notes" value="true">将本期个人笔记与结论附入周报</label><p>个人笔记在模型生成后原样附入，不发送给模型。{% if config.obsidian.enabled and config.obsidian.auto_sync and config.obsidian.sync_weekly %}已启用自动同步，勾选后这些笔记也会写入当前 Obsidian 周报。{% endif %}每次生成保留独立版本。</p><button class="button primary" type="submit">生成研究活动周报</button></form>
-  </section>
-
-  {% if weekly_reports %}
-  <section class="weekly-grid">
-    {% for report in weekly_reports %}
-    <article class="weekly-card">
-      <div class="weekly-card-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></div>
-      <div><span>{{ report.week_id }}</span><h2>{{ report.profile_name }}</h2><p>汇总 {{ report.paper_count }} 篇论文 · {{ report.generated_at[:16]|replace('T', ' ') }}</p>{% if report.activity_counts %}<p>已读 {{ report.activity_counts.get('completed', 0) }} · 报告 {{ report.activity_counts.get('report', 0) }} · 新版 {{ report.activity_counts.get('version', 0) }}</p>{% endif %}{% if report.includes_personal_notes %}<p>含个人笔记</p>{% endif %}</div>
-      <a class="button secondary" href="{{ report.report_url }}">打开周报</a>
-    </article>
+<header class="page-heading research-heading">
+  <div><p class="section-kicker">WEEKLY SYNTHESIS</p><h1>研究活动周报</h1><p>回顾研究进展，把阅读、发现与思考连成线。</p></div>
+  <a class="button secondary" href="/compare"><i class="fas fa-columns" aria-hidden="true"></i>跨论文比较</a>
+</header>
+<section class="research-overview" aria-label="本期活动概览">
+  <div class="research-section-heading"><div><h2>本期活动</h2><p>近 {{ config.weekly.days }} 天 · {{ activity.start[:10] }} 至 {{ activity.end[:10] }}</p></div><span class="research-badge">{{ config.profile_name }}</span></div>
+  <dl class="research-stats weekly-stats">
+    {% for key, label, icon in [('saved', '新增收藏', 'bookmark'), ('completed', '标记已读', 'check-circle'), ('report', '生成报告', 'file-alt'), ('version', '发现新版', 'code-branch'), ('notes', '笔记更新', 'pen')] %}
+    <div><dt><i class="fas fa-{{ icon }}" aria-hidden="true"></i>{{ label }}</dt><dd>{{ activity.counts.get(key, 0) }}</dd></div>
     {% endfor %}
-  </section>
-  {% else %}
-  <section class="empty-state"><i class="fas fa-chart-line" aria-hidden="true"></i><h1>还没有研究周报</h1><p>生成后会在这里按周归档。</p><a class="button primary" href="/generate">前往运行任务</a></section>
-  {% endif %}
-  <section class="queue-section"><header><h2>本页任务</h2><a href="/generate">全部后台任务</a></header><div id="job-list" class="job-list"><div class="queue-empty">提交后在这里查看进度与结果。</div></div></section>
+  </dl>
+  <p class="research-footnote">{{ activity.history_note }} 生成报告不等于已经读完。</p>
+</section>
+<section class="weekly-compose research-panel">
+  <div class="weekly-compose-intro"><span class="research-feature-icon"><i class="fas fa-chart-line" aria-hidden="true"></i></span><div><h2>将本期进展整理成周报</h2><p>综合近 {{ config.weekly.days }} 天的推荐、收藏、阅读进度与版本更新，每次生成保留独立版本。</p></div></div>
+  <form class="job-form" action="/api/jobs/weekly" method="post">
+    <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+    <label class="notes-option"><input type="checkbox" name="include_notes" value="true">附入本期个人笔记与结论</label>
+    <p>个人笔记在模型生成后原样附入，不发送给模型。{% if config.obsidian.enabled and config.obsidian.auto_sync and config.obsidian.sync_weekly %}已启用自动同步，勾选后这些笔记也会写入当前 Obsidian 周报。{% endif %}</p>
+    <button class="button primary" type="submit"><i class="fas fa-plus" aria-hidden="true"></i>生成研究活动周报</button>
+  </form>
+</section>
+<div class="research-section-heading archive-heading"><div><h2>周报归档 <span class="research-count">{{ weekly_reports|length }}</span></h2><p>保留每次回顾，随时重访研究进展。</p></div></div>
+{% if weekly_reports %}
+<section class="weekly-grid">
+  {% for report in weekly_reports %}
+  <article class="weekly-card">
+    <header><span class="weekly-period"><i class="far fa-calendar-alt" aria-hidden="true"></i>{{ report.week_id }}</span>{% if report.includes_personal_notes %}<span class="research-badge">含个人笔记</span>{% endif %}</header>
+    <div class="weekly-card-body"><h2>{{ report.profile_name }}</h2><p>汇总 <strong>{{ report.paper_count }}</strong> 篇论文</p>
+    {% if report.activity_counts %}<div class="weekly-card-activity"><span>已读 {{ report.activity_counts.get('completed', 0) }}</span><span>报告 {{ report.activity_counts.get('report', 0) }}</span><span>新版 {{ report.activity_counts.get('version', 0) }}</span></div>{% endif %}</div>
+    <footer><time>{{ report.generated_at[:16]|replace('T', ' ') }}</time><a class="button secondary" href="{{ report.report_url }}">打开周报 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></footer>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state research-empty"><i class="fas fa-chart-line" aria-hidden="true"></i><h2>还没有研究周报</h2><p>点击上方“生成研究活动周报”，生成后会在这里按周归档。</p></section>
+{% endif %}
+<section class="queue-section research-queue"><header><h2>本页任务</h2><a href="/generate">全部后台任务 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></header><div id="job-list" class="job-list" aria-live="polite"><div class="queue-empty">提交后在这里查看进度与结果。</div></div></section>
 {% endblock %}

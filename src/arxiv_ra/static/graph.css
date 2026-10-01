@@ -12,3 +12,40 @@ dialog{border:1px solid var(--line);border-radius:16px;width:min(560px,calc(100v
 
 /* Reading typography stays comfortable at normal desktop scale. */
 .paper-card h3{font-size:14px}.paper-card p{font-size:12px}.detail-section p{font-size:14px}.relation-button{font-size:13px}.detail-content .authors{font-size:13px}.detail-meta{line-height:1.7;flex-wrap:wrap}
+
+/* A quieter canvas and distinct reading surfaces keep the map easy to scan. */
+.map-heading{gap:24px;padding-top:26px;padding-bottom:24px}
+.map-heading h1{font-size:25px;line-height:1.5}
+.heading-metric{background:#eef3e9;border:1px solid #e0e7da;border-radius:12px;padding:12px 18px}
+.heading-metric strong{font-size:30px}
+.workspace{border-radius:16px;box-shadow:0 8px 32px #243d300b;grid-template-columns:280px minmax(0,1fr) 320px}
+.panel-heading{background:#fbfcf9;border-bottom:1px solid #edf0e9;margin-bottom:12px;font-size:13px}
+.detail-panel .panel-heading{margin-bottom:0}
+.search-wrap{border-radius:9px;background:#f6f8f2}
+.paper-card{padding:16px 18px;transition:background .15s}
+.paper-card.active{background:#fff5e8;box-shadow:inset 3px 0 var(--orange)}
+.paper-card h3{line-height:1.65}
+.paper-card .card-top{align-items:center;margin-bottom:10px}
+.role-tag{padding:3px 7px;border-radius:5px}
+.graph-toolbar{background:#ffffffd9;border-bottom:1px solid #e5eadd;backdrop-filter:blur(8px)}
+.layer-controls{padding-top:6px;gap:8px 16px}
+.layer-controls label{font-size:11px}
+.graph-panel{background:radial-gradient(circle,#849b7b24 1px,transparent 1px) 0 0/24px 24px,#f8faf5}
+.canvas-bottom{background:linear-gradient(transparent,#f8faf5 25%);padding-top:24px}
+.zoom-tools{border-radius:10px;padding:3px;box-shadow:0 3px 12px #213b1e0b}
+.zoom-tools button:hover{background:#edf3e7;border-radius:6px}
+.detail-content h2{font-size:20px;line-height:1.6}
+.detail-meta{background:#f6f8f2;padding:10px 12px;border-radius:8px}
+.detail-section{margin-top:24px;padding-top:20px}
+.evidence-box{border:1px solid #e1e9d9;padding:14px;line-height:1.9}
+.evidence-box.warning{border-color:#efdfbe}
+.relation-button{padding:12px 8px;border-radius:6px;line-height:1.8}
+.relation-button:hover{background:#f6f8f2}
+.paper-link{font-weight:600}
+.workspace.list-collapsed{grid-template-columns:minmax(0,1fr) 320px}
+.workspace.detail-collapsed{grid-template-columns:280px minmax(0,1fr)}
+.workspace.list-collapsed.detail-collapsed{grid-template-columns:1fr}
+@media(min-width:1600px){.workspace{grid-template-columns:290px minmax(0,1fr) 340px}}
+@media(min-width:1200px) and (max-width:1399px){.workspace{grid-template-columns:240px minmax(0,1fr) 280px}.workspace.list-collapsed{grid-template-columns:minmax(0,1fr) 280px}.workspace.detail-collapsed{grid-template-columns:240px minmax(0,1fr)}.workspace.list-collapsed.detail-collapsed{grid-template-columns:1fr}.detail-content{padding-left:18px;padding-right:18px}}
+@media(max-width:1199px){.workspace,.workspace.detail-collapsed{grid-template-columns:260px minmax(0,1fr)}.workspace.list-collapsed,.workspace.list-collapsed.detail-collapsed{grid-template-columns:1fr}.map-heading h1{font-size:22px}}
+@media(max-width:767px){.map-heading{padding:18px 16px}.map-heading h1{font-size:19px}.workspace{border-radius:12px}.graph-toolbar{backdrop-filter:none}.panel-heading{margin-bottom:10px}.paper-card{padding:16px 20px}.layer-controls{padding-top:0;gap:6px}.canvas-bottom{padding-top:20px}.detail-panel .panel-heading{margin-bottom:0}}
