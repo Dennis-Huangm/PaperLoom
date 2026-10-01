@@ -1066,8 +1066,9 @@ def test_all_queued_jobs_keep_submission_profile_and_distinct_identity(tmp_path,
 
         report_arxiv_id = run = generate = check = sync_all = finish
 
-    for name in ("DailyPipeline", "WeeklySynthesizer", "VersionTracker", "CitationExplorer", "ObsidianExporter"):
-        monkeypatch.setattr(f"arxiv_ra.web.{name}", Runner)
+    for module, name in (("pipeline", "DailyPipeline"), ("weekly", "WeeklySynthesizer"),
+                         ("web", "VersionTracker"), ("web", "CitationExplorer"), ("web", "ObsidianExporter")):
+        monkeypatch.setattr(f"arxiv_ra.{module}.{name}", Runner)
 
     def block():
         started.set()
@@ -1119,7 +1120,7 @@ def test_history_report_captures_selected_day_before_queue_execution(tmp_path, m
             completed.set()
             return tmp_path / "run" / "report.md"
 
-    monkeypatch.setattr("arxiv_ra.web.DailyPipeline", Pipeline)
+    monkeypatch.setattr("arxiv_ra.pipeline.DailyPipeline", Pipeline)
     raw = {"arxiv_id": "2609.00001", "title": "Historical paper", "metadata_status": "complete", "version": 2,
            "authors": [{"name": "A"}], "abstract": "Full abstract", "abstract_zh": "摘要", "recommendation_detail": "推荐",
            "primary_category": "cs.AI", "categories": ["cs.AI"], "final_score": 5,

@@ -1,5 +1,7 @@
 import json
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
@@ -115,7 +117,7 @@ def test_preview_range_is_validated_and_passed_without_editing_daily_config(work
     def preview(saved, config, *, references_only=False, lookback_days=90):
         calls.append(lookback_days)
         return {'revision': saved['revision'], 'status': 'empty', 'sources': {}, 'selected': [], 'rejected': []}
-    monkeypatch.setattr('arxiv_ra.web_profiles.preview_profile', preview)
+    monkeypatch.setattr('arxiv_ra.profile_drafts.preview_profile', preview)
     url = f"/api/profile-drafts/{draft['id']}/preview"
     assert client.post(url, json={'revision': 1, 'lookback_days': 366}).status_code == 400
     assert client.post(url, json={'revision': 1, 'lookback_days': True}).status_code == 400
@@ -378,3 +380,101 @@ def test_advanced_query_edit_is_validated_and_survives_regeneration(workspace):
     assert regenerated["plan"]["branches"] == edited["plan"]["branches"]
     assert regenerated["discovery"]["max_candidates"] == 20
     assert regenerated["discovery"]["lookback_days"] == 14
+
+
+@pytest.mark.parametrize("adapter", ["json", "form"])
+@pytest.mark.parametrize("change", ["edit", "delete", "restore", "purge"])
+def test_late_regeneration_cannot_overwrite_edit_or_resurrect_draft(workspace, adapter, change):
+    client, model, root = workspace
+    draft = client.post('/api/profile-drafts', json={"name": "Concurrent", "keywords": ["world model"]}).json()
+    url = f'/api/profile-drafts/{draft["id"]}'
+    started, release = threading.Event(), threading.Event()
+    original = model.chat
+    def delayed(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+    model.chat = delayed
+    path = url + '/regenerate' if adapter == 'json' else f'/profiles/drafts/{draft["id"]}/regenerate'
+    options = {"json": {"revision": 1}} if adapter == 'json' else {"data": {"revision": "1"}}
+    with ThreadPoolExecutor(1) as executor:
+        pending = executor.submit(client.post, path, follow_redirects=False, **options)
+        try:
+            assert started.wait(3)
+            if change == 'edit':
+                saved = client.post(url + '/edit', json={"revision": 1, "name": "User edit wins"})
+                assert saved.status_code == 200
+                expected = saved.json()
+            else:
+                assert client.post(url + '/delete', json={"revision": 1}).status_code == 200
+                if change == 'restore':
+                    restored = client.post(url + '/restore', json={"revision": 1})
+                    assert restored.status_code == 200
+                    expected = restored.json()
+                elif change == 'purge':
+                    assert client.post('/profiles/deleted-drafts/clear', follow_redirects=False).status_code == 303
+        finally:
+            release.set()
+        assert pending.result(timeout=3).status_code == 409
+    current = client.get(url)
+    if change in {'edit', 'restore'}:
+        assert current.json() == expected
+    else:
+        assert current.status_code == 404
+        assert not (root / 'profiles/drafts' / f'{draft["id"]}.yaml').exists()
+
+
+@pytest.mark.parametrize("change", ["edit", "delete", "restore"])
+def test_late_preview_retains_revision_and_never_recreates_deleted_draft(workspace, monkeypatch, change):
+    client, _, root = workspace
+    draft = client.post('/api/profile-drafts', json={"name": "Preview race", "keywords": ["world model"]}).json()
+    url = f'/api/profile-drafts/{draft["id"]}'
+    started, release = threading.Event(), threading.Event()
+    def search(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return []
+    monkeypatch.setattr(ResearchClients, 'arxiv', property(lambda self: SimpleNamespace(search=search, get_many=lambda ids: [])))
+    try:
+        response = client.post(url + '/preview', json={"revision": 1})
+        assert response.status_code == 202
+        assert started.wait(3)
+        if change == 'edit':
+            assert client.post(url + '/edit', json={"revision": 1, "name": "Edited preview"}).status_code == 200
+        else:
+            assert client.post(url + '/delete', json={"revision": 1}).status_code == 200
+            if change == 'restore':
+                assert client.post(url + '/restore', json={"revision": 1}).status_code == 200
+    finally:
+        release.set()
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        job = client.get(f'/api/jobs/{response.json()["id"]}').json()
+        if job['status'] not in {'queued', 'running'}:
+            break
+        time.sleep(.01)
+    assert job['status'] == 'succeeded'
+    current = client.get(url)
+    if change == 'delete':
+        assert current.status_code == 404
+        assert not (root / 'profiles/drafts' / f'{draft["id"]}.yaml').exists()
+    else:
+        saved = current.json()
+        assert saved['revision'] == 2
+        assert saved['preview']['revision'] == 1  # Historical result stays explicitly stale.
+
+
+def test_concurrent_creation_with_same_request_returns_one_draft(workspace):
+    client, model, root = workspace
+    rendezvous = threading.Barrier(2)
+    original = model.chat
+    def simultaneous(*args, **kwargs):
+        rendezvous.wait(timeout=3)
+        return original(*args, **kwargs)
+    model.chat = simultaneous
+    data = {"name": "Concurrent creation", "keywords": ["world model"], "request_id": "concurrent-create"}
+    with ThreadPoolExecutor(2) as executor:
+        responses = list(executor.map(lambda _: client.post('/api/profile-drafts', json=data), range(2)))
+    assert all(response.status_code == 201 for response in responses)
+    assert responses[0].json() == responses[1].json()
+    assert len(list((root / 'profiles/drafts').glob('*.yaml'))) == 1

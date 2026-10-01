@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
-import httpx
 from fastapi import FastAPI, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import __version__
 from .abstracts import localize_abstracts
+from .arxiv_client import ArxivClient
 from .render import summary_html
 from .summary_cleaning import clean_summary_text
 from .config import AppConfig, VersionSyncConfig, load_config
@@ -35,12 +35,10 @@ from .models import Paper
 from .paper_data import local_paper_item, base_id, requested_version
 from .report_store import delete_report_attempts, explicit_report, html_reports, StoredReport
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
-from .pipeline import DailyPipeline
 from .profiles import ProfileManager
 from .web_profiles import register_profile_routes
 from .utils import read_json
 from .storage import clear_recommendations
-from .weekly import WeeklySynthesizer
 from .activity import collect_activity
 from .backup import BackupService
 from .scheduler import ProfileScheduler, WEEKDAYS, STATUS_LABELS as SCHEDULE_STATUS_LABELS
@@ -340,22 +338,14 @@ def create_app(config_path: Path | str) -> FastAPI:
         # Unknown revisions never reuse an unversioned cache across requests.
         revision = f"v{version}" if version else f"unknown-{uuid.uuid4().hex}"
         destination = output_root / "zotero-cache" / f"{arxiv_id.replace('/', '-')}-{revision}.pdf"
-        if destination.exists() and destination.stat().st_size > 0:
-            return destination
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(f".{uuid.uuid4().hex}.pdf.part")
+        client = ArxivClient()
         try:
-            with httpx.stream(
-                "GET", pdf_url, timeout=60.0, follow_redirects=True,
-                headers={"User-Agent": f"PaperLoom/{__version__} (personal research use)"},
-            ) as response:
-                response.raise_for_status()
-                with temporary.open("wb") as handle:
-                    for chunk in response.iter_bytes():
-                        handle.write(chunk)
-            temporary.replace(destination)
+            if version:
+                client.download_version(arxiv_id, version, destination)
+            else:
+                client.download_pdf(Paper.from_dict({**paper, "pdf_url": pdf_url}), destination)
         finally:
-            temporary.unlink(missing_ok=True)
+            client.client.close()
         return destination
 
     def save_recommendation_to_zotero(
@@ -827,13 +817,9 @@ def create_app(config_path: Path | str) -> FastAPI:
                 snapshot = service.prepare(papers, question)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-        def run_comparison():
-            with ComparisonService(task.config, project_root) as service:
-                return service.generate(snapshot)
-        job = jobs.submit("compare", f"{task.config.profile_name} · {len(papers)} 篇论文", run_comparison,
-                          identity=task.identity("compare", sources=snapshot["sources"], question=snapshot["question"]),
-                          profile_id=task.config.profile_id,
-                          request=capture_request("compare", task.config, project_root, snapshot=snapshot))
+        job = jobs.submit_request(f"{task.config.profile_name} · {len(papers)} 篇论文",
+                          capture_request("compare", task.config, project_root, snapshot=snapshot),
+                          identity=task.identity("compare", sources=snapshot["sources"], question=snapshot["question"]))
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.get("/versions", response_class=HTMLResponse)
@@ -1301,17 +1287,12 @@ def create_app(config_path: Path | str) -> FastAPI:
             if not snapshot.version:
                 raise HTTPException(status_code=409, detail="这条历史记录没有可靠版本号；请在生成页面输入 ID 获取最新版本，或输入指定版本号")
 
-        def run_report() -> Path:
-            with DailyPipeline(current, project_root) as pipeline:
-                return pipeline.report_arxiv_id(arxiv_id, snapshot=snapshot)
-
-        job = jobs.submit("report", f"{current.profile_name} · arXiv:{arxiv_id}", run_report,
+        job = jobs.submit_request(f"{current.profile_name} · arXiv:{arxiv_id}",
+                          capture_request("report", current, project_root, arxiv_id=arxiv_id,
+                                          snapshot=snapshot.to_dict() if snapshot else None),
                           identity=task.identity("report", arxiv_id=arxiv_id, origin=origin,
                                                  source_date=source_date, report_id=report_id,
-                                                 snapshot=snapshot.to_dict() if snapshot else None),
-                          profile_id=current.profile_id,
-                          request=capture_request("report", current, project_root, arxiv_id=arxiv_id,
-                                                  snapshot=snapshot.to_dict() if snapshot else None))
+                                                 snapshot=snapshot.to_dict() if snapshot else None))
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/digest", response_class=JSONResponse)
@@ -1321,14 +1302,10 @@ def create_app(config_path: Path | str) -> FastAPI:
     ) -> JSONResponse:
         task = JobContext.capture(current_config(), project_root)
         current = task.config
-        def run_digest() -> Path:
-            with DailyPipeline(current, project_root) as pipeline:
-                return pipeline.run(force=force, demo=False, deliver=send_email)
-
         detail = f"{current.profile_id or 'default'} · {'刷新并发送邮件' if send_email else '仅刷新本地推荐'} · {'强制' if force else '仅新论文'}"
-        job = jobs.submit("digest", detail, run_digest,
-                          identity=task.identity("digest", force=force, send_email=send_email), profile_id=current.profile_id,
-                          request=capture_request("digest", current, project_root, force=force, send_email=send_email))
+        job = jobs.submit_request(detail,
+                          capture_request("digest", current, project_root, force=force, send_email=send_email),
+                          identity=task.identity("digest", force=force, send_email=send_email))
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/weekly", response_class=JSONResponse)
@@ -1336,13 +1313,9 @@ def create_app(config_path: Path | str) -> FastAPI:
         task = JobContext.capture(current_config(), project_root)
         current = task.config
         cutoff = datetime.now(ZoneInfo(current.timezone))
-        def run_weekly() -> Path:
-            with WeeklySynthesizer(current, project_root) as synthesizer:
-                return synthesizer.generate(now=cutoff, include_notes=include_notes)
-
-        job = jobs.submit("weekly", current.profile_name, run_weekly,
-                          identity=task.identity("weekly", include_notes=include_notes), profile_id=current.profile_id,
-                          request=capture_request("weekly", current, project_root, now=cutoff.isoformat(), include_notes=include_notes))
+        job = jobs.submit_request(current.profile_name,
+                          capture_request("weekly", current, project_root, now=cutoff.isoformat(), include_notes=include_notes),
+                          identity=task.identity("weekly", include_notes=include_notes))
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/versions", response_class=JSONResponse)
@@ -1381,10 +1354,9 @@ def create_app(config_path: Path | str) -> FastAPI:
             batch = service.read(batch_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        job = jobs.submit("version-batch", f"{batch['profile_name']} · {len(batch['items'])} 篇",
-                          lambda: service.run(batch_id),
-                          identity=f"version-batch:{service.root}:{batch_id}", profile_id=task.config.profile_id,
-                          request=capture_request("version-batch", task.config, project_root, batch_id=batch_id))
+        job = jobs.submit_request(f"{batch['profile_name']} · {len(batch['items'])} 篇",
+                          capture_request("version-batch", task.config, project_root, batch_id=batch_id),
+                          identity=f"version-batch:{service.root}:{batch_id}")
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/version-sync", response_class=JSONResponse)

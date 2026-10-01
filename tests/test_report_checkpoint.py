@@ -105,8 +105,7 @@ def test_fallback_after_restart_resumes_remaining_chunks_and_preserves_old_repor
     root = Path(config.output_dir)
     manager = JobManager(root)
     request = capture_request("report", config, tmp_path, arxiv_id=paper().arxiv_id, snapshot=paper().to_dict())
-    first = manager.submit("report", "fixture", lambda: DailyPipeline(config, tmp_path, clients=clients).report_arxiv_id(paper().arxiv_id),
-                           profile_id="alpha", request=request)
+    first = manager.submit_request("fixture", request, identity="checkpoint-report")
     first = wait_job(manager, first.id)
     assert first.status == "succeeded_with_warnings"
     assert first.report_progress["chunks_done"] == 1 and first.report_progress["resumable"]

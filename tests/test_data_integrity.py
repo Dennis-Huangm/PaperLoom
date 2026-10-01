@@ -1,5 +1,4 @@
 """Regressions for retained user data and exact report/revision selection."""
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -218,13 +217,18 @@ def test_zotero_pdf_cache_pins_revision(tmp_path, monkeypatch):
     monkeypatch.setattr("arxiv_ra.web.ZoteroClient", Zotero)
     monkeypatch.setattr("arxiv_ra.web.localize_abstracts", lambda *args, **kwargs: None)
     downloads = []
-    @contextmanager
-    def stream(method, url, **kwargs):
-        downloads.append(url)
-        with httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200, content=str(req.url).encode()))) as transport:
-            with transport.stream(method, url) as response:
-                yield response
-    monkeypatch.setattr("arxiv_ra.web.httpx.stream", stream)
+    from arxiv_ra.arxiv_client import ArxivClient
+    def handler(request):
+        downloads.append(str(request.url))
+        return httpx.Response(200, content=b"%PDF-1.7\n" + str(request.url).encode() * 512)
+    def download_client():
+        adapter = ArxivClient(min_interval=0, max_retries=0)
+        adapter.client.close()
+        adapter.client = httpx.Client(transport=httpx.MockTransport(handler))
+        return adapter
+    monkeypatch.setenv("ARXIV_PDF_BACKEND", "httpx")
+    monkeypatch.setattr("arxiv_ra.web.ArxivClient", download_client)
+    monkeypatch.setattr("arxiv_ra.arxiv_client.time.sleep", lambda _: None)
     with TestClient(create_app(web_config(tmp_path))) as client:
         for version in (1, 2):
             p = paper(version).to_dict()

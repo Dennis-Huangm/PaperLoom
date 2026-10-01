@@ -1,4 +1,4 @@
-"""Optional curl transport for direct arXiv PDF downloads on Windows."""
+"""Shared PDF download validation and optional Windows curl transport."""
 from __future__ import annotations
 
 import os
@@ -11,6 +11,27 @@ from pathlib import Path
 
 from .task_runtime import task_checkpoint, task_progress
 from .rate_limit import shared_rate_limit
+
+
+def validate_pdf(path: Path, label: str) -> None:
+    """Reject obvious error bodies before publication or cache reuse.
+
+    This checks the download envelope, not the PDF's semantic correctness.
+    Parsing remains the responsibility of the configured PDF parser.
+    """
+    if path.stat().st_size <= 10 * 1024:
+        raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{label}")
+    with path.open("rb") as handle:
+        if handle.read(5) != b"%PDF-":
+            raise ValueError(f"arXiv PDF 内容无效，疑似错误页面：{label}")
+
+
+def reusable_pdf(path: Path) -> bool:
+    try:
+        validate_pdf(path, path.name)
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def download_with_curl(url: str, destination: Path, label: str, max_retries: int) -> None:
@@ -128,6 +149,7 @@ def download_with_curl(url: str, destination: Path, label: str, max_retries: int
                         task_checkpoint()
                         time.sleep(1)
         task_checkpoint()
+        validate_pdf(temporary, label)
         temporary.replace(destination)
         task_progress(f"PDF 已完整下载（curl 直连）：{received / 1048576:.1f} MiB", 39)
     finally:

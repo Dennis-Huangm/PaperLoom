@@ -168,6 +168,24 @@ def test_too_small_pdf_does_not_replace_existing_file(tmp_path) -> None:
     assert list(tmp_path.glob("*.part")) == []
 
 
+def test_large_html_response_does_not_replace_existing_pdf(tmp_path) -> None:
+    payload = b"<html>upstream error</html>" + b"x" * 16384
+    client = ArxivClient(max_retries=0)
+    client.client.close()
+    client.client = httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=payload)))
+    destination = tmp_path / "paper.pdf"
+    previous = b"%PDF-1.7\n" + b"original" * 2048
+    destination.write_bytes(previous)
+    try:
+        with pytest.raises(ValueError, match="PDF 内容无效"):
+            client.download_pdf(parse_feed(ATOM)[0], destination)
+        assert destination.read_bytes() == previous
+        assert list(tmp_path.glob("*.part")) == []
+    finally:
+        client.client.close()
+
+
 class InterruptedPDFStream(httpx.SyncByteStream):
     def __iter__(self):
         yield b"%PDF-1.7\n" + b"partial" * 4096

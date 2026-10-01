@@ -19,6 +19,7 @@ from .models import Author, Paper
 from .rate_limit import defer_rate_limit, shared_rate_limit
 from .task_runtime import task_checkpoint, task_progress
 from .utils import normalize_space
+from .pdf_download import reusable_pdf, validate_pdf
 
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV = "{http://arxiv.org/schemas/atom}"
@@ -296,8 +297,8 @@ class ArxivClient:
                                 f"arXiv PDF 文件长度不符：received {received_size}, expected {total_size}"
                             )
                         publish_progress(time.monotonic())
-                    if temporary.stat().st_size <= 10 * 1024:
-                        raise ValueError(f"arXiv PDF 响应过小，疑似错误页面：{label}")
+                    validate_pdf(temporary, label)
+                    task_checkpoint()
                     temporary.replace(destination)
                     return
                 except httpx.TransportError as exc:
@@ -321,7 +322,7 @@ class ArxivClient:
 
     def download_version(self, arxiv_id: str, version: int, destination) -> None:
         destination = destination.resolve()
-        if destination.exists() and destination.stat().st_size > 10 * 1024:
+        if reusable_pdf(destination):
             return
         url = f"https://arxiv.org/pdf/{arxiv_id}v{version}"
         for attempt in range(2):

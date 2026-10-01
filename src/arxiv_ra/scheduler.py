@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import load_config
 from .job_requests import capture_request
-from .pipeline import DailyPipeline
 from .reading_state import _locked
 from .utils import read_json, write_json
 
@@ -200,12 +199,10 @@ class ProfileScheduler:
                     state["occurrences"][key] = entry
                     self._save_state(state)
                     deliver = spec["send_email"] and config.delivery.email_enabled
-                    def run(config=config, deliver=deliver):
-                        with DailyPipeline(config, self.project) as pipeline:
-                            return pipeline.run(force=False, demo=False, deliver=deliver)
-                    job = self.jobs.submit("digest", f"定时 · {config.profile_name} · {local.date()} {spec['time']} {spec['timezone']}",
-                        run, identity=identity, profile_id=profile_id,
-                        request=capture_request("digest", config, self.project, force=False, send_email=deliver))
+                    job = self.jobs.submit_request(
+                        f"定时 · {config.profile_name} · {local.date()} {spec['time']} {spec['timezone']}",
+                        capture_request("digest", config, self.project, force=False, send_email=deliver),
+                        identity=identity)
                     entry.update(job_id=job.id, status=job.status, detail=job.detail)
                     self._save_state(state)
                     submitted.append(job.id)

@@ -35,6 +35,13 @@ DailyPipeline and feature orchestrators
   JSON replacement.
 - Integration modules (`zotero.py`, `obsidian.py`, `emailer.py`) are adapters.
   They do not decide which papers are recommended.
+- Web collection delegates PDF downloads to `ArxivClient`, sharing report
+  download retries, resumable streams, and the configured HTTP/curl transport.
+  `pdf_download` checks minimum size and the PDF header before publication and
+  pinned-cache reuse; invalid caches are replaced only after a valid download.
+  These checks reject obvious error bodies, not all damaged PDFs; parsing still
+  belongs to the configured PDF parser. Collection retains snapshot revision
+  selection and receipt hashes, and closes its download client on every outcome.
 - `discovery.py` coordinates arXiv and alphaXiv. `hybrid` actively queries both;
   `auto` preserves legacy fallback semantics and `arxiv` uses only arXiv.
   Candidates merge by arXiv ID, retaining per-paper provenance. arXiv hydrates
@@ -63,6 +70,15 @@ DailyPipeline and feature orchestrators
   Preview jobs cannot write recommendation/read-state artifacts. Semantic hard
   conditions require grounded title/abstract evidence; unknown conditions never
   qualify for final recommendation. Structured category conditions use metadata.
+- `profile_drafts.ProfileDraftWorkflow` owns creation validation and idempotency,
+  revision checks, regeneration intent/merge/commit, and preview submission and
+  completion. Creation/mutation JSON/form adapters decode input and translate
+  results/errors rather than defining generation and completion steps.
+  Model generation runs outside storage locks, against captured configuration.
+  `ProfileManager` retains atomic revision and deletion checks: a late generation
+  cannot overwrite edits, deletion, purge or restoration. Preview completion never
+  recreates a deleted draft; after edits/restoration its original revision remains
+  visible as stale. Draft YAML and preview formats are unchanged.
 - Structured query branches share the existing base arXiv budget, reserving at
   least half for core retrieval. Discovery retains branch provenance during merge;
   recent-interest requests retain their independent supplemental allowance.
@@ -429,6 +445,13 @@ quota from the frozen policy; cumulative and per-execution counts are recorded.
   references; current runtime values are resolved by the existing clients.
   Recovery reuses the saved profile/configuration and current queue's output root.
   A stale or different-profile retry is rejected before execution.
+- Web and scheduled recoverable tasks use `JobManager.submit_request`: the saved
+  request determines task kind, profile and execution, so callers do not maintain
+  a separate execution closure. `job_requests.request_runner` owns the shared
+  execution definitions for first attempts and recovery. Recovery normalizes
+  delivery intent before persistence and supplies report checkpoints; task record
+  version 1, submission identities and the queue's cancellation rules are unchanged.
+  Nonrecoverable operations continue to use the queue's callable submission.
 - Supported recovery requests are report, digest, weekly, comparison and version
   batch. Report hooks persist the resolved public paper before PDF/model work;
   replay pins that revision or the original selected snapshot. Comparisons keep

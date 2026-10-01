@@ -62,7 +62,7 @@ def env(tmp_path, monkeypatch):
             path = Path(self.config.output_dir) / f"{self.config.profile_id}.html"
             path.write_text("fake digest")
             return path
-    monkeypatch.setattr("arxiv_ra.scheduler.DailyPipeline", Pipeline)
+    monkeypatch.setattr("arxiv_ra.pipeline.DailyPipeline", Pipeline)
     jobs = JobManager(tmp_path / "run", 2)
     scheduler = ProfileScheduler(config, tmp_path / "run", jobs)
     yield SimpleNamespace(root=tmp_path, config=config, profiles=profiles, calls=calls, jobs=jobs, scheduler=scheduler)

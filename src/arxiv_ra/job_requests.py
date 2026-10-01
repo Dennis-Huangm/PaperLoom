@@ -1,4 +1,4 @@
-"""Serializable requests for explicit recovery; never deserialize executable code."""
+"""Shared execution of serializable task intent; never deserialize executable code."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -45,11 +45,29 @@ def recovery_note(kind):
     return "此类任务请从原功能入口继续；已有任务记录和结果仍保留。"
 
 
+def recovery_request(request):
+    """Capture explicit recovery intent without replaying email delivery."""
+    request = deepcopy(request)
+    if request["kind"] == "digest":
+        request["parameters"]["send_email"] = False
+    return request
+
+
 def recovery_runner(request, output_root, checkpoint):
+    return request_runner(recovery_request(request), output_root, checkpoint)
+
+
+def request_runner(request, output_root, checkpoint=None):
+    """Execute a captured request identically on first submission and recovery.
+
+    Callers supply intent, not a second callable description of that intent.
+    Recovery supplies normalized delivery intent and any resolved checkpoints.
+    """
     config = restore_config(request, output_root)
     root = Path(request["project_root"])
     params = deepcopy(request["parameters"])
     kind = request["kind"]
+    checkpoint = deepcopy(checkpoint or {})
 
     def run():
         if kind == "report":
@@ -64,7 +82,7 @@ def recovery_runner(request, output_root, checkpoint):
         if kind == "digest":
             from .pipeline import DailyPipeline
             with DailyPipeline(config, root) as service:
-                return service.run(force=params["force"], demo=False, deliver=False)
+                return service.run(force=params["force"], demo=False, deliver=params.get("send_email", False))
         if kind == "weekly":
             from .weekly import WeeklySynthesizer
             with WeeklySynthesizer(config, root) as service:

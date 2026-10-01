@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 import sys
@@ -10,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from arxiv_ra.config import AppConfig
-from arxiv_ra.job_requests import capture_request, recovery_runner
+from arxiv_ra.job_requests import capture_request
 from arxiv_ra.library import PaperLibraryStore
 from arxiv_ra.task_runtime import task_checkpoint_data, task_progress, task_warning
 from arxiv_ra.utils import read_json, write_json
@@ -266,32 +267,77 @@ def test_failed_recovery_creation_preserves_original_record(tmp_path, monkeypatc
         stop(manager)
 
 
-@pytest.mark.parametrize("kind", ["digest", "weekly", "compare", "version-batch"])
-def test_recovery_execution_contracts(tmp_path, monkeypatch, kind):
-    calls = []
+@pytest.mark.parametrize("kind", ["report", "digest", "weekly", "compare", "version-batch"])
+def test_captured_request_executes_and_recovers_through_queue(tmp_path, monkeypatch, kind):
+    calls, exits = [], []
     class Runner:
         def __init__(self, config, root):
             assert config.profile_id == "alpha"
             assert config.output_dir == str(tmp_path.resolve())
+            assert root == tmp_path
         def __enter__(self): return self
-        def __exit__(self, *args): pass
+        def __exit__(self, error_type, *_): exits.append(error_type)
         def run(self, *args, **kwargs):
-            calls.append((args, kwargs))
+            calls.append(deepcopy((args, kwargs)))
+            if len(calls) == 1:
+                if kind == "report":
+                    task_checkpoint_data("paper", {"arxiv_id": "2407.05600", "version": 2,
+                                                    "title": "Resolved revision", "metadata_status": "complete"})
+                    task_checkpoint_data("report_work", {"id": "a" * 32})
+                raise RuntimeError("fixture failure after capturing intent")
             return tmp_path / "result.html"
-        generate = run
+        generate = report_arxiv_id = run
     for module, name in [("pipeline", "DailyPipeline"), ("weekly", "WeeklySynthesizer"),
                          ("comparison", "ComparisonService"), ("version_batch", "VersionSyncBatch")]:
         monkeypatch.setattr(f"arxiv_ra.{module}.{name}", Runner)
-    params = {"digest": {"force": True, "send_email": True},
+    params = {"report": {"arxiv_id": "2407.05600", "snapshot": {
+                            "arxiv_id": "2407.05600", "version": 1, "title": "Selected revision",
+                            "metadata_status": "complete"}},
+              "digest": {"force": True, "send_email": True},
               "weekly": {"now": "2026-09-24T10:00:00+08:00", "include_notes": True},
               "compare": {"snapshot": {"profile_id": "alpha", "sources": ["frozen"]}},
               "version-batch": {"batch_id": "batch"}}[kind]
-    recovery_runner(request(tmp_path, kind, **params), tmp_path, {})()
-    args, kwargs = calls[0]
-    if kind == "digest": assert kwargs == {"force": True, "demo": False, "deliver": False}
-    if kind == "weekly": assert kwargs["now"].isoformat() == params["now"] and kwargs["include_notes"]
-    if kind == "compare": assert args[0] == params["snapshot"]
-    if kind == "version-batch": assert args == ("batch",)
+    recipe = request(tmp_path, kind, **params)
+    manager = JobManager(tmp_path)
+    try:
+        first = manager.submit_request("captured intent", recipe, identity=f"first:{kind}")
+        recipe["config"]["profile_id"] = "changed-after-submit"
+        recipe["parameters"].clear()
+        assert wait_job(manager, first).status == "failed"
+        assert manager.requests[first.id]["parameters"] == params
+    finally:
+        stop(manager)
+    manager = JobManager(tmp_path)
+    try:
+        assert len(calls) == 1  # Restart never replays a task automatically.
+        retry = manager.retry(first.id, "alpha")
+        assert wait_job(manager, retry).status == "succeeded"
+        assert manager.retry(first.id, "alpha").id == retry.id
+        assert len(calls) == 2
+        assert retry.profile_id == "alpha" and retry.retry_of == first.id
+        if kind == "digest":
+            assert manager.requests[retry.id]["parameters"]["send_email"] is False
+    finally:
+        stop(manager)
+    first_args, first_options = calls[0]
+    args, options = calls[1]
+    if kind == "report":
+        assert first_args == args == ("2407.05600",)
+        assert first_options["snapshot"].version == 1 and "resume" not in first_options
+        assert options["snapshot"].version == 2
+        assert options["resume"] == {"id": "a" * 32}
+    elif kind == "digest":
+        assert first_options == {"force": True, "demo": False, "deliver": True}
+        assert options == {"force": True, "demo": False, "deliver": False}
+    elif kind == "weekly":
+        assert first_options == options
+        assert options["now"].isoformat() == params["now"] and options["include_notes"]
+    elif kind == "compare":
+        assert first_args == args == (params["snapshot"],)
+    elif kind == "version-batch":
+        assert first_args == args == ("batch",)
+    if kind != "version-batch":
+        assert exits == [RuntimeError, None]
 
 
 def test_api_restart_recovery_profile_guard_and_private_ledger(tmp_path, monkeypatch):

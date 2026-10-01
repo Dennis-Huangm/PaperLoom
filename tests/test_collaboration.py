@@ -539,18 +539,8 @@ def test_downloaded_pdf_is_pinned_across_retries(workspace, zotero_server, monke
     items[0]['paper']['pdf_url'] = 'https://arxiv.org/pdf/2609.00001v2'
     write_json(config.parent / 'run/2026-09-01/recommendations.json', items)
     pdf = config.parent / 'downloaded.pdf'
-    pdf.write_bytes(b'%PDF-original-revision')
-    # Inject the HTTP transport's downloaded bytes through the existing PDF boundary.
-    from contextlib import contextmanager
-    @contextmanager
-    def download(*args, **kwargs):
-        class Response:
-            def raise_for_status(self):
-                pass
-            def iter_bytes(self):
-                yield pdf.read_bytes()
-        yield Response()
-    monkeypatch.setattr('arxiv_ra.web.httpx.stream', download)
+    pdf.write_bytes(b'%PDF-1.7\n' + b'original-revision' * 1024)
+    mock_pdf_transport(monkeypatch, lambda request: httpx.Response(200, content=pdf.read_bytes()))
     zotero_server['fail'] = False
     with TestClient(create_app(config)) as client:
         first = collect(client, zotero='true', obsidian='false').json()
@@ -574,3 +564,91 @@ def test_restore_check_with_disabled_targets_keeps_old_links_unverified(workspac
         client.post('/api/collection/check', data={'arxiv_id': '2609.00001v2'})
         state = client.get('/api/collection', params={'arxiv_id': '2609.00001v2'}).json()
         assert 'zotero' not in state['links']
+
+
+@pytest.mark.parametrize('response_kind', ['html', 'small', 'truncated'])
+def test_collection_rejects_html_instead_of_pdf(workspace, monkeypatch, response_kind):
+    config, vault = workspace
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['obsidian']['copy_pdf'] = True
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    path = config.parent / 'run/2026-09-01/recommendations.json'
+    items = json.loads(path.read_text('utf-8'))
+    items[0]['paper']['pdf_url'] = 'https://arxiv.org/pdf/2609.00001v2'
+    write_json(path, items)
+    payload = b'<html>upstream error</html>' + b'x' * 16384
+    if response_kind != 'html':
+        payload = b'%PDF-1.7\n' + b'x' * (100 if response_kind == 'small' else 16384)
+    headers = {'Content-Length': str(len(payload) + 1)} if response_kind == 'truncated' else {}
+    adapters = mock_pdf_transport(monkeypatch, lambda request: httpx.Response(200, headers=headers, content=payload))
+    with TestClient(create_app(config)) as client:
+        receipt = collect(client).json()
+        assert receipt['targets']['obsidian']['status'] == 'failed'
+        assert not list(vault.rglob('*.pdf'))
+        assert not list((config.parent / 'run/zotero-cache').glob('*.pdf'))
+        assert not list((config.parent / 'run/zotero-cache').glob('*.part'))
+    assert all(adapter.client.is_closed for adapter in adapters)
+
+
+def mock_pdf_transport(monkeypatch, handler):
+    from arxiv_ra.arxiv_client import ArxivClient
+    clients = []
+    def factory():
+        adapter = ArxivClient(min_interval=0, max_retries=0)
+        adapter.client.close()
+        adapter.client = httpx.Client(transport=httpx.MockTransport(handler))
+        clients.append(adapter)
+        return adapter
+    monkeypatch.setenv('ARXIV_PDF_BACKEND', 'httpx')
+    monkeypatch.setattr('arxiv_ra.web.ArxivClient', factory)
+    monkeypatch.setattr('arxiv_ra.arxiv_client.time.sleep', lambda _: None)
+    return clients
+
+
+@pytest.mark.parametrize('cached', [None, b'<html>cached error</html>' + b'x' * 16384,
+                                    b'%PDF-small damaged download'])
+def test_collection_downloads_pinned_pdf_and_repairs_invalid_cache(workspace, monkeypatch, cached):
+    config, vault = workspace
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['obsidian']['copy_pdf'] = True
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    path = config.parent / 'run/2026-09-01/recommendations.json'
+    items = json.loads(path.read_text('utf-8'))
+    # The snapshot version, not the unversioned URL, controls the material.
+    items[0]['paper']['pdf_url'] = 'https://arxiv.org/pdf/2609.00001'
+    write_json(path, items)
+    destination = config.parent / 'run/zotero-cache/2609.00001-v2.pdf'
+    if cached is not None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(cached)
+    payload = b'%PDF-1.7\n' + b'x' * 16384
+    urls = []
+    def handler(request):
+        urls.append(str(request.url))
+        return httpx.Response(200, content=payload)
+    adapters = mock_pdf_transport(monkeypatch, handler)
+    with TestClient(create_app(config)) as client:
+        assert collect(client).json()['targets']['obsidian']['status'] == 'succeeded'
+    assert urls == ['https://arxiv.org/pdf/2609.00001v2']
+    assert destination.read_bytes() == payload
+    assert any(path.read_bytes() == payload for path in vault.rglob('*.pdf'))
+    assert all(adapter.client.is_closed for adapter in adapters)
+
+
+def test_collection_reuses_valid_pinned_cache_without_network(workspace, monkeypatch):
+    config, _ = workspace
+    values = yaml.safe_load(config.read_text('utf-8'))
+    values['obsidian']['copy_pdf'] = True
+    config.write_text(yaml.safe_dump(values), encoding='utf-8')
+    path = config.parent / 'run/2026-09-01/recommendations.json'
+    items = json.loads(path.read_text('utf-8'))
+    items[0]['paper']['pdf_url'] = 'https://arxiv.org/pdf/2609.00001v2'
+    write_json(path, items)
+    destination = config.parent / 'run/zotero-cache/2609.00001-v2.pdf'
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(b'%PDF-1.7\n' + b'x' * 16384)
+    def unexpected(request):
+        pytest.fail('valid pinned cache must not download again')
+    mock_pdf_transport(monkeypatch, unexpected)
+    with TestClient(create_app(config)) as client:
+        assert collect(client).json()['targets']['obsidian']['status'] == 'succeeded'

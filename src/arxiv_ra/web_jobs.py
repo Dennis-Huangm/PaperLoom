@@ -18,7 +18,7 @@ from .web_catalog import result_artifact_url
 from .config import AppConfig
 from .task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 from .job_store import JobStore
-from .job_requests import RECOVERABLE, recovery_note, recovery_runner, restore_config
+from .job_requests import RECOVERABLE, recovery_note, recovery_request, recovery_runner, request_runner, restore_config
 from .paper_data import base_id
 
 
@@ -237,6 +237,13 @@ class JobManager:
             self.pending.append((job.id, function))
             self._dispatch_locked()
         return job
+
+    def submit_request(self, detail: str, request: dict, *, identity: str) -> BackgroundJob:
+        """Submit captured intent as both the durable record and execution source."""
+        request = copy.deepcopy(request)
+        config = restore_config(request, self.output_root)
+        return self.submit(request["kind"], detail, request_runner(request, self.output_root),
+                           identity=identity, profile_id=config.profile_id, request=request)
 
     def set_max_parallel(self, value: int) -> None:
         with self.lock:
@@ -479,9 +486,7 @@ class JobManager:
                                and self.checkpoints[job_id].get("report_work"))
             if not previous.recoverable or (previous.status not in {"interrupted", "failed", "cancelled"} and not fallback_report):
                 raise ValueError("该任务当前不可重新执行")
-            request = copy.deepcopy(self.requests[job_id])
-            if previous.kind == "digest":
-                request["parameters"]["send_email"] = False
+            request = recovery_request(self.requests[job_id])
             checkpoint = copy.deepcopy(self.checkpoints[job_id])
             runner = recovery_runner(request, self.output_root, checkpoint)
             job = self.submit(previous.kind, previous.submitted_detail or previous.label, runner,
