@@ -1,6 +1,6 @@
-# PaperLoom 使用指南
+# PaperLoom 网页使用指南
 
-安装与升级请先阅读 [README](../README.md)。本文保留各功能的配置、命令和运行边界。
+安装与升级请先阅读 [README](../README.md)。本文围绕网页中的操作、配置和运行边界展开；终端命令、系统计划任务与云端运行见 [命令行与自动化](CLI.md)。
 
 <a id="discovery"></a>
 ## arXiv 与 alphaXiv 如何协作
@@ -60,6 +60,23 @@ discovery:
 
 启用时会增加外部请求：arXiv 额外最多 100 篇候选，且不超过原 arXiv 候选预算；alphaXiv 在相应来源模式允许时额外最多 5 篇。精排总候选预算保持不变。归纳结果可缓存，但定向检索仍会在每次推荐时执行。
 
+<a id="conferences"></a>
+## 会议论文与长期推荐模式
+
+打开 **会议论文**，按表单中的“会议范围 → 研究主题 → 检索选项”填写：
+
+1. 多选 ICML、NeurIPS（含 NIPS）、CVPR、ICLR、ACL，设置起止会议年份。起止年份均包含，会议年份与 arXiv 首次上传年份独立。
+2. 主题来源选当前研究方向、临时主题或不限定主题浏览目录；选择临时主题时填写相应输入框。
+3. 设置本次 arXiv 关联预算，按需勾选重新获取目录和关联结果，然后点击 **检索会议论文**。
+
+完成后刷新结果。目录覆盖与来源状态区分未公布、失败、未关联、不确定和未检查，不能把来源失败当成零篇论文。结果仅展示成功关联 arXiv 的主会正式长文，不含 Findings、Workshop、短文、Demo；提供会议来源链接，点击收藏后进入当前方向的文献库。
+
+临时检索不改变长期推荐配置、阅读状态或已推荐记录。在方向编辑或配置页保存“最新 arXiv / 会议论文 / 混合推荐”模式后，后续每日推荐复用该范围。混合模式按 arXiv ID 合并去重后统一排序，不设置来源固定名额。
+
+目录缓存 24 小时、关联缓存 7 天。预算限制新增关联请求，复用缓存的候选仍参与筛选，超过预算的目录记录显示为未检查。部分历史目录格式或尚未公布的届次可能无法取得，结果不保证完整覆盖；会议归属不保证 arXiv 修订版与正式出版版本内容完全相同。
+
+ICLR 在部分情况下需要 OpenReview 登录。在 **配置 → API 与凭据** 填写自己的已注册账号与密码；保存到本地 `.env` 的 `OPENREVIEW_USERNAME` / `OPENREVIEW_PASSWORD`，登录令牌只保存在客户端内存中。
+
 <a id="configuration"></a>
 ## 配置与研究方向
 
@@ -87,11 +104,6 @@ discovery:
 | `profiles/active.txt` | 当前启用的研究方向 |
 
 首次运行时会为尚无方向档案的项目建立默认方向。**活动方向的 `discovery` 和 `ranking` 段会覆盖全局同名段**；已有方向后，只修改 `config.yaml` 的检索字段可能不会生效。推荐通过 GUI 修改，或编辑当前方向的 YAML。完整字段见 [配置模板](../config.example.yaml) 和 [环境变量模板](../.env.example)。
-
-```bash
-paperloom --config config.yaml profiles
-paperloom --config config.yaml activate your-profile-id
-```
 
 关键词宜描述具体任务、方法和模态。负向关键词用于降低得分；“仅排除此论文”只按论文 ID 排除，不自动学习相似主题。需要过滤同类论文时，可展开“屏蔽主题词”并明确填写词或短语。收藏与排除互斥，正向偏好学习仅取当前方向最近收藏的 30 篇论文。旧版本留下的相似主题规则保持原行为，在“反馈与筛选记录”中单独标示并可撤销。
 
@@ -137,14 +149,6 @@ GUI 任务的提交内容、进度、警告、状态和结果链接会写入本�
 
 也可使用命令行（`--config` 指向当前项目配置）：
 
-```bash
-paperloom backup create --reports --pdfs
-paperloom backup preview "backups/paperloom-日期-时间-编号.zip" --name research-copy --mode keep
-# 使用预览返回的 token 执行同一范围；--mode replace 表示替换冲突文件
-paperloom backup restore "backups/paperloom-日期-时间-编号.zip" --name research-copy --mode keep --token "预览返回的token"
-paperloom backup reconcile
-```
-
 备份和恢复期间请停止 CLI 写入及编辑，先等待后台任务完成，并关闭目标恢复副本的 GUI。文件变化会导致操作中止；此功能不提供跨外部进程的文件系统快照。若恢复进程在目录交接时退出，页面会提示“整理中断恢复”：目标缺失时放回旧目录，已发布的目标保留，暂存资料不删除。首版最多 10 万文件、总计 20 GiB、单文件 2 GiB；校验和预览会完整读取备份。只支持此版本化格式，拒绝路径穿越、Windows 特殊路径、大小写冲突、符号链接及加密 ZIP。
 
 ### 报告阅读与核对详情
@@ -185,26 +189,7 @@ SEMANTIC_SCHOLAR_API_KEY=
 
 OpenAlex 与 Semantic Scholar 用于出版信息核验；未配置凭据或请求失败时，能否返回结果取决于服务端策略。请将 `metadata.openalex_email` 改为自己的联系邮箱。不要将 `.env` 或真实凭据提交到仓库。
 
-## 日常使用
-
-下面的命令都从项目根目录执行；若配置文件不在根目录，请用 `--config` 指定路径。
-
-| 目标 | 命令 |
-| --- | --- |
-| 启动界面 | `paperloom --config config.yaml gui` |
-| 生成推荐并按配置投递 | `paperloom --config config.yaml run` |
-| 生成推荐、不发邮件 | `paperloom --config config.yaml run --no-email` |
-| 忽略已处理历史，重新筛选 | `paperloom --config config.yaml run --force --no-email` |
-| 阅读一篇论文的当前版本 | `paperloom --config config.yaml report 2407.05600` |
-| 阅读指定修订版 | `paperloom --config config.yaml report 2407.05600v2` |
-| 生成研究周报 | `paperloom --config config.yaml weekly` |
-| 周报附入个人笔记 | `paperloom --config config.yaml weekly --include-notes` |
-| 比较指定版本的论文 | `paperloom --config config.yaml compare 2407.05600v1 2407.05601v2 --question "实验条件与复现成本"` |
-| 检查已追踪论文的新版本 | `paperloom --config config.yaml versions` |
-| 生成相关工作地图 | `paperloom --config config.yaml citation 2407.05600` |
-| 同步 Obsidian | `paperloom --config config.yaml obsidian-sync` |
-
-`--force` 忽略论文已处理历史，仍会应用当前筛选规则。日报发现阶段不会自动为每篇候选生成完整报告；如果开启版本追踪的 PDF 对比，则发现修订更新时可能额外下载新旧全文。
+## 阅读与研究材料
 
 ### 报告与版本
 
@@ -268,12 +253,6 @@ OpenAlex 与 Semantic Scholar 用于出版信息核验；未配置凭据或请�
 
 每次重新生成先准备完整快照，再切换图谱库入口；失败或取消保留上次完整地图。关闭生成功能后仍可打开已有结果。历史图在应用内使用兼容展示并标记缺失状态，不改写原文件；独立旧 HTML 不会自动升级。新图附带本地样式和脚本，可直接在本机打开，备份报告时也会包含这些资源。
 
-```bash
-paperloom sync 2407.05600
-paperloom sync 2407.05600 --report --zotero --obsidian
-paperloom sync 2407.05600 --target-version 3 --retry
-```
-
 同步任务在开始时向 arXiv 确认最新修订版并固定目标；查询失败不会以缓存冒充最新版。重试会复用原目标和已选择的步骤，即使远端又出现新版也不会串版。报告回退为摘要级时显示“可重试”；本地同步已成功但外部同步失败时显示“部分完成”。完成任务后点击“刷新版本状态”查看最新卡片。
 
 Zotero 同步向已有条目补充新版附件，保留原附件和人工编辑的条目字段；需启用 PDF 附件设置。Obsidian 保留手写内容，新版附件放入对应方向和修订版目录。支持手动单篇及批量同步，自动下载策略尚未启用。
@@ -321,11 +300,7 @@ obsidian:
 
 配置模板使用 QQ SMTP，可在全局配置中调整 SMTP 参数。启用邮件后，在 `.env` 填写 `QQ_EMAIL` 和 `SMTP_PASSWORD`；QQ 场景下使用邮箱生成的 **SMTP 授权码**，而非登录密码。
 
-默认将邮件发送给配置的自身邮箱；自定义收件人使用 `delivery.to_addresses`。先验证投递，再交给定时任务：
-
-```bash
-paperloom --config config.yaml test-email
-```
+默认将邮件发送给配置的自身邮箱；自定义收件人使用 `delivery.to_addresses`。邮件测试命令见 [命令行指南](CLI.md#常用命令)，测试会实际向配置的收件人发送邮件。
 
 <a id="automation"></a>
 ## 定时运行
@@ -338,47 +313,11 @@ paperloom --config config.yaml test-email
 
 GUI 保持运行时每 30 秒检查。未运行或休眠造成错过时段时，恢复后两小时内允许补触发，超过则记录“错过时段”，不补跑历史日期。计划时间是入队时间，实际执行可能受队列延迟影响。夏令时不存在的本地时刻跳过，重复的本地时刻仅取第一次。失败、中断、取消均不自动重试；需要时从任务页手动恢复，恢复推荐任务不发邮件。
 
-```bash
-paperloom schedule --status  # 查看计划和上次登记状态，不运行任务
-paperloom schedule --once    # 检查一次，等待本次任务完成后退出
-paperloom schedule           # 常驻检查，Ctrl+C 停止后续提交
-```
-
 GUI 与独立调度进程使用同一队列占用锁；已有 GUI/调度进程运行时，第二个 `schedule` 入口跳过。状态保存在输出目录的 `schedule-config.json` / `schedule-state.json`，任务仍写入 `.jobs/`。配置/台账损坏时停止相应调度并显示异常，原文件保留。记录先落盘再提交，不承诺外部写入“精确一次”；不确定是否执行的中断时段不会自动重跑。
 
 备份会包含计划与执行记录；**恢复副本始终暂停调度**，即使备份中的开关已启用，也必须在副本页面明确重新启用。现有手动 `run` 命令及旧定时入口不参与这套时段去重；使用多方向调度时请升级或暂停旧入口，避免两套入口同时运行。
 
-**Windows Task Scheduler**
-
-先在准备运行任务的 Python 环境执行 `python -m arxiv_ra --config config.yaml doctor`。该命令检查 HTTP 客户端能否按当前进程的代理和证书配置初始化，不请求网络；使用 SOCKS 代理而缺少依赖时，会提示在同一环境安装 `"httpx[socks]>=0.27,<1"`。通过该检查不代表外部服务可达，也不代表 Windows 任务已注册。GUI、CMD 与计划任务应使用一致的 Python、项目 `.env` 和可用代理；不要为排错移除实际访问 arXiv 所需的代理出口。
-
-在已创建 `.venv` 的项目根目录执行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -ProjectDir $PWD -At "08:00"
-```
-
-脚本为当前用户创建或更新名为 `arXiv Research Assistant` 的兼容任务，使用项目虚拟环境运行 `run`。任务采用交互式登录模式，需要该用户处于登录状态。每次启动读取当前活动研究方向；电脑需在计划时间处于可运行状态。
-
-使用多方向调度时，改用以下命令更新**同名任务**，每 5 分钟执行一次 `schedule --once`，具体方向与时间由上述页面控制：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows_task.ps1 -ProjectDir $PWD -MultiProfile
-```
-
-此选项不启用任何方向计划；运行页面总开关和方向设置后才会提交任务。系统入口本身采用“已有实例则忽略新实例”，电脑需处于运行且用户已登录的状态。开发验证不会自动安装或修改你的 Windows 计划任务。
-
-**GitHub Actions**
-
-仓库附带 [手动日报工作流](../.github/workflows/daily.yml)，**默认不定时运行**。在 GitHub 的 **Actions → PaperLoom research digest → Run workflow** 中手动启动，避免尚未配置的源码仓库每天运行失败并产生通知邮件。本地 Windows 计划任务不受影响。
-
-使用前在仓库 **Settings → Secrets and variables → Actions** 中设置 `PAPERLOOM_CONFIG_YAML`，内容为个人运行配置的完整 YAML，并保留 `output_dir: run`。工作流会在临时运行器中生成 `config.yaml`，无需把个人配置提交到 Git。云端按这份配置中的研究主题运行，不会自动读取本机的 `profiles/`。
-
-按启用功能添加对应 Secrets：`LLM_API_KEY`、`LLM_BASE_URL`、`ALPHAXIV_API_KEY`、`OPENALEX_API_KEY`、`SEMANTIC_SCHOLAR_API_KEY`，以及用于邮件投递的 `QQ_EMAIL`、`SMTP_PASSWORD`。配置中的 Zotero 和 Obsidian 应关闭；云端运行器无法直接访问你电脑上的应用或 vault。
-
-工作流会缓存去重历史、阅读状态、按方向保存的推荐和元数据。**公开仓库的缓存不能视为私有存储**；个人研究数据建议在私有仓库或本地运行。报告 artifact 默认不上传，只有手动勾选上传选项时才保存 `run/`，访问权限由仓库及 GitHub Actions 规则决定。
-
-旧版工作流曾默认在北京时间工作日 07:30 触发，却要求仓库内存在被 `.gitignore` 排除的 `config.yaml`，因此会反复失败。GitHub Actions 通知与 PaperLoom 的 SMTP 日报是两种独立邮件；可在 [GitHub 通知设置](https://github.com/settings/notifications) 中调整 Actions 邮件偏好。
+需要服务窗口之外的调度入口时，见 [Windows 计划任务与 GitHub Actions](CLI.md#automation)。
 
 ## 数据与隐私
 
@@ -429,7 +368,7 @@ Web 界面默认绑定 `127.0.0.1`，凭据不回显；所有请求校验本机 
 
 **开启 `hybrid` 后看不到 alphaXiv 候选？** 检查当前方向的 provider、启用开关与 API key，再查看当次 discovery manifest。API 失败、候选重复、缺少发布日期、得分不足或被历史过滤，都会影响最终入选结果。
 
-**为什么刷新后还是原来的推荐？** 当日没有符合条件的新论文时会保留已有结果。需要忽略已处理历史重新筛选时使用 `--force`；该参数不会绕过所有评分与偏好规则。
+**为什么刷新后还是原来的推荐？** 当日没有符合条件的新论文时会保留已有结果。需要忽略已处理历史重新筛选时，在任务页勾选强制刷新选项；它不会绕过所有评分与偏好规则。
 
 **为什么报告只有摘要级内容，或没有方法图？** 可能是模型未配置、全文下载或解析失败，或没有可靠的图片提取结果。查看报告中的运行提示，分别排查模型、PDF 和 HTML 获取情况。
 

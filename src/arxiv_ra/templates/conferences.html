@@ -1,15 +1,22 @@
 {% extends "base.html" %}
 {% block title %}会议论文检索 · PaperLoom{% endblock %}
 {% block content %}
-<header class="page-heading"><div><p class="section-kicker">CONFERENCE PAPERS</p><h1>会议论文检索</h1><p>回溯主会正式长文，关联 arXiv 后继续收藏与阅读。</p></div><a class="button secondary" href="/profiles">长期推荐配置</a></header>
-<form class="settings-form research-panel job-form" action="/api/jobs/conferences" method="post">
+<header class="page-heading research-heading"><div><p class="section-kicker">CONFERENCE PAPERS</p><h1>会议论文检索</h1><p>回溯主会正式长文，关联 arXiv 后继续收藏与阅读。</p></div><a class="button secondary" href="/profiles"><i class="fas fa-sliders-h" aria-hidden="true"></i>长期推荐配置</a></header>
+<form class="settings-form research-panel job-form conference-search-form" action="/api/jobs/conferences" method="post">
   <input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="mode" value="conference">
-  <fieldset><legend>会议范围</legend><div class="draft-checks">{% for key, label in conference_choices.items() %}<label><input type="checkbox" name="conferences" value="{{ key }}" {% if key in scope.conferences %}checked{% endif %}>{{ label }}</label>{% endfor %}</div>
-  <div class="form-columns"><label>起始会议年份<input type="number" name="conference_year_from" min="1987" max="{{ conference_current_year }}" value="{{ scope.conference_year_from or conference_current_year-2 }}" required></label><label>结束会议年份<input type="number" name="conference_year_to" min="1987" max="{{ conference_current_year }}" value="{{ scope.conference_year_to or conference_current_year }}" required></label></div></fieldset>
-  <div class="form-columns"><label>研究主题<select name="topic_mode"><option value="direction">当前方向：{{ config.profile_name }}</option><option value="custom">临时主题</option><option value="browse">不限定主题，浏览目录</option></select></label><label>临时主题<input name="topic" maxlength="4000" placeholder="选择临时主题时填写，如 reinforcement learning"></label><label>本次 arXiv 关联预算<input type="number" name="max_candidates" min="1" max="5000" value="30" required></label></div>
-  <label class="check-row"><input type="checkbox" name="refresh"><span>重新获取目录和关联结果</span></label>
-  <p class="draft-help">起止年份均包含。仅展示成功关联 arXiv 的主会正式长文，不含 Findings、Workshop、短文、Demo。预算限制的是新关联请求；超过预算的目录记录显示为未检查。目录缓存 24 小时，关联缓存 7 天。临时检索不改变长期推荐配置或阅读记录。</p>
-  <button class="button primary" type="submit">检索会议论文</button>
+  <fieldset class="conference-form-section"><legend><span class="conference-step" aria-hidden="true">01</span>会议范围</legend>
+    <div class="conference-scope-grid">
+      <div><p class="conference-field-label" id="conference-choice-label">选择会议 <span>可多选</span></p><div class="conference-choices" role="group" aria-labelledby="conference-choice-label">{% for key, label in conference_choices.items() %}<label><input type="checkbox" name="conferences" value="{{ key }}" {% if key in scope.conferences %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}</div></div>
+      <div class="conference-years"><label>起始会议年份<input type="number" name="conference_year_from" min="1987" max="{{ conference_current_year }}" value="{{ scope.conference_year_from or conference_current_year-2 }}" required></label><span class="conference-year-separator" aria-hidden="true">—</span><label>结束会议年份<input type="number" name="conference_year_to" min="1987" max="{{ conference_current_year }}" value="{{ scope.conference_year_to or conference_current_year }}" required></label></div>
+    </div><p class="conference-field-help">包含起止年份，仅检索主会正式长文。</p>
+  </fieldset>
+  <fieldset class="conference-form-section"><legend><span class="conference-step" aria-hidden="true">02</span>研究主题</legend>
+    <div class="form-columns"><label>主题来源<select name="topic_mode"><option value="direction">当前方向：{{ config.profile_name }}</option><option value="custom">临时主题</option><option value="browse">不限定主题，浏览目录</option></select></label><label><span>临时主题 <small class="conference-optional">选择临时主题时填写</small></span><input name="topic" maxlength="4000" placeholder="例如 reinforcement learning"></label></div>
+  </fieldset>
+  <fieldset class="conference-form-section"><legend><span class="conference-step" aria-hidden="true">03</span>检索选项</legend>
+    <div class="conference-options"><label class="conference-budget">本次 arXiv 关联预算<input type="number" name="max_candidates" min="1" max="5000" value="30" required><small>最多发起的新增关联请求数</small></label><label class="check-row conference-refresh"><input type="checkbox" name="refresh"><span><strong>重新获取目录和关联结果</strong><small>跳过已有缓存，获取最新来源信息</small></span></label></div>
+  </fieldset>
+  <footer class="conference-form-footer"><div><p><i class="far fa-compass" aria-hidden="true"></i>本次检索仅用于临时探索，不改变长期推荐配置或阅读记录。</p><details class="conference-search-help"><summary>检索范围与缓存说明</summary><p>仅展示成功关联 arXiv 的主会正式长文，不含 Findings、Workshop、短文、Demo。预算限制的是新关联请求；超过预算的目录记录显示为未检查。目录缓存 24 小时，关联缓存 7 天。</p></details></div><button class="button primary" type="submit"><i class="fas fa-search" aria-hidden="true"></i>检索会议论文</button></footer>
 </form>
 <section class="queue-section research-queue"><header><h2>检索进度</h2><a href="/conferences?profile_id={{ config.profile_id }}">完成后刷新结果</a></header><div id="job-list" class="job-list" aria-live="polite"></div></section>
 {% if result %}

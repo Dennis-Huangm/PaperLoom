@@ -21,6 +21,7 @@ def project(tmp_path):
     (root / 'scripts').mkdir(parents=True)
     for name in ('run.ps1', 'start_gui.ps1', 'install_windows_task.ps1'):
         shutil.copy2(SCRIPTS / name, root / 'scripts' / name)
+    shutil.copy2(SCRIPTS.parent / 'Start-PaperLoom.cmd', root / 'Start-PaperLoom.cmd')
     (root / 'config.yaml').write_text('output_dir: run\n', encoding='utf-8')
     venv.EnvBuilder(with_pip=False).create(root / '.venv')
     stub = tmp_path / 'stub'
@@ -65,6 +66,16 @@ def test_missing_venv_fails_instead_of_falling_back_to_path_python(tmp_path):
     result = ps(f"& {quote(root / 'scripts/run.ps1')} doctor", tmp_path, os.environ)
     assert result.returncode != 0
     assert 'setup_environment.ps1' in result.stderr
+
+
+def test_double_click_launcher_preserves_arguments_and_project_directory(project, tmp_path):
+    root, env = project
+    result = ps(f"& {quote(root / 'Start-PaperLoom.cmd')} -Port 8772 -NoBrowser", tmp_path, env)
+    assert result.returncode == 0, result.stderr
+    captured = json.loads(Path(env['CAPTURE']).read_text(encoding='utf-8'))
+    assert Path(captured['python']) == root / '.venv/Scripts/python.exe'
+    assert Path(captured['cwd']) == root
+    assert captured['args'] == ['--config', str(root / 'config.yaml'), 'gui', '--port', '8772', '--no-browser']
 
 
 def test_task_preflight_uses_same_python_and_failure_prevents_registration(project, tmp_path):

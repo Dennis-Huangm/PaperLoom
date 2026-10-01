@@ -194,3 +194,45 @@
 @media(max-width:1000px){.search-workspace{grid-template-columns:minmax(0,1fr) 270px;gap:18px}.search-filter-field{flex-basis:180px}.search-result-card{padding:20px}.search-index-panel{padding:20px}.search-scope,.search-reset{margin-left:0}}
 @media(max-width:800px){.search-workspace{grid-template-columns:1fr}.search-index-sidebar{margin-top:4px}.search-index-panel .search-index-stats{max-width:360px}.search-index-panel>form{max-width:280px}}
 @media(max-width:600px){.page-search .app-main{padding:22px 16px 36px}.search-console{padding:16px;margin-bottom:22px}.search-query-bar{flex-wrap:wrap;gap:10px;padding:10px 12px}.search-query-bar input{font-size:14px}.search-query-bar .button{width:100%;margin-top:4px}.search-filter-row{gap:14px 12px}.search-filter-field,.search-filter-field:last-of-type{flex:1 1 calc(50% - 12px)}.search-scope,.search-reset{font-size:11px;flex:1 1 calc(50% - 12px);max-width:none}.search-query-help{font-size:11px}.search-result-card{padding:18px}.search-result-card h3{font-size:16px}.search-result-card .search-snippet{padding:12px;font-size:13px}.search-result-card>footer{flex-wrap:wrap;gap:8px}.search-welcome{padding:30px 20px;min-height:270px}.search-welcome h2{font-size:17px}.search-materials{gap:12px;font-size:11px}.search-index-panel{padding:20px}.search-source-heading h1{font-size:23px}.search-source-panel{padding:18px}.page-search .search-source-text{padding:16px;font-size:13px}.search-source-actions .button{width:100%}}
+
+/* Conference discovery follows the shared research-page layout. */
+.page-conferences .app-main{max-width:1360px;padding:30px 32px 48px}
+.page-conferences .button{border-radius:8px;min-height:42px;height:auto;padding:11px 16px}
+.conference-search-form{padding:28px 30px 0;overflow:hidden}
+.conference-form-section{border:0;padding:0 0 24px;margin:0 0 24px;min-inline-size:0;border-bottom:1px solid #eceeea}
+.conference-form-section legend{padding:0;margin-bottom:18px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:10px}
+.conference-step{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:650}
+.conference-scope-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:32px;align-items:start}
+.conference-field-label,.conference-years label,.conference-search-form .form-columns>label,.conference-budget{font-size:12px;font-weight:650}
+.conference-field-label{margin:0 0 8px}
+.conference-field-label>span,.conference-optional{font-size:11px;font-weight:400;color:var(--muted);margin-left:6px}
+.conference-choices{display:flex;gap:8px;flex-wrap:wrap}
+.conference-choices label{display:flex;gap:8px;align-items:center;min-height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;font-size:12px;font-weight:600;transition:background .15s,border-color .15s}
+.conference-choices label:hover{border-color:#d3a77d;background:#fffaf4}
+.conference-choices label:has(input:checked){border-color:#dda46f;background:var(--accent-soft);color:var(--accent-hover)}
+.conference-choices label:has(input:focus-visible){box-shadow:var(--focus)}
+.conference-search-form input[type=checkbox]{width:15px;height:15px;margin:0;accent-color:var(--accent);flex:0 0 auto}
+.conference-years{display:grid;grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr);gap:12px}
+.conference-years label,.conference-budget{display:grid;gap:8px}
+.conference-year-separator{align-self:end;height:42px;display:grid;place-items:center;color:var(--faint)}
+.conference-search-form input:not([type=checkbox]),.conference-search-form select{min-height:42px;font-size:13px;font-weight:400;border-radius:7px;padding:10px 12px}
+.conference-field-help{font-size:11px;color:var(--muted);line-height:1.7;margin:10px 0 0}
+.conference-search-form .form-columns{margin:0;gap:24px}
+.conference-search-form .form-columns>label{gap:8px;align-content:start}
+.conference-options{display:grid;grid-template-columns:minmax(180px,.45fr) minmax(0,1fr);gap:28px;align-items:center}
+.conference-budget small{font-size:11px;font-weight:400;color:var(--muted)}
+.conference-refresh{padding:14px 16px;border:1px solid #e6e8e3;border-radius:8px;background:var(--surface-subtle);gap:10px;margin:0}
+.conference-refresh input{margin-top:3px!important}
+.conference-refresh strong{font-size:12px;font-weight:600}.conference-refresh small{font-size:11px;margin-top:4px;line-height:1.6}
+.conference-form-section:last-of-type{border:0;margin-bottom:0}
+.conference-form-footer{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid #eceeea;background:var(--surface-subtle);padding:20px 30px;margin:0 -30px}
+.conference-form-footer>div{max-width:790px}
+.conference-form-footer>div>p{font-size:12px;color:var(--muted);line-height:1.8;margin:0 0 6px}
+.conference-form-footer>div>p i{color:var(--accent);margin-right:6px}
+.conference-form-footer .button{flex-shrink:0}
+.conference-search-help{font-size:11px;color:var(--muted)}
+.conference-search-help summary{cursor:pointer;width:fit-content}
+.conference-search-help summary:hover{color:var(--accent)}
+.conference-search-help p{line-height:1.9;margin:10px 0 0}
+@media(max-width:1000px){.conference-scope-grid{grid-template-columns:1fr;gap:18px}.conference-years{max-width:520px}}
+@media(max-width:720px){.page-conferences .app-main{padding:22px 16px 36px}.page-conferences .research-heading{gap:16px}.page-conferences .research-heading h1{font-size:25px}.conference-search-form{padding:20px 18px 0}.conference-form-section{padding-bottom:20px;margin-bottom:20px}.conference-search-form .form-columns,.conference-options{grid-template-columns:1fr;gap:18px}.conference-form-footer{margin:0 -18px;padding:18px;flex-direction:column;align-items:stretch;gap:16px}.conference-form-footer .button{width:100%}.conference-choices{gap:7px}.conference-choices label{padding:9px 11px}.conference-years{gap:8px}.conference-budget{max-width:none}}

@@ -70,7 +70,8 @@ pdf:
   figure_dpi: 160
 
 delivery:
-  email_enabled: true
+  # Enable optional delivery after the first successful manual run.
+  email_enabled: false
   smtp_host: smtp.qq.com
   smtp_port: 465
   smtp_ssl: true
@@ -81,7 +82,7 @@ delivery:
   to_addresses: []
 
 zotero:
-  enabled: true
+  enabled: false
   mode: local
   base_url: http://127.0.0.1:23119/api
   api_key_env: ZOTERO_LOCAL_API_KEY
@@ -120,12 +121,12 @@ weekly:
   days: 7
   max_papers: 50
   include_deep_reports: true
-  auto_generate: true
+  auto_generate: false
   weekday: 6
 
 version_tracking:
   enabled: true
-  auto_check: true
+  auto_check: false
   max_tracked: 50
   include_reports: true
   include_library: true

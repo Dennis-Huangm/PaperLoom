@@ -40,5 +40,12 @@ if ($Constraints) {
 if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed; environment is not ready." }
 & $projectPython -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Dependency consistency check failed." }
+foreach ($name in @("config.yaml", ".env")) {
+    $destination = Join-Path $projectRoot $name
+    $template = if ($name -eq "config.yaml") { "config.example.yaml" } else { ".env.example" }
+    if (-not (Test-Path -LiteralPath $destination)) {
+        Copy-Item -LiteralPath (Join-Path $projectRoot $template) -Destination $destination
+    }
+}
 Write-Output "Project environment ready: $projectPython"
-Write-Output "Next: scripts\run.ps1 doctor"
+Write-Output "Next: double-click Start-PaperLoom.cmd to open the web interface."

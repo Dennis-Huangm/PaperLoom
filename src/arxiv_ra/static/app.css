@@ -426,3 +426,25 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 .collection-repair p,.collection-source-unavailable{font-size:12px;color:var(--muted)}
 @media(max-width:760px){.collection-page{margin-top:2px}.collection-heading{align-items:flex-start;gap:12px}.collection-profile{font-size:10px;padding:5px 8px}.collection-heading h1{font-size:25px}.collection-paper{padding:18px;gap:13px}.collection-paper-icon{flex-basis:34px;height:40px;font-size:18px}.collection-paper h2{font-size:18px}.collection-target-grid{grid-template-columns:1fr;gap:13px}.collection-target-header{padding:18px 18px 13px}.collection-destination{padding:0 18px}.collection-materials{padding:14px 18px}.collection-target-state{margin:0 18px 15px}.collection-target-footer{padding:11px 18px}.collection-submit-bar{align-items:flex-start;flex-direction:column}.collection-submit-bar .button{width:100%}.collection-empty{padding:20px}.collection-operation>summary{padding:14px;gap:9px}.collection-operation-body{padding:15px}.collection-recreate form,.collection-repair form{align-items:stretch;flex-direction:column}.collection-back{margin-bottom:15px}.collection-section-heading{gap:12px}}
 .collection-receipt{color:var(--accent);margin-left:10px}
+
+/* Recommendation filters: one segmented choice, separate from toolbar actions. */
+.page-dashboard .filter-bar{height:auto;min-height:54px;padding:7px 8px;gap:8px}
+.page-dashboard .filter-label{align-self:center;border:0;padding:0 10px;font-size:12px}
+.filter-segments{display:flex;align-items:center;gap:3px;padding:3px;background:#f1f2f1;border-radius:9px}
+.page-dashboard .filter-chip{display:flex;align-items:center;justify-content:center;gap:7px;height:32px;padding:0 12px;border:0;border-radius:6px;font-size:12px;transition:background .15s,color .15s}
+.page-dashboard .filter-chip:hover{background:#e8eae7;color:var(--ink)}
+.page-dashboard .filter-chip.active{background:var(--accent-soft);color:var(--accent-hover);box-shadow:none;font-weight:700}
+.page-dashboard .filter-chip b{min-width:22px;padding:1px 6px;border-radius:5px;background:#f4dcc4;font-size:10px;line-height:1.6;font-variant-numeric:tabular-nums}
+.page-dashboard .filter-chip:not(.active) b{background:#e1e4e0;color:var(--muted)}
+.page-dashboard .filter-chip:focus-visible{box-shadow:var(--focus);outline:1px solid var(--accent)}
+.page-dashboard .filter-select{height:32px;padding:0 12px;border:0;border-left:1px solid var(--line);font-size:12px;gap:8px}
+.page-dashboard .filter-select select{width:auto;padding:3px 6px;font-size:12px}
+.page-dashboard .history-calendar-control{height:32px;border:0;border-left:1px solid var(--line)}
+.page-dashboard .history-calendar-trigger{padding:0 12px;font-size:12px}
+.page-dashboard .filter-clear{height:32px;padding:0 10px;border-radius:6px;font-size:12px;transition:background .15s,color .15s}
+.page-dashboard .filter-clear:hover{background:var(--surface-subtle);color:var(--ink)}
+.page-dashboard .batch-zotero-form{height:32px;margin-left:auto}
+.page-dashboard .batch-zotero-form .filter-clear{height:32px;border:0;background:var(--accent-soft);color:var(--accent-hover)}
+.page-dashboard .batch-zotero-form .filter-clear:hover{background:#fbe7d3}
+@media(min-width:2000px){.page-dashboard .filter-bar{min-height:58px}.page-dashboard .filter-chip,.page-dashboard .filter-clear,.page-dashboard .filter-label,.page-dashboard .filter-select,.page-dashboard .filter-select select,.page-dashboard .history-calendar-trigger{font-size:14px}.page-dashboard .filter-chip{padding:0 16px;height:36px}.page-dashboard .filter-chip b{font-size:12px}.page-dashboard .history-calendar-trigger strong{font-size:13px}}
+@media(max-width:720px){.page-dashboard .filter-bar{gap:6px}.page-dashboard .filter-label{padding:0 6px}.page-dashboard .filter-chip{padding:0 10px}.page-dashboard .batch-zotero-form .filter-clear{font-size:12px}.page-dashboard .batch-zotero-form .filter-clear i{font-size:12px}}

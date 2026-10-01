@@ -1025,7 +1025,10 @@ if (dataNode) {
   document.querySelectorAll('[data-paper-filter]').forEach((button) => {
     button.addEventListener('click', () => {
       activeFilter = button.dataset.paperFilter;
-      document.querySelectorAll('[data-paper-filter]').forEach((item) => item.classList.toggle('active', item === button));
+      document.querySelectorAll('[data-paper-filter]').forEach((item) => {
+        item.classList.toggle('active', item === button);
+        item.setAttribute('aria-pressed', String(item === button));
+      });
       applyFilters();
     });
   });
@@ -1034,7 +1037,11 @@ if (dataNode) {
   document.querySelector('#category-filter')?.addEventListener('change', applyFilters);
   document.querySelector('#clear-paper-filters')?.addEventListener('click', () => {
     activeFilter = 'all';
-    document.querySelectorAll('[data-paper-filter]').forEach((item) => item.classList.toggle('active', item.dataset.paperFilter === 'all'));
+    document.querySelectorAll('[data-paper-filter]').forEach((item) => {
+      const selected = item.dataset.paperFilter === 'all';
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-pressed', String(selected));
+    });
     const search = document.querySelector('#paper-search');
     const category = document.querySelector('#category-filter');
     if (search) search.value = '';

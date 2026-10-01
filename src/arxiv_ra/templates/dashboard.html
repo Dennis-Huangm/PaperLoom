@@ -24,9 +24,11 @@
 
   <section class="filter-bar" aria-label="文献筛选">
     <div class="filter-label"><i class="fas fa-filter" aria-hidden="true"></i><span>筛选</span></div>
-    <button class="filter-chip active" type="button" data-paper-filter="all">全部 <b>{{ recommendations|length }}</b></button>
-    <button class="filter-chip" type="button" data-paper-filter="high">高相关</button>
-    <button class="filter-chip" type="button" data-paper-filter="verified">已核实</button>
+    <div class="filter-segments" role="group" aria-label="推荐范围">
+      <button class="filter-chip active" type="button" data-paper-filter="all" aria-pressed="true">全部 <b>{{ recommendations|length }}</b></button>
+      <button class="filter-chip" type="button" data-paper-filter="high" aria-pressed="false">高相关</button>
+      <button class="filter-chip" type="button" data-paper-filter="verified" aria-pressed="false">已核实</button>
+    </div>
     <label class="filter-select">分类
       <select id="category-filter">
         <option value="all">全部分类</option>
@@ -50,7 +52,7 @@
     </form>
     {% endif %}
     <form class="zotero-form batch-zotero-form" action="/api/zotero/save-today" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="date_label" value="{{ selected_date }}"><button class="filter-clear" type="submit"><i class="fas fa-book" aria-hidden="true"></i>{% if is_latest %}今日{% else %}当日{% endif %}推荐存入 Zotero</button></form>
-    <button class="filter-clear" type="button" id="clear-paper-filters"><i class="fas fa-undo-alt" aria-hidden="true"></i>清除</button>
+    <button class="filter-clear" type="button" id="clear-paper-filters"><i class="fas fa-undo-alt" aria-hidden="true"></i>重置筛选</button>
   </section>
 
   <dialog id="recommendation-calendar-dialog" class="recommendation-calendar-dialog" aria-labelledby="recommendation-calendar-title" data-selected-date="{{ selected_date }}">

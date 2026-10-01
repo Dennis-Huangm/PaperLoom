@@ -23,7 +23,7 @@ from arxiv_ra.library import PaperLibraryStore
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = json.loads((ROOT / "tests/fixtures/quality/cases.json").read_text(encoding="utf-8"))["cases"]
-spec = importlib.util.spec_from_file_location("quality_evaluator", ROOT / "scripts/evaluate_quality.py")
+spec = importlib.util.spec_from_file_location("quality_evaluator", ROOT / "tests/quality_evaluator.py")
 evaluator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(evaluator)
 
