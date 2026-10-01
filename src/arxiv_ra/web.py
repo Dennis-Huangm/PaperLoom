@@ -632,6 +632,31 @@ def create_app(config_path: Path | str) -> FastAPI:
         query = urlencode({key: value for key, value in {"q": q, "direction": direction}.items() if value})
         return RedirectResponse(f"/reports?{query}" if query else "/reports", status_code=303)
 
+    @app.post("/reports/delete-batch")
+    def delete_reports(report_ids: list[str] = Form(...), q: str = Form(""),
+                       direction: str = Form("")) -> RedirectResponse:
+        catalog = {item["report_id"]: item
+                   for item in grouped_report_library(report_library(output_root))}
+        selected = []
+        # Validate the entire selection before deleting any paper's artifacts.
+        for report_id in dict.fromkeys(report_ids):
+            item = catalog.get(report_id)
+            if item is None:
+                raise HTTPException(status_code=409, detail="所选报告已更新或不存在，请刷新页面后再删除")
+            arxiv_id = item["arxiv_id"]
+            if not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id:
+                raise HTTPException(status_code=400, detail="无效的 arXiv ID")
+            if jobs.active_report_for(arxiv_id):
+                raise HTTPException(status_code=409, detail=f"论文 {arxiv_id} 正在生成报告，请等待任务结束后再删除")
+            selected.append(arxiv_id)
+        for arxiv_id in selected:
+            removed = delete_report_attempts(output_root, arxiv_id)
+            jobs.forget_result_urls({artifact_url(output_root / item, output_root) for item in removed})
+            if not removed:
+                raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")
+        query = urlencode({key: value for key, value in {"q": q, "direction": direction}.items() if value})
+        return RedirectResponse(f"/reports?{query}" if query else "/reports", status_code=303)
+
     @app.get("/generate", response_class=HTMLResponse)
     def generate(request: Request, history_page: int = 1) -> HTMLResponse:
         history = jobs.history(history_page)
@@ -975,6 +1000,13 @@ def create_app(config_path: Path | str) -> FastAPI:
         jobs.set_max_parallel(load_config(config_path).jobs.max_parallel)
         return RedirectResponse("/settings?saved=config", status_code=status.HTTP_303_SEE_OTHER)
 
+    @app.post("/settings/credentials/reveal", response_class=JSONResponse)
+    def reveal_credential(field: str = Form(...)) -> JSONResponse:
+        item = next((item for item in credential_specs(current_config()) if item["field"] == field), None)
+        if item is None:
+            raise HTTPException(status_code=400, detail="未知的凭据字段")
+        return JSONResponse({"value": os.getenv(item["env_name"], "")})
+
     @app.post("/settings/credentials")
     async def update_credentials(request: Request) -> RedirectResponse:
         form = await request.form()
@@ -985,10 +1017,10 @@ def create_app(config_path: Path | str) -> FastAPI:
             field = item["field"]
             env_name = item["env_name"]
             value = str(form.get(field, ""))
-            if value:
-                updates[env_name] = value.strip() if not item["secret"] else value
-            elif f"clear_{field}" in form:
+            if f"clear_{field}" in form:
                 clear.add(env_name)
+            elif value:
+                updates[env_name] = value.strip() if not item["secret"] else value
         clear.difference_update(updates)
         try:
             update_dotenv(project_root / ".env", updates, clear)

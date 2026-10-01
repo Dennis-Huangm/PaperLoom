@@ -26,6 +26,56 @@ const toast = (message) => {
   window.setTimeout(() => node.classList.remove('show'), 3600);
 };
 
+document.querySelectorAll('.credential-visibility').forEach((button) => {
+  const card = button.closest('.credential-card');
+  const input = card.querySelector('.credential-input-control input:not([type="hidden"])');
+  const stored = card.querySelector('.credential-value');
+  const clear = card.querySelector('.clear-option input');
+  const setVisible = (visible) => {
+    input.value = visible ? stored.value : '';
+    input.placeholder = stored.value || (input.dataset.configured === 'true' && input.dataset.edited !== 'true')
+      ? '********' : '输入新值';
+    input.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-label', `${visible ? '隐藏' : '显示'} ${button.dataset.label}`);
+    button.innerHTML = `<i class="far fa-eye${visible ? '-slash' : ''}" aria-hidden="true"></i><span>${visible ? '隐藏' : '显示'}</span>`;
+  };
+  input.addEventListener('input', () => {
+    input.dataset.edited = 'true';
+    stored.value = input.value;
+  });
+  clear.addEventListener('change', () => {
+    if (clear.checked) setVisible(false);
+    input.disabled = clear.checked;
+    button.disabled = clear.checked;
+  });
+  button.addEventListener('click', async () => {
+    if (input.type === 'text') {
+      setVisible(false);
+      return;
+    }
+    button.disabled = true;
+    try {
+      if (!stored.value && input.dataset.configured === 'true'
+          && input.dataset.loaded !== 'true' && input.dataset.edited !== 'true') {
+        const body = new FormData();
+        body.set('field', stored.name);
+        const response = await scopedFetch('/settings/credentials/reveal', {method: 'POST', body});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : '无法读取当前配置');
+        // Keep edits made while the request was in flight.
+        if (input.dataset.edited !== 'true') stored.value = payload.value;
+        input.dataset.loaded = 'true';
+      }
+      if (!clear.checked) setVisible(true);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = clear.checked;
+    }
+  });
+});
+
 const jobIcon = (status) => {
   if (status === 'succeeded') return 'fas fa-check';
   if (status === 'succeeded_with_warnings' || status === 'interrupted') return 'fas fa-exclamation-triangle';
@@ -243,6 +293,63 @@ document.querySelector('.report-table')?.addEventListener('submit', (event) => {
     event.preventDefault();
   }
 });
+
+const reportBulkForm = document.querySelector('#report-bulk-delete-form');
+if (reportBulkForm) {
+  const choices = [...document.querySelectorAll('.report-selection')];
+  const selectAll = document.querySelector('#report-select-all');
+  const clear = document.querySelector('#report-selection-clear');
+  const submit = reportBulkForm.querySelector('button[type="submit"]');
+  const count = document.querySelector('#report-selection-count');
+  let deleting = false;
+  const updateSelection = () => {
+    const selected = choices.filter((choice) => choice.checked).length;
+    count.textContent = `已选择 ${selected} 篇`;
+    selectAll.checked = selected === choices.length;
+    selectAll.indeterminate = selected > 0 && selected < choices.length;
+    clear.disabled = deleting || selected === 0;
+    submit.disabled = deleting || selected === 0;
+    choices.forEach((choice) => choice.closest('.report-row').classList.toggle('is-selected', choice.checked));
+  };
+  choices.forEach((choice) => choice.addEventListener('change', updateSelection));
+  selectAll.addEventListener('change', () => {
+    choices.forEach((choice) => { choice.checked = selectAll.checked; });
+    updateSelection();
+  });
+  clear.addEventListener('click', () => {
+    choices.forEach((choice) => { choice.checked = false; });
+    updateSelection();
+  });
+  reportBulkForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const selected = choices.filter((choice) => choice.checked).length;
+    if (deleting || !selected) return;
+    if (!window.confirm(`删除所选 ${selected} 篇论文的所有本地报告及对应 PDF、方法图？此操作不可撤销，文献库收藏会保留。`)) return;
+    const body = new FormData(reportBulkForm);
+    deleting = true;
+    choices.forEach((choice) => { choice.disabled = true; });
+    selectAll.disabled = true;
+    submit.textContent = '正在删除…';
+    updateSelection();
+    try {
+      const response = await scopedFetch(reportBulkForm.action, {method: 'POST', body});
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(typeof payload.detail === 'string' ? payload.detail : '无法批量删除报告');
+      }
+      window.location.assign(response.url);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      deleting = false;
+      choices.forEach((choice) => { choice.disabled = false; });
+      selectAll.disabled = false;
+      submit.innerHTML = '<i class="far fa-trash-alt" aria-hidden="true"></i>删除所选报告';
+      updateSelection();
+    }
+  });
+  updateSelection();
+}
 
 document.querySelectorAll('.job-form').forEach((form) => {
   form.addEventListener('submit', async (event) => {
@@ -1099,6 +1206,30 @@ if (draftEditor) {
     button.textContent = '正在读取参考论文并生成建议…';
   });
 }
+
+document.querySelector('.draft-clear-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('button[type="submit"]');
+  if (button.disabled) return;
+  if (!window.confirm(`永久清空已删除草稿（当前 ${form.dataset.count} 份）？清空后无法恢复。已保存方向、未删除草稿、阅读记录和报告会保留。`)) return;
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.textContent = '正在清空…';
+  try {
+    const response = await scopedFetch(form.action, {method: 'POST', body: new FormData(form)});
+    if (!response.ok) {
+      const payload = await response.json();
+      throw new Error(payload.detail || '清空失败，请重试');
+    }
+    window.location.hash = 'deleted-drafts';
+    window.location.reload();
+  } catch (error) {
+    toast(error.message);
+    button.disabled = false;
+    button.innerHTML = original;
+  }
+});
 
 const draftDeleteDialog = document.querySelector('#draft-delete-dialog');
 if (draftDeleteDialog) {

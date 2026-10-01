@@ -210,6 +210,8 @@ class ProfileManager:
             raise ValueError("无效的草稿 ID")
         with _locked(self.root / "drafts.lock"):
             path = self.root / "drafts" / f"{draft_id}.yaml"
+            if (self.root / "deleted-drafts" / ".purged" / f"{draft_id}.marker").exists():
+                raise DraftConflict("草稿已永久删除，请创建新的草稿")
             if (self.root / "deleted-drafts" / f"{draft_id}.yaml").exists():
                 raise DraftConflict("草稿已删除；请先恢复，或创建新的草稿")
             if path.exists():
@@ -237,6 +239,29 @@ class ProfileManager:
         with _locked(self.root / "drafts.lock"):
             return [yaml.safe_load(p.read_text(encoding="utf-8"))
                     for p in sorted((self.root / "deleted-drafts").glob("*.yaml"))]
+
+    def clear_deleted_drafts(self) -> int:
+        """Purge discarded copies, retaining only IDs to reject stale writers."""
+        with _locked(self.root / "drafts.lock"):
+            folder = self.root / "deleted-drafts"
+            if not folder.exists():
+                return 0
+            expected = self.root.resolve() / "deleted-drafts"
+            markers = folder / ".purged"
+            if (folder.is_symlink() or folder.resolve() != expected or markers.is_symlink()
+                    or markers.resolve() != expected / ".purged"):
+                raise ValueError("已删除草稿目录无效")
+            removed = 0
+            for source in sorted(folder.glob("*.yaml")):
+                if (not PROFILE_ID_RE.fullmatch(source.stem) or source.is_symlink()
+                        or not source.is_file() or source.resolve().parent != expected):
+                    continue
+                # A late generator or retried creation must not resurrect a
+                # permanently deleted draft after its YAML has been removed.
+                atomic_write_text(markers / f"{source.stem}.marker", "")
+                source.unlink()
+                removed += 1
+            return removed
 
     def delete_draft(self, draft_id: str, revision: int) -> None:
         with _locked(self.root / "drafts.lock"):
@@ -301,8 +326,9 @@ class ProfileManager:
         base = _slug(name)
         candidate = base
         counter = 2
-        while any((folder / f"{candidate}.yaml").exists() for folder in
-                  (self.root, self.root / "drafts", self.root / "deleted-drafts")):
+        while (any((folder / f"{candidate}.yaml").exists() for folder in
+                   (self.root, self.root / "drafts", self.root / "deleted-drafts"))
+               or (self.root / "deleted-drafts" / ".purged" / f"{candidate}.marker").exists()):
             candidate = f"{base[:54]}-{counter}"
             counter += 1
         return candidate

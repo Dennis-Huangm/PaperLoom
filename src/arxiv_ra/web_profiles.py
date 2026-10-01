@@ -30,6 +30,16 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         except (KeyError, ValueError) as exc:
             raise HTTPException(404, "研究方向不存在") from exc
 
+    @app.post("/profiles/deleted-drafts/clear")
+    def clear_deleted_drafts():
+        try:
+            profiles.clear_deleted_drafts()
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "清空已删除草稿失败，请检查文件权限后重试") from exc
+        return RedirectResponse("/profiles#deleted-drafts", status_code=303)
+
     @app.get("/profiles/{profile_id}/edit")
     def edit_saved_page(request: Request, profile_id: str):
         profile = get_saved(profile_id)

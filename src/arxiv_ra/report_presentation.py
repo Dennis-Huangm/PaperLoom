@@ -56,5 +56,8 @@ def compact_report(markdown_text: str) -> str:
     result = "".join(parts)
     for anchor, target in links.items():
         result = result.replace(f"](#{anchor})", f"]({target})")
-    return result.replace("请先查看文末“实验数值核对”，再使用这些结果。",
-                          "使用前请[核对原文与数值](evidence.json)。")
+    result = result.replace("请先查看文末“实验数值核对”，再使用这些结果。",
+                            "使用前请[核对原文与数值](evidence.json)。")
+    # Keep references compact; page information belongs in the hover title.
+    return re.sub(r'\[(?:原文第 \d+ 页 · 引用 )?(\d+)\]\(paper\.pdf#page=(\d+)\)',
+                  lambda m: f'[{m[1]}](paper.pdf#page={m[2]} "原文第 {m[2]} 页")', result)

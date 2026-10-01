@@ -2,6 +2,104 @@ from arxiv_ra.evidence import attach_evidence
 from arxiv_ra.models import ParsedPaper
 
 
+def test_existing_report_row_keeps_sources_from_matching_note():
+    from arxiv_ra.report_completeness import restore_note_tables
+    report = '### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n| A | 1 | |'
+    note = report.replace('| A | 1 | |', '| A | 1 | [[证据ID:p1-s1]] |')
+    restored = restore_note_tables(report, [note], [{'number': 2}])
+    assert '[[证据ID:p1-s1]]' in restored
+    assert restored.count('| A | 1 |') == 1
+    assert restore_note_tables(restored, [note], [{'number': 2}]) == restored
+
+
+def test_restored_categories_remain_correct_across_repeated_chunk_headings():
+    from arxiv_ra.report_completeness import restore_note_tables
+    from arxiv_ra.table_quality import tables
+    from arxiv_ra.evidence import TOKEN
+    header = '### Table 2\n| Model | Score |\n|---|---|\n'
+    note = header + '| Open-source Models | |\n| A | 1 |\n| Closed Models | |\n| B | 2 |'
+    other = header + '| Open-source Models | |\n| C | 3 |'
+    restored = restore_note_tables('## 关键结果', [note, other], [{'number': 2}])
+    category = ''
+    found = {}
+    for row in tables(restored, TOKEN):
+        first, score = [cell[0] for cell in row['cells']]
+        if not score:
+            category = first
+        else:
+            found[first] = category
+    assert found == {'A': 'Open-source Models', 'B': 'Closed Models', 'C': 'Open-source Models'}
+    assert restore_note_tables(restored, [note, other], [{'number': 2}]) == restored
+
+
+def test_source_merging_pads_short_rows_without_changing_experimental_values():
+    from arxiv_ra.report_completeness import restore_note_tables
+    from arxiv_ra.table_quality import tables
+    from arxiv_ra.evidence import TOKEN
+    short = '### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n| A | 1 |'
+    note = short.replace('| A | 1 |', '| A | 1 | [[证据ID:p1-s1]] |')
+    for report, notes in [(short, [note]), ('## 关键结果', [short, note])]:
+        restored = restore_note_tables(report, notes, [{'number': 2}])
+        rows = list(tables(restored, TOKEN))
+        assert len(rows) == 1
+        assert rows[0]['cells'][1][0] == '1'
+        assert '[[证据ID:p1-s1]]' in restored
+        assert restore_note_tables(restored, notes, [{'number': 2}]) == restored
+
+
+def test_restored_tables_ignore_emphasis_and_citations_and_use_one_section():
+    from arxiv_ra.report_completeness import restore_note_tables
+    note = ('### Table 6\n\nSize is reported in SVG samples.\n\n'
+            '| Dataset | Size | 原文依据 |\n|---|---|---|\n'
+            '| **Alpha** | 6.5k | [[证据ID:p23-s1]] |')
+    other = note.replace('**Alpha**', 'Alpha').replace('p23-s1', 'p23-s2')
+    restored = restore_note_tables('## 关键结果\n正文。', [note, other], [{'number': 6}])
+    assert restored.count('### Table 6') == 1
+    assert restored.count('6.5k') == 1
+    assert '分片' not in restored
+
+
+def test_restored_table_keeps_conflicting_values_as_separate_conditions():
+    from arxiv_ra.report_completeness import restore_note_tables
+    note = '### Table 3\n\n| Model | Split | Score |\n|---|---|---|\n| A | test | 91.2 |'
+    other = note.replace('91.2', '87.1')
+    restored = restore_note_tables('## 关键结果', [note, other], [{'number': 3}])
+    assert '91.2' in restored and '87.1' in restored
+
+
+def test_restored_task_table_preserves_merged_labels_and_source_candidates():
+    from arxiv_ra.report_completeness import restore_note_tables
+    note = ('### Table 7\n\n| Task | Generator | Score | 原文依据 |\n|---|---|---|---|\n'
+            '| Sketch | A | 1.0 | [[证据ID:p1-s1]] |\n| | Ground Truth | 5.0 | |\n'
+            '| Edit | A | 1.0 | |\n| | Ground Truth | 5.0 | |')
+    other = note.replace('p1-s1', 'p1-s2')
+    restored = restore_note_tables('## 关键结果', [note, other], [{'number': 7}])
+    assert '| Sketch | Ground Truth | 5.0 |' in restored
+    assert '| Edit | Ground Truth | 5.0 |' in restored
+    assert 'p1-s1' in restored and 'p1-s2' in restored
+
+
+def test_report_view_keeps_numeric_source_links_compact_with_page_tooltip():
+    from arxiv_ra.report_presentation import compact_report
+    from arxiv_ra.render import report_document
+    from bs4 import BeautifulSoup
+    output = compact_report('*Size means SVG samples.* [48](paper.pdf#page=23)')
+    assert '[48](paper.pdf#page=23 "原文第 23 页")' in output
+    assert compact_report(output) == output
+    link = BeautifulSoup(report_document(output, 'Test'), 'html.parser').find('a', href='paper.pdf#page=23')
+    assert link.get_text() == '48'
+    assert link['title'] == '原文第 23 页'
+
+
+def test_category_column_and_group_row_are_equivalent_but_test_splits_are_not():
+    from arxiv_ra.report_completeness import restore_note_tables
+    report = ('### Table 2\n| Model | Sketch: Score |\n|---|---|\n'
+              '| **Open-source Models** | |\n| A | 91.2 |')
+    note = ('### Table 2\n| 模型分类 | Model | Sketch Score |\n|---|---|---|\n'
+            '| Open-source | A | 91.2 |')
+    assert restore_note_tables(report, [note], [{'number': 2}]) == report
+
+
 def test_note_table_survives_synthesis_omission_without_claiming_verified():
     from arxiv_ra.report_completeness import restore_note_tables
     note = '### Table 3 主结果\n\n| Model | Score |\n|---|---|\n| Alpha | 91.2 |\n| Beta | 87.1 |'
@@ -9,7 +107,7 @@ def test_note_table_survives_synthesis_omission_without_claiming_verified():
     inventory = [{'number': 3, 'page': 1, 'title': 'Results'}]
     restored = restore_note_tables(report, [note, note], inventory)
     assert restored.count('| Beta | 87.1 |') == 1
-    assert restored.index('| Beta |') < restored.index('## 局限性')
+    assert restored.index('| Beta |') > restored.index('## 原文表格摘录')
     assert '部分摘录' in restored and '待核对' not in restored
     assert restore_note_tables(restored, [note], inventory) == restored
 

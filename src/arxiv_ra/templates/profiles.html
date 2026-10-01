@@ -72,6 +72,7 @@
       </div>
       </section>
       <details id="deleted-drafts" class="profile-trash"><summary>已删除草稿 <span>{{ deleted_drafts|length }} 份 · 可恢复</span></summary><p>这里只删除草稿副本，不影响已保存方向、阅读记录或报告。</p>
+      {% if deleted_drafts %}<form class="draft-clear-form" method="post" action="/profiles/deleted-drafts/clear" data-count="{{ deleted_drafts|length }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button secondary" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>清空已删除草稿</button><small>永久删除，清空后无法恢复。</small></form>{% endif %}
       {% for draft in deleted_drafts %}<div class="profile-trash-row"><div><strong>{{ draft.name }}</strong><small>第 {{ draft.revision }} 版</small></div><form method="post" action="/profiles/drafts/{{ draft.id }}/restore"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button class="button secondary" type="submit">恢复草稿</button></form></div>{% else %}<p>暂无已删除草稿。</p>{% endfor %}</details>
     </section>
   </div>

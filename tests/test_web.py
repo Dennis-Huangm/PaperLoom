@@ -1258,6 +1258,73 @@ def test_gui_updates_credentials_without_rendering_existing_values(tmp_path: Pat
     assert "SEMANTIC_SCHOLAR_API_KEY=" not in env_text
 
 
+def test_credentials_reveal_is_explicit_scoped_and_not_cached(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["llm"] = {"api_key_env": "CUSTOM_LLM_KEY"}
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    monkeypatch.setenv("CUSTOM_LLM_KEY", 'fixture-secret-<>&"')
+    monkeypatch.setenv("LLM_API_KEY", "other-key")
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-be-readable")
+    monkeypatch.setenv("QQ_EMAIL", "fixture@example.com")
+    monkeypatch.setenv("LLM_BASE_URL", "https://fixture.example/v1")
+    app = create_app(config_path)
+    with TestClient(app) as client:
+        page = client.get("/settings")
+        assert "fixture-secret" not in page.text
+        assert "fixture@example.com" not in page.text
+        soup = BeautifulSoup(page.text, "html.parser")
+        field = soup.select_one('#credential-llm_api_key')
+        assert field["type"] == "password" and field["value"] == ""
+        assert field["placeholder"] == "********"
+        assert not field.has_attr("name")
+        stored = soup.select_one('input[name="llm_api_key"]')
+        assert stored["type"] == "hidden" and stored["value"] == ""
+        assert soup.select_one('[aria-controls="credential-llm_api_key"]')["type"] == "button"
+        for name, expected in [
+            ("llm_api_key", 'fixture-secret-<>&"'),
+            ("email_address", "fixture@example.com"),
+            ("llm_base_url", "https://fixture.example/v1"),
+        ]:
+            response = client.post("/settings/credentials/reveal", data={"field": name})
+            assert response.status_code == 200
+            assert response.json() == {"value": expected}
+            assert response.headers["cache-control"] == "no-store"
+        assert client.get("/settings/credentials/reveal").status_code == 405
+        assert client.post("/settings/credentials/reveal", data={"field": "UNRELATED_SECRET"}).status_code == 400
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"},
+                           headers={"Origin": "https://external.example"}).status_code == 403
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"},
+                           headers={"Host": "external.example"}).status_code == 400
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"},
+                           headers={"X-Paperloom-Profile": "stale-profile"}).status_code == 409
+
+
+def test_credentials_reveal_edit_save_and_clear_roundtrip(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    monkeypatch.setenv("LLM_API_KEY", "old-fixture")
+    monkeypatch.setenv("LLM_BASE_URL", "https://old.example/v1")
+    env_path = tmp_path / ".env"
+    env_path.write_text("LLM_API_KEY=old-fixture\nLLM_BASE_URL=https://old.example/v1\nUNRELATED=keep\n", encoding="utf-8")
+    app = create_app(config_path)
+    with TestClient(app) as client:
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"}).json()["value"] == "old-fixture"
+        response = client.post("/settings/credentials", data={"llm_api_key": "new-fixture", "llm_base_url": ""},
+                               follow_redirects=False)
+        assert response.status_code == 303
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"}).json()["value"] == "new-fixture"
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_base_url"}).json()["value"] == "https://old.example/v1"
+        assert "LLM_API_KEY=new-fixture" in env_path.read_text(encoding="utf-8")
+        # Clear takes precedence even when a revealed value is submitted.
+        client.post("/settings/credentials", data={"llm_api_key": "new-fixture", "clear_llm_api_key": "true"})
+        assert client.post("/settings/credentials/reveal", data={"field": "llm_api_key"}).json() == {"value": ""}
+        env_text = env_path.read_text(encoding="utf-8")
+        assert "LLM_API_KEY=" not in env_text and "UNRELATED=keep" in env_text
+        assert "new-fixture" not in client.get("/settings").text
+
+
 def test_gui_rejects_cross_site_mutations(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)

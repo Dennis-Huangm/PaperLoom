@@ -256,7 +256,24 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 .report-directions{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:2px 0}
 .report-directions>span:first-child{font-size:10px;color:var(--muted);margin-right:2px}
 .report-directions .report-direction{padding:2px 6px;border-radius:4px;background:var(--surface-subtle);color:var(--text);font-size:10px;line-height:1.4}
+.draft-clear-form{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:16px 0}
+.draft-clear-form .button{color:var(--red);border-color:var(--red)}
+.draft-clear-form small{color:var(--muted);font-size:12px}
+.draft-clear-form button:disabled{opacity:.5;cursor:wait}
+.credential-input-control{display:flex;align-items:stretch;min-width:0}
+.credential-input-control input{min-width:0;width:100%;border-top-right-radius:0;border-bottom-right-radius:0}
+.credential-visibility{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 66px;border:1px solid var(--line);border-left:0;border-radius:0 var(--radius) var(--radius) 0;background:var(--surface-subtle);color:var(--muted);font-size:11px;cursor:pointer}
+.credential-visibility:hover{color:var(--accent)}
+.credential-visibility:disabled{opacity:.5;cursor:wait}
 .report-delete-form button{color:var(--red)}
+.report-bulk-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.report-select-all,.report-select{display:inline-flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;color:var(--muted)}
+.report-select-all input,.report-select input{width:16px;height:16px;min-height:0;margin:0;accent-color:var(--accent);cursor:pointer}
+.report-select{justify-self:start;margin-bottom:5px}
+#report-selection-count{font-size:12px;color:var(--muted);margin-right:auto}
+.report-bulk-delete{color:var(--red);border-color:var(--red)}
+.report-bulk-toolbar button:disabled{opacity:.45;cursor:not-allowed}
+.report-row.is-selected{border-color:var(--accent);box-shadow:inset 3px 0 var(--accent)}
 
 /* Report metadata and diagnostics use the same compact type scale as each row. */
 .report-venue{align-content:center;gap:5px}

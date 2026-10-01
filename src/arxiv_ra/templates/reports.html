@@ -15,11 +15,22 @@
   </form>
 
   {% if reports %}
+  {% if catalog_ready %}
+  <form id="report-bulk-delete-form" class="report-bulk-toolbar" action="/reports/delete-batch" method="post">
+    <input type="hidden" name="q" value="{{ query }}">
+    <input type="hidden" name="direction" value="{{ direction }}">
+    <label class="report-select-all"><input type="checkbox" id="report-select-all">全选当前列表</label>
+    <span id="report-selection-count" role="status" aria-live="polite">已选择 0 篇</span>
+    <button class="button subtle" id="report-selection-clear" type="button" disabled>取消选择</button>
+    <button class="button secondary report-bulk-delete" type="submit" disabled><i class="far fa-trash-alt" aria-hidden="true"></i>删除所选报告</button>
+  </form>
+  {% endif %}
   <section class="report-table" aria-label="本地报告列表">
     <header><span>论文</span><span>出版与依据</span><span>生成日期</span><span>操作</span></header>
     {% for report in reports %}
     <article class="report-row">
       <div class="report-paper">
+        {% if catalog_ready %}<label class="report-select"><input class="report-selection" type="checkbox" name="report_ids" value="{{ report.report_id }}" form="report-bulk-delete-form" aria-label="选择报告：{{ report.title }}">选择</label>{% endif %}
         <span class="report-id">{{ report.arxiv_id }}{% if report.version %} · v{{ report.version }}{% endif %}</span>
         <h2><a href="{{ report.report_url }}">{{ report.title }}</a></h2>
         {% if catalog_ready %}<div class="report-directions"><span>所属方向</span>{% for item in report.directions %}<span class="report-direction">{{ item.name }}</span>{% endfor %}</div>{% endif %}
