@@ -17,7 +17,7 @@ from .library import PaperLibraryStore
 from .models import Paper
 from .model_budget import current_model_budget
 from .obsidian import ObsidianExporter
-from .paper_data import PaperResolver, matches, versioned
+from .paper_data import PaperResolver, matches, versioned, with_sources
 from .reading_state import _locked
 from .render import render_report
 from .research_clients import ResearchClients
@@ -79,6 +79,11 @@ class PaperVersionSync:
                     paper = Paper.from_dict(cached["paper"]) if cached.get("paper") else self.clients.arxiv.get(f"{arxiv_id}v{target_version}")
                 if not matches(paper, f"{arxiv_id}v{target_version}") or paper.metadata_status != "complete":
                     raise ValueError("论文元数据与目标版本不匹配或不完整")
+                saved = PaperLibraryStore(self.output_root, self.config.profile_id).all().get(arxiv_id)
+                if saved:
+                    snapshot = Paper.from_dict(saved['paper'])
+                    paper = with_sources(paper, [*paper.discovery_sources, *snapshot.discovery_sources],
+                                         snapshot.conference_publications)
                 paper = versioned(paper)
             except Exception as exc:
                 self.state["latest_error"] = f"{type(exc).__name__}: {exc}"

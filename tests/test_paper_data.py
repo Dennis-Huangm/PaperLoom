@@ -38,6 +38,18 @@ def test_historical_snapshot_is_pinned_but_direct_id_refreshes(tmp_path):
     arxiv.get.assert_called_once_with("2609.00001")
 
 
+def test_conference_evidence_survives_latest_metadata_refresh(tmp_path):
+    snapshot = paper(2)
+    snapshot.discovery_sources = ['conference']
+    snapshot.conference_publications = [{'conference': 'icml', 'year': 2024,
+        'paper_type': 'long', 'evidence_url': 'https://proceedings.mlr.press/example.html'}]
+    resolver = PaperResolver(None, SimpleNamespace(get=Mock(return_value=paper(5))), None, tmp_path)
+    latest = resolver.resolve(snapshot.arxiv_id, snapshot, intent='latest')
+    assert latest.version == 5
+    assert latest.conference_publications == snapshot.conference_publications
+    assert latest.discovery_sources == ['conference']
+
+
 def test_exact_version_cannot_fall_back_to_wrong_cache_snapshot_or_provider(tmp_path):
     arxiv = SimpleNamespace(get=Mock(return_value=paper(4)))
     alpha = SimpleNamespace(enabled=True, lookup=Mock(return_value=paper(4)))

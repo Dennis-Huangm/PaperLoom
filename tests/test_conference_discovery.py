@@ -153,3 +153,142 @@ def test_openreview_account_login_is_used_only_for_official_api(tmp_path, monkey
     assert len(result.papers) == 1
     serialized = str(result.to_dict()) + str(result.papers[0].to_dict())
     assert 'test-token' not in serialized and 'test-only-password' not in serialized
+
+
+def test_ambiguous_authors_and_budget_are_reported_without_false_matches(tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    fixture = '<collection><volume id="long"><meta><year>2024</year><venue>acl</venue></meta>' + ''.join(
+        f'<paper id="{i}"><title>{title}</title><author><first>Ada</first><last>Researcher</last></author></paper>'
+        for i, title in enumerate(['Reliable agents', 'Different authors', 'Beyond budget'], 1)) + '</volume></collection>'
+    other = paper('2101.00002')
+    wrong = paper(); wrong.title = 'Different authors'; wrong.authors = [Author('Bob Researcher')]
+    arxiv = SimpleNamespace(find_by_title=Mock(side_effect=[[paper(), other], [wrong]]))
+    cfg = DiscoveryConfig(mode='conference', conferences=['ACL'], conference_year_from=2024,
+                          conference_year_to=2024, max_candidates=2)
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=fixture)))
+        result = DiscoveryService(cfg, arxiv, None, tmp_path, conferences=directory).discover()
+    assert result.papers == []
+    status = result.sources['acl:2024']
+    assert (status['uncertain'], status['unmatched'], status['not_examined']) == (1, 1, 1)
+    assert status['status'] == 'truncated'
+
+
+def test_manual_browse_is_readonly_until_explicit_collection(tmp_path, monkeypatch):
+    import time
+    from fastapi.testclient import TestClient
+    from arxiv_ra.web import create_app
+    from arxiv_ra.profiles import ProfileManager
+    from arxiv_ra.library import PaperLibraryStore
+    from arxiv_ra.research_clients import ResearchClients
+    p = paper()
+    p.conference_publications = [{'conference': 'acl', 'year': 2024, 'paper_type': 'long',
+        'evidence_url': 'https://aclanthology.org/2024.acl-long.1/', 'association_evidence': 'title and authors'}]
+    monkeypatch.setattr(ResearchClients, 'conferences', property(lambda self: SimpleNamespace(
+        discover=lambda *a, **kw: ([p], {'acl:2024': {'status': 'ok', 'count': 1}}))))
+    monkeypatch.setattr(ResearchClients, 'arxiv', property(lambda self: SimpleNamespace()))
+    monkeypatch.setattr(ResearchClients, 'alphaxiv', property(lambda self: SimpleNamespace()))
+    cfg = tmp_path / 'config.yaml'
+    cfg.write_text('output_dir: run\n', encoding='utf-8')
+    app = create_app(cfg)
+    manager = ProfileManager(tmp_path)
+    active = manager.active_id()
+    before = cfg.read_bytes()
+    library = PaperLibraryStore(tmp_path / 'run', active)
+    state = library.state.snapshot()
+    with TestClient(app) as client:
+        response = client.post('/api/jobs/conferences', data={'profile_id': active, 'mode': 'conference',
+            'conferences': 'ACL', 'conference_year_from': 2024, 'conference_year_to': 2024,
+            'topic_mode': 'browse', 'max_candidates': 2})
+        assert response.status_code == 202
+        for _ in range(100):
+            job = client.get('/api/jobs/' + response.json()['id']).json()
+            if job['status'] in {'succeeded', 'failed', 'completed', 'cancelled'}:
+                break
+            time.sleep(.02)
+        assert job['status'] == 'succeeded', job
+        page = client.get('/conferences')
+        assert 'Reliable agents' in page.text
+        assert cfg.read_bytes() == before and library.state.snapshot() == state
+        import re
+        search_id = re.search(r'name="search_id" value="([^"]+)"', page.text)[1]
+        save = client.post('/conferences/save', data={'profile_id': active,
+            'search_id': search_id, 'arxiv_id': p.arxiv_id}, follow_redirects=False)
+        assert save.status_code == 303
+        assert library.all()[p.arxiv_id]['paper']['conference_publications'][0]['year'] == 2024
+        manager.save({'id': 'beta', 'name': 'Beta'}); manager.activate('beta')
+        assert client.get('/conferences?search_id=' + search_id).status_code == 404
+        assert client.post('/conferences/save', data={'profile_id': active,
+            'search_id': search_id, 'arxiv_id': p.arxiv_id}).status_code == 409
+
+
+def test_cached_candidates_do_not_prevent_progress_to_later_papers(tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    fixture = '<collection><volume id="long"><meta><year>2024</year><venue>acl</venue></meta>' + ''.join(
+        f'<paper id="{i}"><title>{title}</title><author><first>Ada</first><last>Researcher</last></author></paper>'
+        for i, title in enumerate(['Reliable agents', 'Later agents'], 1)) + '</volume></collection>'
+    later = paper('2101.00002'); later.title = 'Later agents'
+    arxiv = SimpleNamespace(find_by_title=Mock(side_effect=[[paper()], [later]]))
+    cfg = DiscoveryConfig(mode='conference', conferences=['ACL'], conference_year_from=2024,
+                          conference_year_to=2024, max_candidates=1)
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=fixture)))
+        service = DiscoveryService(cfg, arxiv, None, tmp_path, conferences=directory)
+        first = service.discover()
+        assert len(first.papers) == 1
+        second = service.discover()
+        assert {p.arxiv_id for p in second.papers} == {'2101.00001', '2101.00002'}
+        assert second.sources['acl:2024']['not_examined'] == 0
+        third = service.discover(excluded_ids={'2101.00001'})
+        assert [p.arxiv_id for p in third.papers] == ['2101.00002']
+    assert arxiv.find_by_title.call_count == 2
+
+
+def test_historical_cvpr_reads_each_day_and_preserves_old_evidence_paths(tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    def handler(request):
+        if request.url.params.get('day') in ('all', None):
+            return httpx.Response(200, text='<a href="CVPR2018.py?day=2018-06-19">Day 1</a><a href="CVPR2018.py?day=2018-06-20">Day 2</a>')
+        title = 'Reliable agents' if request.url.params['day'].endswith('19') else 'Later agents'
+        return httpx.Response(200, text=f'<dl><dt class="ptitle"><a href="content_cvpr_2018/html/{title.replace(" ", "_")}.html">{title}</a></dt><dd><form class="authsearch"><input name="query" value="Ada Researcher"></form></dd></dl>')
+    later = paper('2101.00002'); later.title = 'Later agents'
+    cfg = DiscoveryConfig(mode='conference', conferences=['CVPR'], conference_year_from=2018, conference_year_to=2018)
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(handler))
+        result = DiscoveryService(cfg, SimpleNamespace(find_by_title=Mock(side_effect=[[paper()], [later]])),
+                                  None, tmp_path, conferences=directory).discover()
+    assert len(result.papers) == 2
+    assert result.sources['cvpr:2018']['directory_count'] == 2
+    assert result.papers[0].conference_publications[0]['evidence_url'].startswith('https://openaccess.thecvf.com/content_cvpr_2018/')
+
+
+def test_pipeline_conference_recommendations_respect_history_and_feedback(tmp_path):
+    from arxiv_ra.config import AppConfig
+    from arxiv_ra.pipeline import DailyPipeline
+    from arxiv_ra.feedback import FeedbackStore
+    from arxiv_ra.research_clients import ResearchClients
+    from arxiv_ra.utils import write_json
+    values = [paper(f'2101.0000{i}') for i in range(1, 4)]
+    for p in values:
+        p.conference_publications = [{'conference': 'acl', 'year': 2024, 'paper_type': 'long',
+            'evidence_url': 'https://aclanthology.org/2024.acl-long.1/', 'association_evidence': 'title and authors'}]
+    cfg = AppConfig(output_dir=str(tmp_path), profile_id='a')
+    cfg.discovery = DiscoveryConfig(mode='conference', conferences=['ACL'], conference_year_from=2024,
+        conference_year_to=2024, min_score=-100, minimum_concept_groups=0)
+    cfg.ranking.llm_rerank = False
+    write_json(tmp_path / 'state-a.json', {'processed': [values[0].arxiv_id]})
+    FeedbackStore(tmp_path, 'a').set(values[1].to_dict(), 'not_relevant')
+    clients = ResearchClients(cfg, arxiv=SimpleNamespace(search=Mock(side_effect=AssertionError('recent search'))),
+        alphaxiv=SimpleNamespace(), llm=SimpleNamespace(enabled=False), conferences=SimpleNamespace(
+            discover=lambda *a, **kw: (values, {'acl:2024': {'status': 'ok', 'count': 3}})))
+    pipeline = DailyPipeline(cfg, tmp_path, clients=clients)
+    run = tmp_path / '2026-10-01'; run.mkdir()
+    selected, _, _ = pipeline._select_candidates(pipeline._rank_candidates(run, False), False)
+    assert [p.arxiv_id for p in selected] == [values[2].arxiv_id]
+    assert selected[0].conference_publications[0]['year'] == 2024

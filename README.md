@@ -115,6 +115,12 @@ paperloom --config config.yaml gui
 
 默认根据当前方向最近 5 篇收藏补充定向检索，并辅助精排。在推荐详情展开 **本次推荐的收藏引导** 查看依据；可在 **配置 → 研究兴趣与检索范围** 关闭。详见 [近期收藏如何影响推荐](docs/USAGE.md#recent-interest)。
 
+**按会议补读历史论文**：打开导航中的 **会议检索**，多选 ICML、NeurIPS（含 NIPS）、CVPR、ICLR、ACL，填写起止会议年份。可沿用当前方向、输入临时主题或不限定主题浏览；结果仅收录成功关联 arXiv 的主会正式长文，并提供会议归属链接。浏览不会产生阅读或已推荐记录，点击收藏后进入现有文献库流程。
+
+在方向编辑或配置页保存 **最新 arXiv / 会议论文 / 混合推荐** 模式后，后续推荐会复用该范围。会议年份与 arXiv 上传年份分别处理，混合模式合并去重后统一排序。目录缓存 24 小时、关联缓存 7 天；每轮预算限制新增关联请求，已缓存候选仍参与筛选。结果会显示未关联、不确定、失败及预算截断；部分历史目录格式或尚未公布的届次可能无法取得，结果不保证完整覆盖。
+
+ICLR 使用 [OpenReview 官方 API](https://docs.openreview.net/getting-started/using-the-api)。遇到匿名访问限制时，在 **配置 → API 与凭据** 填写已注册的 OpenReview 账号与密码；默认环境变量为 `OPENREVIEW_USERNAME`、`OPENREVIEW_PASSWORD`。凭据保存到本地忽略的 `.env`，登录令牌只保存在客户端内存中。会议归属不代表 arXiv 修订版与正式出版版本内容完全一致。
+
 ![文献推荐：查看论文、摘要与推荐依据](assets/screenshots/recommendations.jpg)
 
 ### 2. 生成并阅读全文报告

@@ -38,7 +38,7 @@
 <div class="draft-save"><button type="submit" class="button primary">保存修改</button><span id="draft-dirty-status" role="status">当前显示第 {{ draft.revision }} 版已保存内容</span></div>
 </form>
 <section id="draft-try" class="draft-panel"><div class="draft-section-heading"><h2>2 · 试搜验证</h2><span>使用已保存的第 {{ draft.revision }} 版</span></div>
-<p class="draft-help">试搜用较长时间范围验证方向，最多取回 30 篇 arXiv 候选；日常推荐仍按近 {{ draft.discovery.lookback_days }} 天执行。参考论文用于理解方向，不会自动加入试搜结果。</p>
+<p class="draft-help">试搜使用已保存的发现模式。近期论文按下方回溯天数检索，会议论文按已保存的会议年份检索；会议关联每次最多新增 30 个请求并复用缓存。参考论文用于理解方向，不会自动加入试搜结果。</p>
 <div class="draft-actions">
 <form class="draft-preview-form" method="post" action="/profiles/drafts/{{ draft.id }}/preview" data-draft-action>{{ hidden_fields() }}<label>试搜范围<select name="lookback_days"><option value="90">最近 90 天（推荐）</option><option value="30">最近 30 天</option><option value="365">最近 365 天</option><option value="{{ draft.discovery.lookback_days }}">日常范围：最近 {{ draft.discovery.lookback_days }} 天</option></select></label><button type="submit" class="button primary" {% if draft.status != 'ready' %}disabled{% endif %}>开始试搜</button></form>
 <form class="draft-preview-form" method="post" action="/profiles/drafts/{{ draft.id }}/references" data-draft-action>{{ hidden_fields() }}<button type="submit" class="button secondary" {% if draft.status != 'ready' or not draft.references %}disabled{% endif %}>检查参考论文是否符合主题</button></form>

@@ -18,7 +18,10 @@ def preview_profile(draft, config, *, references_only=False, lookback_days=90):
         raise ValueError("试搜范围必须为 1–365 天")
     discovery = DiscoveryConfig(**draft["discovery"])
     now = datetime.now(timezone.utc)
-    scope = {"lookback_days": None if references_only else lookback_days,
+    scope = {"mode": discovery.mode, "conferences": list(discovery.conferences),
+             "conference_year_from": discovery.conference_year_from,
+             "conference_year_to": discovery.conference_year_to,
+             "lookback_days": None if references_only or discovery.mode == "conference" else lookback_days,
              "daily_lookback_days": discovery.lookback_days,
              "date_from": (now - timedelta(days=lookback_days)).date().isoformat(),
              "date_to": now.date().isoformat(), "categories": list(discovery.arxiv_categories)}
@@ -76,7 +79,7 @@ def preview_profile(draft, config, *, references_only=False, lookback_days=90):
         rejected.extend({"paper": p.to_dict(), "reasons": [{"reason": "超出预筛数量"}]} for p in ranked if p.arxiv_id not in candidate_ids)
         uncertain = sum(any(r.get("condition", {}).get("verdict") == "unknown" or r.get("topic", {}).get("verdict") == "unknown"
                             for r in p["reasons"]) for p in rejected)
-        partial = any(s["status"] in {"failed", "partial", "skipped"} for s in sources.values())
+        partial = any(s["status"] in {"failed", "partial", "skipped", "truncated", "unpublished"} for s in sources.values())
         warnings = list(dict.fromkeys(p.ranking_explanation.get("condition_error", "") for p in candidates
                                      if p.ranking_explanation.get("condition_error")))
         status = "partial" if partial else "empty" if not papers else "uncertain" if uncertain and not selected else "filtered" if not selected else "ok"

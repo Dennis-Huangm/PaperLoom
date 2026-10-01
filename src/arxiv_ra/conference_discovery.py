@@ -173,13 +173,24 @@ class ConferenceClient:
             return records, url
         url = f'https://openaccess.thecvf.com/CVPR{year}?day=all'
         soup = BeautifulSoup(self._get(url).text, 'html.parser')
+        # Historical listings have dated day links instead of an "all" view.
+        if not soup.select('dt.ptitle'):
+            url = f'https://openaccess.thecvf.com/CVPR{year}'
+            soup = BeautifulSoup(self._get(url).text, 'html.parser')
+            day_urls = list(dict.fromkeys(urljoin(url, a['href']) for a in soup.select('a[href]')
+                if re.fullmatch(rf'CVPR{year}(?:\.py)?\?day={year}-\d{{2}}-\d{{2}}', a['href'])))
+            for day_url in day_urls:
+                day = BeautifulSoup(self._get(day_url).text, 'html.parser')
+                if not day.select('dt.ptitle'):
+                    raise ValueError('CVPR 分日目录未返回论文，无法确认目录完整性')
+                soup.append(day)
         records = []
         for p in soup.select('dt.ptitle'):
             a = p.select_one('a[href]')
             authors = p.find_next_sibling('dd')
-            if not a or not authors or not re.search(rf'/content/(?:CVPR{year}|cvpr_{year})/html/', a['href'], re.I):
+            if not a or not authors or not re.search(rf'(?:^|/)(?:content/CVPR{year}|content/cvpr_{year}|content_cvpr_{year})/html/', a['href'], re.I):
                 continue
-            names = [v.get('value', '') for v in authors.select('input[name="query_author"]')]
+            names = [v.get('value', '') for v in authors.select('input[name="query_author"], .authsearch input[name="query"]')]
             records.append(ConferenceRecord(conference, year, a.get_text(' ', strip=True), names, urljoin(url, a['href'])))
         return records, url
 
@@ -322,9 +333,6 @@ class ConferenceClient:
                 if candidate:
                     if base_id(candidate.arxiv_id) in excluded:
                         state['excluded'] += 1
-                        continue
-                    if len(papers) >= config.max_candidates:
-                        state['not_examined'] += 1
                         continue
                     publication = {'conference': record.conference, 'year': record.year, 'paper_type': 'long',
                         'evidence_url': record.evidence_url, 'association_evidence': 'normalized title and full author name',

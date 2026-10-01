@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
@@ -60,11 +61,11 @@ class DiscoveryService:
                 result = exc.discovery_result
         if self.conferences is None:
             from .conference_discovery import ConferenceClient
-            with ConferenceClient() as client:
-                papers, states = client.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
-                    **({'refresh': True} if self.refresh_conferences else {}))
+            client_context = ConferenceClient(self.config.openreview_username_env, self.config.openreview_password_env)
         else:
-            papers, states = self.conferences.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
+            client_context = nullcontext(self.conferences)
+        with client_context as client:
+            papers, states = client.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
                 **({'refresh': True} if self.refresh_conferences else {}))
         result.sources.update(states)
         merged = {base_id(p.arxiv_id): p for p in result.papers}

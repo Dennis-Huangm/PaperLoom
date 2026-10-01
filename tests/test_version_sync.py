@@ -67,6 +67,20 @@ def operation(sync, version=3):
     return read_json(sync.state_path, {})["operations"][str(version)]
 
 
+def test_revision_sync_preserves_collected_conference_evidence(setup):
+    sync, arxiv, library = setup
+    saved = paper(1)
+    saved.discovery_sources = ['conference']
+    saved.conference_publications = [{'conference': 'icml', 'year': 2024, 'paper_type': 'long',
+        'evidence_url': 'https://proceedings.mlr.press/example.html'}]
+    library.add({'paper': saved.to_dict()}, 'Test')
+    sync.sync(saved.arxiv_id)
+    result = library.all()[saved.arxiv_id]['paper']
+    assert result['version'] == 3
+    assert result.get('conference_publications') == saved.conference_publications
+    assert read_json(sync.root / 'v3/metadata.json')['paper']['conference_publications'] == saved.conference_publications
+
+
 def test_latest_sync_preserves_history_and_pins_pdf(setup):
     sync, arxiv, library = setup
     before = deepcopy(library.all()[paper().arxiv_id])

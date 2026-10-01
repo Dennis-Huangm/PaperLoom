@@ -24,8 +24,12 @@ def requested_version(value: str) -> int | None:
     return int(match[1]) if match else None
 
 
-def with_sources(paper: Paper, sources: list[str]) -> Paper:
-    return replace(paper, discovery_sources=list(dict.fromkeys(sources)))
+def with_sources(paper: Paper, sources: list[str], publications: list[dict] | None = None) -> Paper:
+    combined = list(paper.conference_publications)
+    for publication in publications or []:
+        if publication not in combined:
+            combined.append(publication)
+    return replace(paper, discovery_sources=list(dict.fromkeys(sources)), conference_publications=combined)
 
 
 def versioned(paper: Paper) -> Paper:
@@ -157,7 +161,8 @@ class PaperResolver:
             return versioned(snapshot)
         cached = self.cached(target)
         if cached and (intent == "snapshot" or requested_version(target) is not None):
-            return with_sources(cached, snapshot.discovery_sources if snapshot else cached.discovery_sources)
+            return with_sources(cached, snapshot.discovery_sources if snapshot else cached.discovery_sources,
+                                snapshot.conference_publications if snapshot else None)
         try:
             paper = self.arxiv.get(target)
             if not matches(paper, target):
@@ -168,7 +173,7 @@ class PaperResolver:
                 # Exact revisions remain usable; a latest request must reveal stale fallback.
                 if intent == "latest" and requested_version(target) is None:
                     fallback = replace(fallback, resolution_note="arXiv 暂时不可用，使用本地数据；尚未确认是否为最新版本")
-                return versioned(fallback)
+                return versioned(with_sources(fallback, snapshot.discovery_sources, snapshot.conference_publications)) if snapshot else versioned(fallback)
             if self.config and alpha_enabled(self.config) and self.alphaxiv and self.alphaxiv.enabled:
                 try:
                     paper = self.alphaxiv.lookup(target)
@@ -178,6 +183,6 @@ class PaperResolver:
                     pass
             raise RuntimeError(f"arXiv 无法获取 {target}，本地无匹配版本，alphaXiv 未能精确解析该 ID 和版本") from arxiv_error
         if snapshot:
-            paper = with_sources(paper, snapshot.discovery_sources)
+            paper = with_sources(paper, snapshot.discovery_sources, snapshot.conference_publications)
         self.remember(paper, target)
         return versioned(paper)

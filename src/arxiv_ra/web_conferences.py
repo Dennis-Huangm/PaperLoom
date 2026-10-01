@@ -9,7 +9,6 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from .conference_scope import scope_from_form
-from .config import DiscoveryConfig
 from .discovery import DiscoveryService, DiscoveryError
 from .library import PaperLibraryStore
 from .models import Paper
