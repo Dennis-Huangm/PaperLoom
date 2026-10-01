@@ -168,6 +168,12 @@ def edit_draft(draft, changes):
         draft["discovery"]["interest_description"] = changes["description"].strip()
     if "categories" in changes:
         draft["discovery"]["arxiv_categories"] = categories(changes["categories"])
+    scope_keys = ("mode", "conferences", "conference_year_from", "conference_year_to")
+    if any(key in changes for key in scope_keys):
+        from .conference_scope import validate_scope
+        scope = {key: changes.get(key, draft["discovery"].get(key, "latest" if key == "mode" else [] if key == "conferences" else None)) for key in scope_keys}
+        scope["conferences"] = validate_scope(scope["mode"], scope["conferences"], scope["conference_year_from"], scope["conference_year_to"])
+        draft["discovery"].update(scope)
     for key, upper in (("max_candidates", 5000), ("lookback_days", 365)):
         if key in changes:
             if type(changes[key]) is not int or not 1 <= changes[key] <= upper:
@@ -196,8 +202,9 @@ def merge_regenerated_draft(draft, fresh):
         fresh["name_user_edited"] = True
     fresh["discovery"]["interest_description"] = draft["description"]
     fresh["discovery"]["arxiv_categories"] = draft["discovery"]["arxiv_categories"]
-    for key in ("max_candidates", "lookback_days"):
-        fresh["discovery"][key] = draft["discovery"][key]
+    for key in ("max_candidates", "lookback_days", "mode", "conferences", "conference_year_from", "conference_year_to"):
+        if key in draft["discovery"]:
+            fresh["discovery"][key] = copy.deepcopy(draft["discovery"][key])
     if draft["plan"].get("branches_user_edited"):
         fresh["plan"].update(branches=copy.deepcopy(draft["plan"]["branches"]), branches_user_edited=True)
     _reconcile_branches(fresh)

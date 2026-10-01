@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import asdict
+from .conference_scope import scope_from_form
 from datetime import datetime
 from typing import Any
 from fastapi import HTTPException, Request
@@ -80,6 +81,8 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
                     negative_keywords=strings([s.strip() for s in str(form.get("negative_keywords", "")).splitlines() if s.strip()]),
                 )
             updated["discovery"].update(numbers)
+            if "mode" in form:
+                updated["discovery"].update(scope_from_form(form))
             updated["discovery"]["prefilter_count"] = max(
                 updated["discovery"].get("prefilter_count", 0), numbers["recommendation_count"])
             updated["updated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -160,6 +163,8 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         if action == "preview":
             data["lookback_days"] = int(str(form.get("lookback_days", "90")))
         if action == "edit":
+            if "mode" in form:
+                data.update(scope_from_form(form))
             items = []
             for c in draft["plan"]["conditions"]:
                 prefix = c["id"]

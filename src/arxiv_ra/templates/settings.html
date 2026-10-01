@@ -61,6 +61,8 @@
 
     <section class="form-section" id="discovery">
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
+      {% with discovery=config.discovery|config_dict %}{% include 'conference_scope.html' %}{% endwith %}
+      <details><summary>OpenReview 官方 API 账号配置</summary><p>在凭据设置中填写账号和密码，供 ICLR 目录检索登录使用。</p><div class="form-columns"><label>账号环境变量<input name="openreview_username_env" value="{{ config.discovery.openreview_username_env }}"></label><label>密码环境变量<input name="openreview_password_env" value="{{ config.discovery.openreview_password_env }}"></label></div></details>
       {% if config.discovery.search_plan %}<p class="notice">此方向使用已确认的检索计划。主题与条件请在<a href="/profiles">研究方向</a>中复制为草稿后修改；这里可调整运行预算和排序参数。</p>{% endif %}
       <label>研究主题描述<textarea name="interest_description" {% if config.discovery.search_plan %}readonly{% endif %} rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
       <label class="check-row"><input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}><span>根据最近 5 篇收藏微调推荐</span></label>

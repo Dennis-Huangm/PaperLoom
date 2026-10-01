@@ -32,6 +32,7 @@
     {% endif %}
 
     <details class="draft-group"><summary>检索范围与数量</summary><div class="draft-condition-fields">
+      {% with discovery=profile.discovery %}{% include 'conference_scope.html' %}{% endwith %}
       <label>arXiv 类别（每行一个）<textarea name="categories" rows="2" required>{{ profile.discovery.arxiv_categories|join('\n') }}</textarea></label>
       <div class="form-columns"><label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ profile.discovery.lookback_days }}" required></label><label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ profile.discovery.recommendation_count }}" required></label></div>
       <label>候选上限<input type="number" name="max_candidates" min="1" max="5000" value="{{ profile.discovery.max_candidates }}" required></label>

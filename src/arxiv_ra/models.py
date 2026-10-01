@@ -39,12 +39,16 @@ class Paper:
     resolution_note: str = ""
     ranking_explanation: dict[str, Any] = field(default_factory=dict)
     discovery_routes: list[str] = field(default_factory=list)
+    conference_publications: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def source_label(self) -> str:
-        labels = {"arxiv": "arXiv", "alphaxiv": "alphaXiv"}
+        labels = {"arxiv": "arXiv", "alphaxiv": "alphaXiv", "conference": "会议论文"}
         source = " + ".join(labels.get(s, s) for s in self.discovery_sources)
-        return f"{source or '未知来源'}发现" + (" · 待补全" if self.metadata_status != "complete" else "")
+        from .conference_scope import CONFERENCES
+        venues = "、".join(f"{CONFERENCES.get(p.get('conference'), p.get('conference'))} {p.get('year')}"
+                          for p in self.conference_publications)
+        return f"{source or '未知来源'}发现" + (f" · {venues}" if venues else "") + (" · 待补全" if self.metadata_status != "complete" else "")
 
     @property
     def metadata_label(self) -> str:
@@ -66,6 +70,8 @@ class Paper:
         # Preserve fingerprints of older paper snapshots used by report resume.
         if not self.discovery_routes:
             value.pop("discovery_routes", None)
+        if not self.conference_publications:
+            value.pop("conference_publications", None)
         value["published"] = self.published.isoformat() if self.published else ""
         value["updated"] = self.updated.isoformat() if self.updated else ""
         value["final_score"] = self.final_score
@@ -121,6 +127,7 @@ class Paper:
             resolution_note=str(value.get("resolution_note") or ""),
             ranking_explanation=dict(value.get("ranking_explanation") or {}),
             discovery_routes=list(value.get("discovery_routes") or []),
+            conference_publications=list(value.get("conference_publications") or []),
         )
 
 

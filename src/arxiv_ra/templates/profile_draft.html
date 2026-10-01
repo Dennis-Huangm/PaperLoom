@@ -29,6 +29,7 @@
 </div></details>{% endfor %}</div></details>{% endif %}{% endfor %}
 <details class="draft-group"><summary>添加条件</summary><div class="form-columns draft-condition-fields"><label>新增条件<input name="new_text" maxlength="200" placeholder="例如：研究对象包含 SVG 编辑"></label><label>用途<select name="new_kind">{% for kind, label in condition_kinds.items() %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select></label></div></details>
 <details class="draft-group"><summary>高级检索配置 <span>日常推荐近 {{ draft.discovery.lookback_days }} 天 · {{ draft.plan.branches|length }} 条检索路线</span></summary><div class="draft-condition-fields">
+{% with discovery=draft.discovery %}{% include 'conference_scope.html' %}{% endwith %}
 <label>arXiv 类别（每行一个）<textarea name="categories" rows="2">{{ draft.discovery.arxiv_categories|join('\n') }}</textarea></label>
 <div class="form-columns"><label>日常候选上限<input type="number" name="max_candidates" min="1" max="5000" value="{{ draft.discovery.max_candidates }}"></label><label>日常推荐回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ draft.discovery.lookback_days }}"></label></div>
 <p class="draft-help">每行是一组同义词，用英文逗号分隔；组间须同时满足。每条路线须有一组完全来自已采用的主题表达。留空可移除路线。</p>

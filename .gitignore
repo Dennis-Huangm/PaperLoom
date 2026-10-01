@@ -26,3 +26,9 @@ docs/*
 docs/specs/*
 !docs/specs/research-profile-generation.md
 !docs/specs/related-work-map.md
+!docs/specs/conference-paper-discovery.md
+!docs/agents/
+docs/agents/*
+!docs/agents/issue-tracker.md
+!docs/agents/triage-labels.md
+!docs/agents/domain.md

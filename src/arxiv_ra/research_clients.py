@@ -8,6 +8,7 @@ from .alphaxiv import AlphaXivClient
 from .arxiv_client import ArxivClient
 from .arxiv_html import ArxivHtmlFigureClient
 from .config import AppConfig
+from .conference_discovery import ConferenceClient
 from .llm import LLMClient
 from .metadata import MetadataVerifier
 from .pdf_pipeline import PDFParser
@@ -18,12 +19,12 @@ class ResearchClients:
     """Task-owned lazy dependencies; injected adapters remain caller-owned."""
 
     def __init__(self, config: AppConfig, *, arxiv=None, alphaxiv=None, arxiv_html=None,
-                 llm=None, verifier=None, parser=None, reporter=None):
+                 llm=None, verifier=None, parser=None, reporter=None, conferences=None):
         self.config = config
         self._stack = ExitStack()
         self._closed = False
         for name, value in (("arxiv", arxiv), ("alphaxiv", alphaxiv), ("arxiv_html", arxiv_html),
-                            ("llm", llm), ("verifier", verifier), ("parser", parser), ("reporter", reporter)):
+                            ("llm", llm), ("verifier", verifier), ("parser", parser), ("reporter", reporter), ("conferences", conferences)):
             if value is not None:
                 self.__dict__[name] = value
 
@@ -45,6 +46,11 @@ class ResearchClients:
         return self._own(lambda: AlphaXivClient(
             api_key=os.getenv(self.config.discovery.alphaxiv_api_key_env, ""),
             endpoint=self.config.discovery.alphaxiv_endpoint))
+
+    @cached_property
+    def conferences(self):
+        return self._own(lambda: ConferenceClient(self.config.discovery.openreview_username_env,
+                                                  self.config.discovery.openreview_password_env))
 
     @cached_property
     def arxiv_html(self):

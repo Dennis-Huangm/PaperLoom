@@ -24,6 +24,7 @@
         <time>收藏于 {{ entry.saved_at[:10] }}</time>
       </header>
       <h2>{{ paper.title }}</h2>
+      {% if paper.conference_publications %}<p>{% for pub in paper.conference_publications %}<a href="{{ pub.evidence_url }}" target="_blank" rel="noopener noreferrer">{{ conference_choices.get(pub.conference, pub.conference) }} {{ pub.year }} · 主会长文</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
       <p class="saved-paper-authors">{% for author in paper.authors[:5] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if paper.authors|length > 5 %} et al.{% endif %}</p>
       <section>
         <strong>摘要精要</strong>

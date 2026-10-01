@@ -40,6 +40,7 @@ class JobContext:
 
 
 JOB_LABELS = {
+    "conferences": "会议论文检索",
     "profile-preview": "研究方向试搜",
     "search-index": "更新本地搜索索引",
     "report": "生成完整阅读报告",

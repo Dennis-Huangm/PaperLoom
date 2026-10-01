@@ -39,7 +39,7 @@ class ReportStaticFiles(StaticFiles):
                                profile_id=str(payload.get('profile_id') or ''), report_id=Path(path).as_posix())
 
     async def get_response(self, path, scope):
-        if any(part.casefold() in {".jobs", ".search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
+        if any(part.casefold() in {".jobs", ".search", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
             from starlette.exceptions import HTTPException
             raise HTTPException(status_code=404)
         if Path(path).name == 'index.html' and Path(path).parts and Path(path).parts[0] == 'citations':

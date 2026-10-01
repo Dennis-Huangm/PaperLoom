@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261001-clear-deleted-drafts">
-  {% if active in ['weekly', 'versions', 'citations', 'search'] %}<link rel="stylesheet" href="{{ url_for('static', path='/research.css') }}?v=20261001-search">{% endif %}
+  {% if active in ['weekly', 'versions', 'citations', 'search', 'conferences'] %}<link rel="stylesheet" href="{{ url_for('static', path='/research.css') }}?v=20261001-conferences">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/katex/katex.min.css') }}">
   <script defer src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>
   <script defer src="{{ url_for('static', path='/app.js') }}?v=20261001-clear-deleted-drafts"></script>
@@ -25,6 +25,7 @@
       <a href="/" class="{% if active == 'dashboard' %}active{% endif %}"><i class="far fa-file-alt" aria-hidden="true"></i><span>文献推荐</span></a>
       <a href="/library" class="{% if active == 'library' %}active{% endif %}"><i class="far fa-bookmark" aria-hidden="true"></i><span>文献库</span></a>
       <a href="/search" class="{% if active == 'search' %}active{% endif %}"><i class="fas fa-search" aria-hidden="true"></i><span>搜索</span></a>
+      <a href="/conferences" class="{% if active == 'conferences' %}active{% endif %}"><i class="fas fa-university" aria-hidden="true"></i><span>会议论文</span></a>
       <a href="/reports" class="{% if active == 'reports' %}active{% endif %}"><i class="far fa-folder-open" aria-hidden="true"></i><span>报告</span></a>
       <a href="/weekly" class="{% if active == 'weekly' %}active{% endif %}"><i class="fas fa-chart-line" aria-hidden="true"></i><span>周报</span></a>
       <a href="/versions" class="{% if active == 'versions' %}active{% endif %}"><i class="fas fa-code-branch" aria-hidden="true"></i><span>追踪</span></a>

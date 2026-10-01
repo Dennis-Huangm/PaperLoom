@@ -1,0 +1,11 @@
+<fieldset class="conference-scope">
+  <legend>论文发现模式</legend>
+  <label>模式<select name="mode">{% for key, label in discovery_modes.items() %}<option value="{{ key }}" {% if discovery.get('mode', 'latest') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <p class="draft-help">最新 arXiv 按投稿时间追新；会议论文按会议年份补读；混合推荐合并去重后统一排序，不设置固定名额。</p>
+  <div class="draft-checks">{% for key, label in conference_choices.items() %}<label><input type="checkbox" name="conferences" value="{{ key }}" {% if key in discovery.get('conferences', []) %}checked{% endif %}>{{ label }}</label>{% endfor %}</div>
+  <div class="form-columns">
+    <label>起始会议年份<input type="number" name="conference_year_from" min="1987" max="{{ conference_current_year }}" value="{{ discovery.get('conference_year_from') or '' }}" placeholder="如 2022"></label>
+    <label>结束会议年份<input type="number" name="conference_year_to" min="1987" max="{{ conference_current_year }}" value="{{ discovery.get('conference_year_to') or '' }}" placeholder="如 2025"></label>
+  </div>
+  <p class="draft-help">起止年份均包含，仅用于会议论文。只收录成功关联 arXiv 的主会正式长文；不含 Findings、Workshop、短文和 Demo。NIPS 与 NeurIPS 为同一会议。</p>
+</fieldset>

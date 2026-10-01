@@ -70,7 +70,7 @@ class DailyPipeline:
                 "prefiltered_count": len(candidates), "selected_count": len(selected),
                 "selection_status": "selected" if selected else "no_eligible_new_papers",
             })
-        if not selected and discovery_result and discovery_result.sources.get("arxiv", {}).get("status") == "failed":
+        if not selected and discovery_result and self.config.discovery.mode == "latest" and discovery_result.sources.get("arxiv", {}).get("status") == "failed":
             raise RuntimeError(
                 "arXiv 不可用，alphaXiv 无符合日期、评分与历史过滤条件的候选，已阻止发布重复的空日报并保留已有结果"
             )
@@ -212,7 +212,8 @@ class DailyPipeline:
         manifest = run_dir / f"discovery-{self.config.profile_id or 'default'}-{uuid.uuid4().hex[:12]}.json"
         self._discovery_manifest = manifest
         self._discovery_result = None
-        service = DiscoveryService(self.config.discovery, self.clients.arxiv, self.clients.alphaxiv, self.output_root)
+        service = DiscoveryService(self.config.discovery, self.clients.arxiv, self.clients.alphaxiv, self.output_root,
+            conferences=self.clients.conferences if self.config.discovery.mode != "latest" else None)
         try:
             self._discovery_result = service.discover(set() if force else self._processed_ids(),
                                                      recent_interest=getattr(self, "_recent_interest", None))
@@ -223,10 +224,10 @@ class DailyPipeline:
             raise
         write_json(manifest, {"profile_id": self.config.profile_id, **self._discovery_result.to_dict()})
         for source, source_state in self._discovery_result.sources.items():
-            if source_state.get("status") == "failed":
+            if source_state.get("status") in {"failed", "partial", "truncated", "unpublished"}:
                 task_warning(
                     f"{source} 检索",
-                    f"检索源不可用，任务使用其他来源继续：{source_state.get('error', '未知错误')}",
+                    f"来源状态：{source_state.get('status')}；{source_state.get('error') or '部分范围尚未检查，请查看候选来源记录'}",
                 )
         hydration = self._discovery_result.hydration
         if hydration.get("status") in {"failed", "partial", "deferred"}:

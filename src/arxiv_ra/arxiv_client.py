@@ -193,6 +193,17 @@ class ArxivClient:
         response.raise_for_status()
         return parse_feed(response.text)
 
+    def find_by_title(self, title: str) -> list[Paper]:
+        """Find association candidates without a submission-date constraint."""
+        words = re.findall(r"\w+", title, re.UNICODE)
+        if not words:
+            return []
+        params = {"search_query": " AND ".join(f'ti:"{word}"' for word in words[:24]),
+                  "max_results": 10, "sortBy": "relevance"}
+        response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")
+        response.raise_for_status()
+        return parse_feed(response.text)
+
     def get(self, arxiv_id: str) -> Paper:
         params = {"id_list": arxiv_id, "max_results": 1}
         response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")

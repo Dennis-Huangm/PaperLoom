@@ -40,7 +40,8 @@ def preview_profile(draft, config, *, references_only=False, lookback_days=90):
                       for r in draft["references"] if r["title"] and r["abstract"]]
         else:
             try:
-                result = DiscoveryService(discovery, clients.arxiv, clients.alphaxiv).discover()
+                result = DiscoveryService(discovery, clients.arxiv, clients.alphaxiv,
+                    conferences=clients.conferences if discovery.mode != "latest" else None).discover()
             except DiscoveryError as exc:
                 return {"revision": draft["revision"], "status": "failed", "error": str(exc),
                         "created_at": now.isoformat(), "scope": scope, "references_only": references_only,

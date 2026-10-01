@@ -10,6 +10,12 @@ import yaml
 
 @dataclass(slots=True)
 class DiscoveryConfig:
+    mode: str = "latest"
+    conferences: list[str] = field(default_factory=list)
+    conference_year_from: int | None = None
+    conference_year_to: int | None = None
+    openreview_username_env: str = "OPENREVIEW_USERNAME"
+    openreview_password_env: str = "OPENREVIEW_PASSWORD"
     # auto preserves legacy fallback behavior; hybrid actively queries both sources.
     provider: str = "auto"
     # Historical field name retained for config compatibility; enables alphaXiv in both modes.
@@ -36,6 +42,9 @@ class DiscoveryConfig:
     search_plan: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        from .conference_scope import validate_scope
+        self.conferences = validate_scope(self.mode, self.conferences,
+                                         self.conference_year_from, self.conference_year_to)
         if not isinstance(self.search_plan, dict) or (self.search_plan and self.search_plan.get("version") != 2):
             raise ValueError("不支持的研究方向检索计划版本")
         if self.provider not in {"auto", "arxiv", "hybrid"}:

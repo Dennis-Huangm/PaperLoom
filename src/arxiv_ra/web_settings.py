@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 
 from .config import AppConfig, CitationConfig
+from .conference_scope import scope_from_form
 from .utils import atomic_write_text
 
 
@@ -139,6 +140,9 @@ def build_config_update(form: Any) -> dict[str, Any]:
         "timezone": timezone,
         "output_dir": output_dir,
         "discovery": {
+            **scope_from_form(form),
+            "openreview_username_env": _env_name({"name": form.get("openreview_username_env", "OPENREVIEW_USERNAME")}, "name"),
+            "openreview_password_env": _env_name({"name": form.get("openreview_password_env", "OPENREVIEW_PASSWORD")}, "name"),
             "provider": provider,
             "alphaxiv_fallback_enabled": "alphaxiv_fallback_enabled" in form,
             "alphaxiv_endpoint": alphaxiv_endpoint,
@@ -314,6 +318,8 @@ def update_dotenv(path: Path, updates: dict[str, str], clear: set[str] | None = 
 
 def credential_specs(config: AppConfig) -> list[dict[str, Any]]:
     definitions = [
+        ("openreview_username", "OpenReview 账号", config.discovery.openreview_username_env, True, "ICLR 官方 API 登录账号；保存到本机 .env"),
+        ("openreview_password", "OpenReview 密码", config.discovery.openreview_password_env, True, "用于官方登录，令牌仅在当前客户端中使用"),
         ("llm_api_key", "LLM API Key", config.llm.api_key_env, True, "模型服务访问密钥"),
         ("llm_base_url", "LLM Base URL", config.llm.base_url_env, False, "OpenAI-compatible API 地址；官方 OpenAI 可留空"),
         ("openalex_api_key", "OpenAlex API Key", config.metadata.openalex_api_key_env, True, "用于提升 OpenAlex 请求额度"),

@@ -37,6 +37,8 @@ from .report_store import delete_report_attempts, explicit_report, html_reports,
 from .obsidian import ObsidianError, ObsidianExporter, discover_obsidian_vaults
 from .profiles import ProfileManager
 from .web_profiles import register_profile_routes
+from .web_conferences import register_conference_routes
+from .conference_scope import CONFERENCES, MODES, scope_from_form
 from .utils import read_json
 from .storage import clear_recommendations
 from .activity import collect_activity
@@ -161,6 +163,9 @@ def create_app(config_path: Path | str) -> FastAPI:
     output_root.mkdir(parents=True, exist_ok=True)
     package_root = Path(__file__).parent
     templates = Jinja2Templates(directory=str(package_root / "templates"))
+    templates.env.globals.update(conference_choices=CONFERENCES, discovery_modes=MODES,
+                                 conference_current_year=datetime.now().year)
+    templates.env.filters["config_dict"] = asdict
     templates.env.filters["summary_html"] = summary_html
     templates.env.filters["clean_summary_text"] = clean_summary_text
     jobs = JobManager(output_root, config.jobs.max_parallel)
@@ -250,7 +255,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                 "script-src 'self'; script-src-attr 'none'; object-src 'none'; "
                 "base-uri 'none'; frame-src 'none'; form-action 'none'"
             )
-        if request.url.path.startswith(("/settings", "/search", "/backups", "/schedules")):
+        if request.url.path.startswith(("/settings", "/search", "/conferences", "/backups", "/schedules")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -277,6 +282,8 @@ def create_app(config_path: Path | str) -> FastAPI:
         }
         base.update(values)
         return base
+
+    register_conference_routes(app, templates, context, current_config, jobs, output_root, project_root)
 
     def raise_zotero_http_error(exc: Exception) -> None:
         if isinstance(exc, ZoteroAuthorizationRequired):
@@ -959,6 +966,10 @@ def create_app(config_path: Path | str) -> FastAPI:
     async def update_settings(request: Request) -> RedirectResponse:
         form = await request.form()
         current = current_config()
+        try:
+            scope = scope_from_form(form)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         protected = ("interest_description", "arxiv_categories", "arxiv_query_terms", "positive_keywords",
                      "negative_keywords", "seed_papers", "concept_groups", "minimum_concept_groups")
         if current.discovery.search_plan.get("version") == 2:
@@ -969,6 +980,7 @@ def create_app(config_path: Path | str) -> FastAPI:
         try:
             values = build_config_update(form)
             discovery = values.pop("discovery")
+            discovery.update(scope)
             ranking = values.pop("ranking")
             save_config_settings(config_path, values)
         except ValueError as exc:

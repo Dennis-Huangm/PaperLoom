@@ -42,11 +42,59 @@ class DiscoveryError(RuntimeError):
 class DiscoveryService:
     """Coordinate independent discovery sources and hydrate their merged candidates."""
 
-    def __init__(self, config, arxiv, alphaxiv, output_root: Path | None = None):
+    def __init__(self, config, arxiv, alphaxiv, output_root: Path | None = None, *, conferences=None, refresh_conferences=False):
         self.config, self.arxiv, self.alphaxiv = config, arxiv, alphaxiv
+        self.conferences = conferences
+        self.output_root = output_root
+        self.refresh_conferences = refresh_conferences
         self.resolver = PaperResolver(config, arxiv, alphaxiv, output_root)
 
     def discover(self, excluded_ids: set[str] | None = None, *, recent_interest: RecentInterest | None = None) -> DiscoveryResult:
+        if self.config.mode == "latest":
+            return self._discover_recent(excluded_ids, recent_interest=recent_interest)
+        result = DiscoveryResult()
+        if self.config.mode == "mixed":
+            try:
+                result = self._discover_recent(excluded_ids, recent_interest=recent_interest)
+            except DiscoveryError as exc:
+                result = exc.discovery_result
+        if self.conferences is None:
+            from .conference_discovery import ConferenceClient
+            with ConferenceClient() as client:
+                papers, states = client.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
+                    **({'refresh': True} if self.refresh_conferences else {}))
+        else:
+            papers, states = self.conferences.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
+                **({'refresh': True} if self.refresh_conferences else {}))
+        result.sources.update(states)
+        merged = {base_id(p.arxiv_id): p for p in result.papers}
+        excluded = {base_id(a) for a in excluded_ids or set()}
+        for paper in papers:
+            publications = [pub for pub in paper.conference_publications
+                if pub.get("conference") in self.config.conferences and pub.get("paper_type") == "long"
+                and type(pub.get("year")) is int
+                and self.config.conference_year_from <= pub["year"] <= self.config.conference_year_to
+                and pub.get("evidence_url") and pub.get("association_evidence")]
+            aid = base_id(paper.arxiv_id)
+            if not publications or aid in excluded:
+                continue
+            previous = merged.get(aid)
+            best = previous or paper
+            combined = list(best.conference_publications)
+            for pub in publications:
+                if pub not in combined:
+                    combined.append(pub)
+            merged[aid] = replace(best, arxiv_id=aid, conference_publications=combined,
+                discovery_sources=list(dict.fromkeys([*(previous.discovery_sources if previous else []), "conference"])),
+                discovery_routes=list(dict.fromkeys([*best.discovery_routes, "conference"])))
+            self.resolver.remember(merged[aid])
+        result.papers = list(merged.values())
+        result.merged_count = len(merged)
+        if not result.papers and not any(s.get("status") in {"ok", "empty", "partial", "truncated", "unpublished"} for s in result.sources.values()):
+            raise DiscoveryError("所选检索来源均不可用，请查看来源状态后重试", result)
+        return result
+
+    def _discover_recent(self, excluded_ids: set[str] | None = None, *, recent_interest: RecentInterest | None = None) -> DiscoveryResult:
         config = self.config
         if config.provider not in {"auto", "arxiv", "hybrid"}:
             raise ValueError("无效的检索来源模式")
