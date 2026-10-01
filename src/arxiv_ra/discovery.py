@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
@@ -59,6 +59,7 @@ class DiscoveryService:
                 result = self._discover_recent(excluded_ids, recent_interest=recent_interest)
             except DiscoveryError as exc:
                 result = exc.discovery_result
+        client_context: AbstractContextManager
         if self.conferences is None:
             from .conference_discovery import ConferenceClient
             client_context = ConferenceClient(self.config.openreview_username_env, self.config.openreview_password_env)
