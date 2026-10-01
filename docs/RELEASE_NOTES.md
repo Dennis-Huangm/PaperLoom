@@ -35,4 +35,4 @@
 
 保留一项既有 Starlette/httpx 弃用提示。以上测试不代表所有外部服务、模型和操作系统均已实测。
 
-详见 [安装与网页工作流](../README.md)、[网页使用指南](USAGE.md)、[命令行与自动化](CLI.md) 和 [完整变更记录](../CHANGELOG.md)。
+详见 [安装与功能 Quickstart](../README.md)、[功能与配置说明](USAGE.md)、[命令行与自动化](CLI.md) 和 [完整变更记录](../CHANGELOG.md)。

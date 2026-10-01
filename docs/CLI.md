@@ -1,6 +1,6 @@
 # PaperLoom 命令行与自动化
 
-日常网页操作见 [README](../README.md) 和 [网页使用指南](USAGE.md)。本文用于安装参数、脚本运行及系统调度。命令从项目目录运行，个人配置保存在 `config.yaml` / `.env`。
+日常网页操作见 [README 的功能 Quickstart](../README.md#web-workflow)，详细规则见 [功能与配置说明](USAGE.md)。本文用于安装参数、脚本运行及系统调度。命令从项目目录运行，个人配置保存在 `config.yaml` / `.env`。
 
 <a id="installation"></a>
 ## 安装与启动参数

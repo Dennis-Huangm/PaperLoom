@@ -1,6 +1,6 @@
-# PaperLoom 网页使用指南
+# PaperLoom 功能与配置说明
 
-安装与升级请先阅读 [README](../README.md)。本文围绕网页中的操作、配置和运行边界展开；终端命令、系统计划任务与云端运行见 [命令行与自动化](CLI.md)。
+首次上手请阅读 [README 的功能 Quickstart](../README.md#web-workflow)，其中按功能列出网页入口、简短操作和截图。本文是说明文档，解释检索规则、配置项、数据范围和运行边界；终端命令、系统计划任务与云端运行见 [命令行与自动化](CLI.md)。
 
 <a id="discovery"></a>
 ## arXiv 与 alphaXiv 如何协作

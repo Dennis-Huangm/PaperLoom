@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="240" viewBox="0 0 1120 240" role="img" aria-labelledby="title desc">
+  <title id="title">截图待替换：建立研究方向</title>
+  <desc id="desc">README 截图占位。建议展示：研究主题、草稿条件、试搜与启用按钮。</desc>
+  <rect x="1" y="1" width="1118" height="238" rx="18" fill="#faf9f7" stroke="#e6e1db"/>
+  <g font-family="Segoe UI, Microsoft YaHei, PingFang SC, sans-serif">
+    <text x="30" y="36" fill="#ad642a" font-size="15" font-weight="600">PaperLoom · 知织</text>
+    <rect x="960" y="17" width="132" height="29" rx="14" fill="#f6e9da"/>
+    <text x="1026" y="37" text-anchor="middle" fill="#9c5b25" font-size="13">截图待替换</text>
+    <rect x="28" y="62" width="1064" height="150" rx="12" fill="#fff" stroke="#ddd7cf" stroke-dasharray="6 6"/>
+    <g transform="translate(60 107)" fill="none" stroke="#bf7b40" stroke-width="2.5" stroke-linejoin="round">
+      <rect width="56" height="42" rx="7"/>
+      <circle cx="39" cy="12" r="4"/>
+      <path d="M5 33l13-15 12 12 7-7 14 15"/>
+    </g>
+    <text x="142" y="108" fill="#28313b" font-size="23" font-weight="600">建立研究方向</text>
+    <text x="142" y="140" fill="#64707e" font-size="16">建议截图：研究主题、草稿条件、试搜与启用按钮</text>
+    <text x="142" y="172" fill="#9199a1" font-size="13">用实际使用截图替换此图片 · profiles-placeholder.svg</text>
+  </g>
+</svg>
