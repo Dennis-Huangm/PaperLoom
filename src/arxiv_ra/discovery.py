@@ -104,7 +104,8 @@ class DiscoveryService:
         now = datetime.now(timezone.utc)
         cutoff = (now - timedelta(days=config.lookback_days)).date()
         excluded_ids = {base_id(item) for item in excluded_ids or set()}
-        arxiv_papers, alpha_papers = [], []
+        arxiv_papers: list[Paper] = []
+        alpha_papers: list[Paper] = []
         started = time.monotonic()
         arxiv_error = None
         try:
