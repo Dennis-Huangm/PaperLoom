@@ -36,7 +36,8 @@ class ReportStaticFiles(StaticFiles):
         arxiv_id = str(paper.get('arxiv_id') or '') if payload.get('profile_id') else ''
         return report_document(Path(source).read_text(encoding='utf-8'),
                                str(payload.get('title') or paper.get('title') or Path(path).parent.name), arxiv_id,
-                               profile_id=str(payload.get('profile_id') or ''), report_id=Path(path).as_posix())
+                               profile_id=str(payload.get('profile_id') or ''), report_id=Path(path).as_posix(),
+                               catalog_arxiv_id=str(paper.get('arxiv_id') or ''))
 
     async def get_response(self, path, scope):
         if any(part.casefold() in {".jobs", ".search", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):

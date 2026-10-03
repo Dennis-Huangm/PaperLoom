@@ -581,6 +581,18 @@ def create_app(config_path: Path | str) -> FastAPI:
         PaperLibraryStore(output_root, current.profile_id).remove(arxiv_id.strip())
         return RedirectResponse("/library", status_code=status.HTTP_303_SEE_OTHER)
 
+    @app.get("/api/reports", response_class=JSONResponse)
+    def report_catalog() -> JSONResponse:
+        profile_names = {profile["id"]: profile["name"] for profile in profiles.list()}
+        items = grouped_report_library(report_library(output_root), profile_names)
+        items.sort(key=lambda item: item["report_path"].stat().st_mtime_ns, reverse=True)
+        fields = ("title", "authors", "arxiv_id", "version", "directions", "date",
+                  "updated_at", "report_url", "report_id")
+        return JSONResponse(
+            {"reports": [{field: item[field] for field in fields} for item in items]},
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/reports", response_class=HTMLResponse)
     def reports(request: Request, q: str = "", direction: str = "") -> HTMLResponse:
         current = current_config()
