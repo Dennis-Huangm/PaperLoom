@@ -119,7 +119,7 @@ def test_report_presentation_omits_verbose_comparison_audit_section():
     assert '条目依据与待核对原因' not in document and 'Verbose detail' not in document
     assert 'Keep matrix' in document and 'Keep sources' not in document
     assert 'src="/static/vendor/katex/katex.min.js"' in document
-    assert 'src="/static/report.js"' in document
+    assert 'src="/static/report.js?v=' in document
 
 
 def test_legacy_comparison_links_survive_without_repeated_source_text():
@@ -212,7 +212,7 @@ def test_render_report_includes_local_katex_and_sidebar_navigation(tmp_path: Pat
     page = destination.read_text(encoding="utf-8")
     assert "/static/vendor/katex/katex.min.js" in page
     assert "/static/vendor/katex/katex.min.css" in page
-    assert 'class="report-sidebar"' in page
+    assert BeautifulSoup(page, 'html.parser').select_one('.report-sidebar') is not None
     assert 'aria-label="报告目录"' in page
     assert "返回报告库" in page
     assert 'id="report-library-add"' in page

@@ -16,6 +16,20 @@ const fs = require('node:fs');
   assert.equal(await page.locator('.report-paper-link').count(), 3);
   assert.equal(await page.locator('.report-paper-link[aria-current="page"]').count(), 1);
   assert.equal(Math.round((await page.locator('#report-papers').boundingBox()).width), 320);
+  const sharedAppearance = await page.evaluate(() => {
+    function appearance(node) {
+      const style = getComputedStyle(node);
+      return [style.backgroundColor, style.borderColor, style.borderRadius, style.padding, style.fontSize];
+    }
+    return {
+      left: appearance(document.querySelector('#report-toc-close')),
+      right: appearance(document.querySelector('#report-papers-close')),
+      leftPanel: appearance(document.querySelector('.report-sidebar')),
+      rightPanel: appearance(document.querySelector('#report-papers')),
+    };
+  });
+  assert.deepEqual(sharedAppearance.left, sharedAppearance.right, 'collapse buttons have matching appearance');
+  assert.deepEqual(sharedAppearance.leftPanel, sharedAppearance.rightPanel, 'panels have matching appearance');
   const originalArticleWidth = (await page.locator('.report-article').boundingBox()).width;
   await page.locator('#report-toc-close').click();
   assert.equal(await page.locator('.report-sidebar').isVisible(), false);
@@ -84,6 +98,18 @@ const fs = require('node:fs');
   await page.locator('.toc-toggle').click();
   assert.equal(await page.locator('#report-papers').isVisible(), false);
   assert.equal(await page.locator('.report-sidebar').evaluate(node => node.classList.contains('open')), true);
+  assert.equal(await page.locator('.report-article').evaluate(node => node.inert), true);
+  const tocScroll = await page.locator('.report-toc').evaluate(node => {
+    node.scrollTop = node.scrollHeight;
+    return {scrollTop: node.scrollTop, clientHeight: node.clientHeight, scrollHeight: node.scrollHeight};
+  });
+  assert(tocScroll.scrollTop > 0, 'long mobile TOC has an independent scroll area');
+  assert.equal(tocScroll.scrollTop + tocScroll.clientHeight, tocScroll.scrollHeight, 'TOC scroll reaches the end');
+  const lastTocLink = await page.locator('.report-toc a').last().boundingBox();
+  assert(lastTocLink.y + lastTocLink.height <= 900, 'last TOC entry is inside the viewport');
+  await page.locator('#report-toc-backdrop').click({position: {x: 315, y: 300}});
+  assert.equal(await page.locator('.report-sidebar').isVisible(), false);
+  await page.locator('.toc-toggle').click();
   await page.locator('#report-toc-close').click();
   assert.equal(await page.locator('.report-sidebar').isVisible(), false);
   await page.locator('.toc-toggle').click();
@@ -109,7 +135,8 @@ const fs = require('node:fs');
     const response = await route.fetch();
     const body = (await response.text())
       .replace(/<button id="report-toc-toggle"[\s\S]*?<\/button>/, '')
-      .replace(/<button id="report-toc-close"[\s\S]*?<\/button>/, '');
+      .replace(/<button id="report-toc-close"[\s\S]*?<\/button>/, '')
+      .replace('class="report-sidebar report-nav-panel"', 'class="report-sidebar"');
     await route.fulfill({response, body});
   });
   await page.evaluate(() => sessionStorage.removeItem('paperloom.reportPapers.drawerOpen'));

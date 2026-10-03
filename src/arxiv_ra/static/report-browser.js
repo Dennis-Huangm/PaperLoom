@@ -46,7 +46,7 @@
     document.body.classList.toggle('papers-drawer-open', open && !wide.matches);
     backdrop.hidden = !open || wide.matches;
     if (!wide.matches) save('sessionStorage', 'paperloom.reportPapers.drawerOpen', String(open));
-    document.querySelector('.report-article').inert = open && !wide.matches;
+    document.querySelector('.report-article').inert = (open && !wide.matches) || document.body.classList.contains('toc-drawer-open');
     if (toc) toc.inert = open && !wide.matches;
     if (open && !wide.matches) {
       closeToc();

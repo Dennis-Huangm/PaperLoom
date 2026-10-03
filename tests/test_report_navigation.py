@@ -1,5 +1,6 @@
 """Report-reader navigation through the public HTTP and HTML boundaries."""
 import os
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
@@ -72,3 +73,27 @@ def test_empty_report_catalog(tmp_path):
     config.write_text("output_dir: run\n", encoding="utf-8")
     with TestClient(create_app(config)) as client:
         assert client.get("/api/reports").json() == {"reports": []}
+
+
+def test_reader_assets_change_url_after_a_script_update(tmp_path, monkeypatch):
+    from arxiv_ra import render
+
+    # Model two installed releases without changing the application's real assets.
+    static = tmp_path / "static"
+    static.mkdir()
+    for filename in ("report.js", "report-browser.js", "report-browser.css"):
+        (static / filename).write_text("first release", encoding="utf-8")
+    monkeypatch.setattr(render, "__file__", str(tmp_path / "render.py"))
+
+    def asset_urls():
+        tree = BeautifulSoup(render.report_document("# Paper", "Paper"), "html.parser")
+        urls = [node["src"] for node in tree.select("script[src]")]
+        urls += [node["href"] for node in tree.select("link[rel=stylesheet]")]
+        return {urlsplit(url).path: url for url in urls}
+
+    before = asset_urls()
+    assert urlsplit(before["/static/report.js"]).query, "reader script must bypass a cached older release"
+    (static / "report.js").write_text("second release with working collapse buttons", encoding="utf-8")
+    after = asset_urls()
+    assert before["/static/report.js"] != after["/static/report.js"]
+    assert before["/static/report-browser.css"] == after["/static/report-browser.css"]

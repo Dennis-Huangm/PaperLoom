@@ -30,7 +30,7 @@ for number, title in enumerate([
         "paper": {"arxiv_id": aid, "version": 1, "title": title, "authors": [{"name": "Ada"}]},
     })
     text = f"# {title}\n\n| 字段 | 内容 |\n|---|---|\n| arXiv ID | {aid} |\n| 作者 | Ada |\n\n"
-    for section in ["一句话总结", "核心方法", "关键结果", "局限性"]:
+    for section in ["一句话总结", "核心方法", "关键结果", "局限性", *[f"补充分析 {index}" for index in range(1, 31)]]:
         text += f"## {section}\n\n" + "这是用于验证报告阅读布局的独立演示材料。" * 18 + "\n\n"
     (directory / "report.md").write_text(text, encoding="utf-8")
     render_report(text, directory / "report.html", title, aid)
