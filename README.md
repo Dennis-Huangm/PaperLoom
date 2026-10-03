@@ -26,12 +26,14 @@
 
 PaperLoom 是面向个人研究者的论文助手：根据研究方向发现 arXiv 和会议论文，生成中文阅读报告，记录笔记，再将材料收录到 Zotero 或 Obsidian。推荐、文献库、相关工作地图、论文比较、版本跟进和周报都可以在网页中完成。
 
-**当前正式版本：v1.5.0。** [发布说明](docs/RELEASE_NOTES.md) · [变更记录](CHANGELOG.md)。应用和研究数据保存在本机；联网检索与模型生成使用你配置的服务。
+**当前正式版本：v1.6.0。** [发布说明](docs/RELEASE_NOTES.md) · [变更记录](CHANGELOG.md)。应用和研究数据保存在本机；联网检索与模型生成使用你配置的服务。
+
+v1.6.0 改进了报告阅读与后台运行：实验表格按原文数据保全并放在对应讨论处，长表可以展开，打印时包含完整矩阵；报告目录和本地论文侧栏支持收起、搜索和切换。Windows 可在登录后无终端启动，任务页可直接调整并行任务数。
 
 <a id="quick-start"></a>
 ## 安装与启动
 
-需要 **Python 3.11+** 和可用的网络。从 [最新 Release](https://github.com/Dennis-Huangm/PaperLoom/releases/latest) 下载 **`paperloom-1.5.0-source.zip`**，解压到固定目录。发布包需要安装 Python，首次安装会下载依赖。
+需要 **Python 3.11+** 和可用的网络。从 [最新 Release](https://github.com/Dennis-Huangm/PaperLoom/releases/latest) 下载 **`paperloom-1.6.0-source.zip`**，解压到固定目录。发布包需要安装 Python，首次安装会下载依赖。
 
 ### Windows
 
@@ -40,6 +42,15 @@ PaperLoom 是面向个人研究者的论文助手：根据研究方向发现 arX
 3. 双击 **`Start-PaperLoom.cmd`**，浏览器会打开 [本地网页](http://127.0.0.1:8000)。
 
 以后只需运行 `Start-PaperLoom.cmd`。使用期间保持服务窗口开启；在窗口中按 `Ctrl+C` 可退出。
+
+如需登录后自动在后台运行，先完成安装并停止已打开的服务窗口，再从项目目录运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_gui_logon_task.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Action start
+```
+
+之后打开 [本地网页](http://127.0.0.1:8000) 即可使用，无需保持终端窗口。任务使用当前普通用户身份，退出 Windows 登录后停止。停止、重启、日志和旧 NSSM 服务迁移见 [Windows 后台启动说明](docs/CLI.md)。
 
 ### Linux / macOS
 
@@ -99,6 +110,8 @@ paperloom gui
 
 打开 **任务 → 生成完整阅读报告**，输入 arXiv ID，点击 **开始生成**。可用 `2506.15903v1` 这样的 ID 指定修订版。完成后点击任务的结果链接，或到 **报告** 打开中文解读、方法图、公式和实验表格，并通过原文定位核对结论。
 
+阅读时用 **目录** 跳转小节，用 **论文** 侧栏搜索和切换本地报告；两侧均可收起以扩大正文空间。原文实验表格在相关讨论处呈现，每个编号只出现一次，长表就地展开，打印时自动展开全部矩阵。报告保留已提取的数值、条件和表注；引用定位失败不会删除这些内容，明确冲突会局部标注。完整性与数值核对结果仍需结合原论文判断。
+
 ![临时示例截图：中文报告与原文定位](assets/screenshots/report.jpg)
 
 ### 7. 比较多篇论文
@@ -147,6 +160,8 @@ paperloom gui
 
 打开 **任务** 查看后台进度、日志和结果，离开页面后任务会继续运行。报告回退或中断时，检查提示后使用可用的 **继续全文分析 / 重新执行**。遇到连接或环境问题，到 **状态** 查看诊断信息。
 
+在队列旁的 **并行任务** 选择 **1–8 个**，设置立即保存并生效。调低上限时，正在运行的任务会继续完成，后续任务按新上限启动。
+
 ![截图占位：后台队列、结果链接与恢复操作](assets/screenshots/tasks-placeholder.svg)
 
 ### 15. 备份与恢复
@@ -163,6 +178,8 @@ paperloom gui
 1. 等待任务结束，停止旧版服务与调度，备份 **`.env`、`config.yaml`、`profiles/` 和输出目录**（默认 `run/`）。
 2. 将新版解压到独立目录，复制上述数据，重新运行安装与启动入口。安装脚本会保留已有配置。
 3. 检查方向、文献库和历史报告，再恢复调度；新旧程序不要同时写入同一输出目录。
+
+使用 Windows 登录任务的用户，应先从旧目录停止后台服务，再从新目录重新注册登录任务并启动，确保计划任务指向新版安装。
 
 ## 数据与问题反馈
 

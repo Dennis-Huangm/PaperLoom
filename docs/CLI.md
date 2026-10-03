@@ -65,7 +65,7 @@ paperloom --config config.yaml gui
 wheel 安装适用于已有 Python 环境：
 
 ```bash
-python -m pip install './arxiv_research_assistant-1.5.0-py3-none-any.whl[gui]'
+python -m pip install './arxiv_research_assistant-1.6.0-py3-none-any.whl[gui]'
 ```
 
 wheel 不包含用户配置和启动脚本，需要另外下载源码包或从仓库取得 [配置模板](../config.example.yaml) 与 [环境变量模板](../.env.example)，保存为 `config.yaml` / `.env` 后启动。

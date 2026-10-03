@@ -24,7 +24,7 @@ Windows 也可运行 `scripts/setup_environment.ps1 -Dev`，再使用 `.venv/Scr
 版本由 `pyproject.toml` 和 `src/arxiv_ra/__init__.py` 共同声明。更新它们、`CHANGELOG.md`、`docs/RELEASE_NOTES.md` 和 README 的下载名后，在 Windows 项目环境中执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1 -Version 1.5.0
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1 -Version 1.6.0
 ```
 
 构建读取 Git 跟踪文件并应用用户源码包的内容白名单，生成 ZIP、wheel 和 SHA-256 校验文件到 `release/v<version>/`。源码包包含用户指南、配置模板、启动入口与运行代码；测试和构建工具在 Git 仓库中维护。新增运行文件需先加入 Git 跟踪。
