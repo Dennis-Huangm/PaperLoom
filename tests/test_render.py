@@ -5,6 +5,37 @@ from bs4 import BeautifulSoup
 from arxiv_ra.render import markdown_with_math, render_report
 
 
+@pytest.mark.parametrize('container', ['<pre>', '<script>', '```markdown'])
+def test_managed_table_cannot_disappear_inside_a_text_container(tmp_path, container):
+    from arxiv_ra.report_tables import ReportTables
+    from arxiv_ra.markdown_rendering import ReportRenderError
+    catalogue = ReportTables.from_notes(['### Table 1: Scores\n| Model | Score |\n|---|---|\n| A | 91.2 |'], [{'number':1}])
+    # The isolated block is valid, but its surrounding prose is not.
+    block = catalogue.render('[[表格:table-1]]')
+    destination = tmp_path/'report.html'
+    destination.write_text('previous good report',encoding='utf-8')
+    with pytest.raises(ReportRenderError):
+        render_report('## Results\n\n'+container+'\n'+block,destination,'Paper')
+    assert destination.read_text(encoding='utf-8')=='previous good report'
+
+
+def test_adjacent_currency_cells_are_not_a_math_expression():
+    source = ('| Statistic | Icon | Illustration | Overall |\n|---|---|---|---|\n'
+              '| Total Cost | $1,135.77 | $877.35 | $2,013.12 |\n'
+              '| Cost / Prompt | $0.0582 | $0.0783 | $0.0655 |')
+    tree = BeautifulSoup(markdown_with_math(source)[0], 'html.parser')
+    assert [[c.get_text() for c in row.select('td')] for row in tree.select('tbody tr')] == [
+        ['Total Cost', '$1,135.77', '$877.35', '$2,013.12'],
+        ['Cost / Prompt', '$0.0582', '$0.0783', '$0.0655']]
+    assert not tree.select('.math-inline')
+
+
+def test_currency_in_prose_stays_literal_and_numeric_math_still_renders():
+    tree = BeautifulSoup(markdown_with_math('Costs $5 and $10. Formula: $1+2$; norm: $|x|$.')[0], 'html.parser')
+    assert 'Costs $5 and $10.' in tree.get_text()
+    assert [m.get_text() for m in tree.select('.math-inline')] == ['1+2', '|x|']
+
+
 @pytest.mark.parametrize('prefix,indent', [('说明文字：', ''), ('### 结果', ''),
                                            ('- **胜率**：', '  '), ('1. **胜率**：', '   '),
                                            ('- **胜率**：', '    ')])
@@ -227,3 +258,18 @@ def test_render_report_includes_local_katex_and_sidebar_navigation(tmp_path: Pat
     assert "max-width:1920px" in page
     assert "grid-template-columns:270px minmax(0,1fr)" in page
     assert "window.scrollTo(0,0)" in script
+def test_display_formula_with_adjacent_pdf_citation_still_renders_as_math():
+    from arxiv_ra.render import markdown_with_math
+    from bs4 import BeautifulSoup
+    source = '### Formula\n\\[\ny = \\mathcal{F}(x) + x\n\\] [21](paper.pdf#page=3)\n\nMeaning.'
+    tree = BeautifulSoup(markdown_with_math(source)[0], 'html.parser')
+    assert tree.select_one('.math-block').get_text() == r'y = \mathcal{F}(x) + x'
+    assert tree.select_one('a[href="paper.pdf#page=3"]').get_text() == '21'
+
+
+def test_report_document_keeps_formula_after_citation_tooltip_decoration():
+    from arxiv_ra.render import report_document
+    source = '说明：\n' + r'\[x = y + 1\] [12](paper.pdf#page=3)'
+    tree = BeautifulSoup(report_document(source, 'Paper'), 'html.parser')
+    assert tree.select_one('.math-block').get_text() == 'x = y + 1'
+    assert tree.select_one('a[href="paper.pdf#page=3"]')['title'] == '原文第 3 页'

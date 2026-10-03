@@ -15,7 +15,8 @@ def evaluate(case):
         _, evidence = attach_evidence(case["report"], ParsedPaper("", case["pages"], total_pages=len(case["pages"])),
                                       pdf_available=True, full_report=True)
         audit = evidence.get('numeric_audit', {})
-        actual = {"flagged": bool(audit.get('issues') or audit.get('table_diagnostics')),
+        diagnostics = audit.get('prose_diagnostics', [])
+        actual = {"flagged": bool(audit.get('issues') or audit.get('table_diagnostics') or diagnostics),
                   "citations": evidence["validated_citations"]}
     else:
         ref = "P2:A" if case.get("wrong_ref") else "P1:A"

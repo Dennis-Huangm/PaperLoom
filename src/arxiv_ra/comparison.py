@@ -139,7 +139,8 @@ class ComparisonService:
                     source.update(quality=payload.get("report_quality", "unknown"),
                                   report_id=path.with_suffix(".html").relative_to(self.output_root).as_posix(),
                                   report_sha256=hashlib.sha256(report.encode("utf-8")).hexdigest())
-                    source["report_numeric_issues"] = len(((payload.get("evidence") or {}).get("numeric_audit") or {}).get("issues", []))
+                    audit = ((payload.get("evidence") or {}).get("numeric_audit") or {})
+                    source["report_numeric_issues"] = len(audit.get("issues", [])) + len(audit.get("prose_diagnostics", []))
                     source["evidence"].append({"id": f"{tag}:R", "kind": "report", "text": report_excerpt(report)})
                     data = safe_json(path.with_name("evidence.json"), {}) or {}
                     citations = data.get("citations") if data.get("status") == "checked" and source["quality"] == "full" else []

@@ -7,6 +7,7 @@ import unicodedata
 from .models import ParsedPaper
 from .quality import audit_report_numbers, apply_numeric_policy, preserve_unverified_content
 from .source_spans import source_spans, exact_span, ID_TOKEN, SPAN_VERSION
+from .table_schema import column_role
 
 
 def _complete_cited_rows(report, parsed, spans, resolve):
@@ -61,8 +62,8 @@ EVIDENCE_GUIDANCE = """对核心方法、主要贡献、实验设置、关键结
 不要自行生成 PDF 链接、证据编号或页码。来源摘录只是核对入口，不等于结论正确。"""
 
 KEY_SECTIONS = ("核心方法", "主要贡献", "实验设置", "关键结果", "局限性")
-TOKEN = re.compile(r"\[\[证据:(.*?)\]\]|\[\[证据ID:([^\]\n]*)\]\]", re.S)
-TABLE_CAPTION = re.compile(r"\bTable\s+(\d+)\s*[:：]\s*([^\r\n]*)", re.I)
+TOKEN = re.compile(r"\[\[证据:(.*?)\]\]|\[\[证据ID:((?:(?!\[\[)[^\n])*?)\]\]", re.S)
+TABLE_CAPTION = re.compile(r"(?:\b(?=Table\s+\d+\s*[:：])|^[ \t]*)Table\s+(\d+)\s*[:：.]\s*([^\r\n]*)", re.I | re.M)
 
 
 def source_table_inventory(parsed: ParsedPaper | None) -> list[dict]:
@@ -72,7 +73,9 @@ def source_table_inventory(parsed: ParsedPaper | None) -> list[dict]:
         for match in TABLE_CAPTION.finditer(content):
             number = int(match[1])
             found.setdefault(number, {"number": number, "page": page,
-                                      "title": " ".join(match[2].split())[:160]})
+                                      "title": " ".join(match[2].split())[:160],
+                                      "kind": ('visual' if re.search(r'qualitative\s+(?:examples|results)|定性(?:示例|样例)', match[2], re.I)
+                                               else 'matrix')})
     return [found[number] for number in sorted(found)]
 
 
@@ -90,10 +93,13 @@ def report_table_coverage(report: str, inventory: list[dict]) -> dict:
             (partial if re.search(r"节选|摘录|excerpt|partial", preceding[0], re.I)
              else presented).add(number)
     known = {item["number"] for item in inventory}
+    visual = [item for item in inventory if item.get('kind') == 'visual']
+    visual_numbers = {item['number'] for item in visual}
     partial -= presented
     return {"source_count": len(inventory), "presented": sorted(presented & known),
             "partial": [item for item in inventory if item["number"] in partial],
-            "missing": [item for item in inventory if item["number"] not in presented | partial]}
+            "missing": [item for item in inventory if item["number"] not in presented | partial | visual_numbers],
+            "visual": visual}
 
 
 def source_table_index(coverage: dict) -> str:
@@ -114,14 +120,14 @@ def publication_gate(coverage: dict) -> dict:
     audit = coverage["numeric_audit"]
     issues = audit.get("issues", [])
     conflicts = [issue for issue in issues if issue.get("table_binding", {}).get("bad_columns")]
-    unverified = [issue for issue in issues if issue not in conflicts]
+    unverified = [issue for issue in issues if issue not in conflicts] + audit.get('prose_diagnostics', [])
     tables = coverage["table_coverage"]
     unassessed_tables = sum(check.get("status") in {"unassessed", "partial_headers_checked", "row_order_checked"}
                             for check in audit.get("table_checks", []))
     # A Markdown table and a matching caption do not establish that every PDF
     # row, condition and footnote was reproduced.
     unassessed_completeness = len(tables["presented"])
-    review = (not coverage["status"] == "checked" or bool(issues) or
+    review = (not coverage["status"] == "checked" or bool(issues) or bool(unverified) or
               bool(tables["missing"]) or
               bool(coverage.get("rejected_prose_citations", coverage["rejected_citations"])))
     return {"status": "review_required" if review else "automatic_checks_passed",
@@ -225,6 +231,7 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
     rejected = 0
     rejected_prose = 0
     table_ranges = []
+    reference_ranges = []
     covered: set[str] = set()
 
     def resolve(match):
@@ -243,7 +250,7 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
         if resolved is None:
             rejected += 1
             if any(start <= match.start() < end for start, end in table_ranges):
-                return "—"
+                return '—' if any(start <= match.start() < end for start, end in reference_ranges) else ''
             rejected_prose += 1
             return "（原文摘录未能唯一定位，请核对）"
         quote = " ".join(resolved["quote"].split())
@@ -279,7 +286,7 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
                      {"version": 1, "checked_claims": 0, "issues": [], "semantic_support": "not_assessed"})
     numeric_audit['completed_row_citations'] = completed_rows
     if full_report:
-        numeric_audit = preserve_unverified_content(numeric_audit, TOKEN, quiet_tables=True)
+        numeric_audit = preserve_unverified_content(numeric_audit, TOKEN, quiet_tables=True, quiet_prose=True)
         for issue in numeric_audit["issues"]:
             issue["review_state"] = ("explicit_conflict" if issue.get("table_binding", {}).get("bad_columns")
                                      else "pending_verification")
@@ -288,14 +295,25 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
     table_ranges = [(row['start'], row['end']) for row in tables(report, TOKEN)]
     # Earlier synthesis can replace unavailable IDs with verbose placeholders.
     # Clear those inside tables only; prose uncertainty remains visible.
-    for start, end in reversed(table_ranges):
-        row = re.sub(r'（(?:片段引用不可用|分片摘录未能唯一定位)，缺少可定位原文依据）', '—', report[start:end])
-        report = report[:start] + row + report[end:]
+    edits = []
+    for row in tables(report, TOKEN):
+        for header, (_, start, end) in zip(row['headers'], row['cells']):
+            if column_role(header) != 'reference':
+                continue
+            start, end = row['start'] + start, row['start'] + end
+            value = re.sub(r'（(?:片段引用不可用|分片摘录未能唯一定位)，缺少可定位原文依据）', '—', report[start:end])
+            edits.append((start, end, value))
+    for start, end, value in reversed(edits):
+        report = report[:start] + value + report[end:]
     table_ranges = [(row['start'], row['end']) for row in tables(report, TOKEN)]
+    reference_ranges = [(row['start'] + start, row['start'] + end)
+                        for row in tables(report, TOKEN)
+                        for header, (_, start, end) in zip(row['headers'], row['cells'])
+                        if column_role(header) == 'reference']
     sections = list(re.finditer(r"(?m)^##\s+([^\n]+)", report))
     report = TOKEN.sub(replace, report)
     if numeric_audit["issues"]:
-        notice = "> **实验数值待核对**：标注“待核对”的内容尚未确认，请勿作为已核实结论；明确归属冲突的单元格以“—”显示，不代表零或论文未报告。[查看核对详情](evidence.json)。\n\n"
+        notice = "> **数值引用存在冲突**：标有“引用冲突”的单元格保留了报告原值，与所引原文的行列归属或数值不一致，使用前请核对。[查看核对详情](evidence.json)。\n\n"
         title = re.match(r"\s*# [^\n]+\n", report)
         position = title.end() if title else 0
         report = report[:position] + "\n" + notice + report[position:]
@@ -325,6 +343,6 @@ def attach_evidence(report: str, parsed: ParsedPaper | None, *, pdf_available: b
         if rejected:
             summary.append(f"另有 {rejected} 条摘录因过短、过长、未匹配或匹配多页而未生成链接。")
     summary.append("引用链接仅核验原文位置，不代表结论正确。[查看引用与数值核对详情](evidence.json)。")
-    if table_index := source_table_index(coverage["table_coverage"]):
-        summary.append(table_index)
+    # Coverage is diagnostic data. Original-page displays are placed by the
+    # publication layer beside the relevant discussion, never an audit appendix.
     return report.rstrip() + "\n\n" + "\n\n".join(summary) + "\n", coverage

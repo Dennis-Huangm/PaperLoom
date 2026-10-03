@@ -12,16 +12,19 @@ from .evidence import EVIDENCE_GUIDANCE, restore_table_row_citations, source_tab
 from .citation_repair import repair_numeric_citations
 from .quality import QUALITY_GUIDANCE
 from .source_spans import (source_spans, span_batches, span_material, cited_span_material,
-                           ground_note_quotes, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
+                           ground_note_quotes, normalize_grouped_source_ids, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
 from .report_metadata import protect_metadata
-from .report_completeness import restore_note_tables
+from .report_completeness import normalize_table_titles
+from .report_tables import ReportTables, GeneratedReport
 
 
 CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论文片段抽取信息，不得补写不存在的结论。
 保留数据集、指标、模型、公式和数值的原名；保留连续原文摘录以便后续定位。输出简洁中文。
 如果片段包含关键公式（包括附录中的指标定义），必须同时提取公式、符号定义、它连接的输入输出以及作者给出的设计目的。
 保留本片段出现的作者机构、代码/数据集/项目链接和复现参数，不要因其位于脚注或附录而省略。
-逐表保留实验表格，使用含原文 Table 编号的标题和 Markdown 表格，保留各模型行、表头、条件、单位与脚注；不要只摘最优结果。跨片段表格标注摘录，不猜测缺失部分。
+逐表保留实验表格，使用含原文 Table 编号的标题和 Markdown 表格，保留各模型行、表头、条件、单位与脚注；不要只摘最优结果。逐字保留原表列名和模型行标签，包括名称的缩写，不扩展版本后缀；中文解释写在表格外。跨片段表格不猜测缺失部分。
+原文表格与正文数值不一致时，矩阵内逐字保留原表数值，在表注单独说明差异；不得用正文、常识或其他版本的值“纠正”原表，不能添加原表没有的星号。原表空白单元格保持为空；若题注规定空白沿用基线，则在表注完整保留该规则，不写成“未提供”、不填充推测值。原表未命名的行标签列保留空表头，不另造“变体行”或“条件/变体”等标题。
+数学表头及数值必须保留上下标和数量级，用 LaTeX 或 Unicode 上下标表达。例如参数量单位 ×10⁶ 不能平铺成 ×106，FLOPs 的 10¹⁸ 不能写成 1018；对照解析正文中的数学标记与原文上下文，不能因 PDF 文本平铺而丢失幂次。
 表格说明与脚注用自然中文解释具体含义，明确规模、单位、指标方向和比较条件；保留必要英文列名，不能只贴英文表注或生硬逐词翻译。
 片段编号是内部处理顺序，不是 PDF 页码，也不是可引用的原文位置。"""
 
@@ -178,6 +181,7 @@ def finalize_report_structure(
     from .table_quality import normalize_table_separators
     from .evidence import TOKEN
     markdown_text = normalize_table_separators(markdown_text, TOKEN)
+    markdown_text = normalize_table_titles(markdown_text)
     markdown_text = _repair_inline_canonical_headings(markdown_text)
     method_figures = (
         main_figure
@@ -297,6 +301,11 @@ class ReportGenerator:
             checkpoint.publish(chunks_total=len(chunks), chunks_done=0)
         for index, chunk in enumerate(chunks, start=1):
             task_progress(f"正在分析或复用正文分片 {index}/{len(chunks)}…", 65 + round(17 * (index - 1) / len(chunks)))
+            table_pages = self._table_pages(parsed, chunk)
+            table_material = "\n\n".join(
+                f"[PDF 物理第 {page} 页，完整页面文本]\n{parsed.page_texts[page - 1]}"
+                for page in table_pages
+            ) or "本分片没有可按原表题对应的独立 PDF 表格页面。"
             note = self._chat(
                 f"chunk-{index}",
                 CHUNK_SYSTEM + "\n" + EVIDENCE_GUIDANCE + "\n" + ID_GUIDANCE + "\n" + QUALITY_GUIDANCE,
@@ -307,9 +316,14 @@ class ReportGenerator:
 独立 PDF 原文片段（可能与解析正文分片不同；同时提取这里的证据，引用实际 ID）：
 {span_material(banks[index - 1])}
 
+本分片表格对应的完整 PDF 物理页（独立于 Docling 的列划分）：
+{table_material}
+
 请提取：研究问题、方法机制、关键公式及符号定义、主要贡献、实验设置、关键结果与数值、作者明确陈述的局限性。
 没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。
-另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。""",
+另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。
+解析正文的表头、列数或行列归属与独立 PDF 页面不同，应回查完整页面及其证据 ID，不能把解析器多出的列、重复单元格或分片边界当作原文缺失。
+同一原表的全部模型、难度和指标应保留，不能把完整数值行压缩成无列归属的数值串。""",
             )
             cleaned, _ = cited_span_material([note], {s["source_id"]: s for s in banks[index - 1]})
             evidence_notes.append(cleaned[0])
@@ -318,8 +332,15 @@ class ReportGenerator:
         evidence_notes, synthesis_spans, _ = ground_note_quotes(evidence_notes, parsed, spans)
         evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
         metadata_text = self._metadata_text(paper, metadata)
-        evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(evidence_notes))
         table_inventory = source_table_inventory(parsed)
+        # Enrich references once while importing extraction, before freezing.
+        table_notes = [restore_table_row_citations(note, evidence_notes, parsed, synthesis_spans)
+                       for note in evidence_notes]
+        table_catalogue = ReportTables.from_notes(table_notes, table_inventory, source_pages=parsed.page_texts)
+        table_catalogue = table_catalogue.consolidate_annotations(
+            lambda system, prompt: self._chat('table-annotations', system, prompt))
+        synthesis_notes = table_catalogue.synthesis_notes(evidence_notes)
+        evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(synthesis_notes))
         table_inventory_text = "\n".join(
             f'- Table {item["number"]}（PDF 第 {item["page"]} 页）：{item["title"]}'
             for item in table_inventory
@@ -355,6 +376,17 @@ class ReportGenerator:
 
 ## PDF 原文表格目录（程序从物理页面提取；表题不是数值依据）
 {table_inventory_text}
+
+## 已冻结的原文表格数据（只用于分析；展示由程序完成）
+{table_catalogue.prompt_material()}
+
+每张表的 id 唯一。正文在讨论对应实验的小节中，用独立一行的 `[[表格:table-N]]` 选择展示位置。
+主结果可写 `[[表格:table-N|展开]]`；较大的补充矩阵可写 `[[表格:table-N|折叠]]`。
+N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段落用普通文字引用原表号。
+不要输出原文实验表格的 Markdown 行、表头、Table 标题或表注；标题和指标定义由表格展示统一提供。
+正文负责解释结果及其意义，不在表格位置指令前后复述表题、统计口径或单位。不重新抄写矩阵，不输出数据缺失占位行。
+正文复述数量时保留原始科学计数法及单位（如 FLOPs 的 ×10^9、参数量 M/B），不要将英文 billion 直接写成“亿”。如需换算，必须核验倍率：1 billion = 10^9 = 10 亿，不能只保留尾数。笔记与冻结表格的数量级不一致时回查原文，不能沿用笔记的换算。
+程序会在该位置插入完整已提取表格及原有条件。仅引用未能定位时不影响数值保留。
 
 ## 笔记引用的原文片段（程序取回，ID 和文本不能改写）
 {cited_material}
@@ -392,15 +424,19 @@ class ReportGenerator:
 12. 不得将内部片段编号当作页码或证据出处；最终输出不出现“第 N/M 片段”。保留原文章节/表号及有效 ID，由系统定位。
 13. 写“未提供”前核对全部分片和直接原文补充；仅笔记未保留、公式解析不清或材料截断时，写“当前材料未能确认”，不能断言论文没有提供。
 14. 原文明确给出的作者机构和资源网址应保留并注明来自论文；资源链接未经在线可用性验证。不得把参考文献网址当作本文资源，不补造或猜测网址。
-15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。优先用标准 Markdown 表格语法重现论文主结果表、与人类评价对齐表、关键消融和鲁棒性表，不以截图、图片链接或纯文字概括代替表格；有不同实验条件、任务或指标的表应分别呈现。保留表号、原始模型名、行列指标、轮次、单位和比较基线，不可只挑最优模型。每个数值行保留对应原文片段 ID；确实无法建立行列归属时注明待核对，不要猜测。
+15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。原文主结果、与人类评价对齐、关键消融和鲁棒性表由程序从冻结数据展示。你只放置唯一表格 id，不重新创建矩阵；保留对实验条件、任务、指标、轮次、单位和比较基线的解释，不可只分析最优模型。
 16. 写完后对照“PDF 原文表格目录”检查实验表格覆盖；未重现的关键实验表格说明原因。目录中的表号和标题只用于查漏，不能作为数值依据。
 17. 对“随难度增加均下降”“单调退化”等趋势，逐模型、逐指标检查相邻难度；总体趋势不能写成每一行都成立。存在回升或指标间分歧时给出反例；原文作者的概括与表格观察分开表述，不能把作者概括强化成“不可避免”。
+18. 表格放在讨论该实验、比较或成本的正文小节，紧邻解释；同一表不要分别列节选与原文摘录。保留原始表头和模型行标签，不添加“vs.”或“(本文)”等改写；说明放在表格外。不要另设“原文表格摘录”章节。
+19. 表格标题使用原表号和内容名称，不添加“部分摘录”“部分数据重现”“具备文本引用之部分”等处理阶段标签。引用是否可定位不决定已提取数值是否应保留；不要用“当前材料截断”替换分片笔记中已有的单元格。确实发现缺失行列时，在对应讨论中说明具体缺失；未完成完整性检查不等于已确认缺失。
 """,
         )
         if checkpoint:
             checkpoint.publish(report_ready=True)
-        report = restore_note_tables(report, evidence_notes, table_inventory)
-        report = restore_table_row_citations(report, evidence_notes, parsed, synthesis_spans)
+        raw_draft = report
+        # Compatibility with a model that ignores the slot instruction is a
+        # projection to identities, never a second source of table values.
+        report = table_catalogue.prepare_draft(report)
         task_progress("正在回查实验数值引用…", 85)
         try:
             repair_batch = 0
@@ -415,7 +451,10 @@ class ReportGenerator:
             raise
         except Exception as exc:
             task_warning("报告数值引用补核", f"自动补核未完成，未确认内容将标注待核对：{type(exc).__name__}: {exc}")
-        return protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
+        report = normalize_grouped_source_ids(report)
+        report = table_catalogue.render(report)
+        report = protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
+        return GeneratedReport(report, table_catalogue, raw_draft)
 
     def _explain_figures(self, paper: Paper, figures: list[FigureCandidate]) -> None:
         checkpoint = current_report_checkpoint()
@@ -466,7 +505,18 @@ class ReportGenerator:
         return "\n".join(lines)
 
     def _chunks(self, text: str) -> list[str]:
+        # The configured size is a prose target. A source table and its caption
+        # are an atomic unit, even when larger: a bare continuation loses the
+        # schema and can turn available cells into extraction placeholders.
         size = max(4000, self.config.max_chunk_chars)
+        table_ranges = []
+        for match in re.finditer(r"(?m)^\|[^\n]*(?:\n\|[^\n]*)+\n?", text):
+            start = match.start()
+            prefix = text[:start].rstrip()
+            paragraph_start = prefix.rfind("\n\n") + 2
+            if re.match(r"(?:#{1,6}\s*)?(?:Table\s+\d+|表\s*\d+)\s*[:：.]", prefix[paragraph_start:], re.I):
+                start = paragraph_start
+            table_ranges.append((start, match.end()))
         chunks: list[str] = []
         cursor = 0
         while cursor < len(text):
@@ -475,6 +525,10 @@ class ReportGenerator:
                 boundary = text.rfind("\n\n", cursor + size // 2, end)
                 if boundary > cursor:
                     end = boundary
+            for start, finish in table_ranges:
+                if start <= end < finish and end > start:
+                    end = start if start > cursor else finish
+                    break
             chunks.append(text[cursor:end])
             cursor = end
         return chunks or [""]
@@ -487,7 +541,22 @@ class ReportGenerator:
         chunk_size = max(4000, self.config.max_chunk_chars)
         count = max(len(chunks), (bank_size + chunk_size - 1) // chunk_size)
         chunks.extend([""] * (count - len(chunks)))
-        return chunks, span_batches(spans, count), spans
+        banks = span_batches(spans, count)
+        for chunk, bank in zip(chunks, banks):
+            table_pages = set(self._table_pages(parsed, chunk))
+            present = {span['source_id'] for span in bank}
+            bank.extend(span for key, span in spans.items()
+                        if span['page'] in table_pages and key not in present)
+        return chunks, banks, spans
+
+    @staticmethod
+    def _table_pages(parsed: ParsedPaper, chunk: str) -> list[int]:
+        # Only captions, not a prose mention of a table, bind parser text to
+        # physical pages. More than one table can share a source page.
+        numbers = {int(match[1]) for match in re.finditer(
+            r"(?im)^(?:#{1,6}\s*)?Table\s+(\d+)\s*[:：.]", chunk)}
+        return sorted({item['page'] for item in source_table_inventory(parsed)
+                       if item['number'] in numbers})
 
     def _metadata_text(self, paper: Paper, metadata: VerifiedMetadata) -> str:
         authors = "; ".join(

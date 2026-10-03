@@ -59,7 +59,7 @@ def test_real_table_precision_error_is_flagged_but_correct_literal_is_supported(
     for value, expected in [("0.8971", True), ("0.897", False)]:
         _, evidence = attach_evidence(f"# Paper\n\n## 关键结果\nOriginal DINO {value}。[[证据:{quote}]]",
                                       parsed, pdf_available=True, full_report=True)
-        assert bool(evidence["numeric_audit"]["issues"]) == expected
+        assert bool(evidence["numeric_audit"]["prose_diagnostics"]) == expected
 
 
 def test_metric_scope_error_remains_explicit_manual_limit():

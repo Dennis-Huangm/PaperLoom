@@ -23,6 +23,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run.ps1 doctor
 
 双击入口 `Setup-PaperLoom.cmd`、`Start-PaperLoom.cmd` 调用相同的 PowerShell 脚本。安装可加 `-Dev` 安装测试依赖，或用 `-Constraints` 指定依赖约束文件；Python 3.13 默认采用仓库中的 Windows 约束。
 
+### Windows 登录后无终端启动
+
+个人电脑上持续开发时，可让网页以当前普通用户身份在登录后启动。以下命令从项目目录运行：
+
+```powershell
+# 注册当前用户的登录任务；不需要保存密码，不使用最高权限
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_gui_logon_task.ps1
+
+# 当前会话立即启动，以及后续停止、重启和查看状态
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Action start
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Action stop
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Action restart
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Action status
+```
+
+计划任务名称为 `PaperLoom GUI (User)`，使用基础解释器的 `pythonw.exe` 无控制台启动器，再以隐藏窗口标志启动项目 `.venv\Scripts\pythonw.exe`，避免部分 Python 版本的虚拟环境启动器闪出黑框。实际网页始终使用项目虚拟环境，登录时不打开终端或浏览器。任务在电池供电时也可运行，没有默认的运行时长限制；异常退出最多重试三次。它在用户退出登录后停止，适合登录后使用网页的个人环境。
+
+日志保存在配置目录下的 `run\.desktop-gui\gui-8000.log`（自定义端口时文件名随端口变化），启动器错误保存在项目 `run\.desktop-gui\launcher-error.log`。重复启动不会创建第二个实例；其他程序占用端口时报告启动失败。停止和重启通过实例标识请求正常退出，不根据端口强杀进程。停止前应先等待论文任务完成。
+
+如果此前把本项目注册为名为 `paperloom` 的 NSSM 系统服务，需要一次管理员操作来停用旧服务：在**管理员 PowerShell** 中进入项目目录，然后运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\switch_gui_to_logon.ps1
+```
+
+该脚本先注册普通用户登录任务，再停用并停止本目录对应的旧 NSSM 服务，最后启动新任务。它保留 NSSM 注册以及原启动方式记录，不删除服务。若管理员终端使用另一个账户，应传入 `-UserId "计算机名\日常用户名"`，确保新任务归属于日常使用账户。旧服务未停用前不要同时启动新任务，以免争用同一端口。需要回退时先停止并禁用新任务，再以管理员权限恢复 `paperloom` 服务原启动方式并启动服务。
+
 Linux / macOS 创建并激活虚拟环境后使用标准入口：
 
 ```bash
@@ -69,6 +96,8 @@ wheel 不包含用户配置和启动脚本，需要另外下载源码包或从�
 全局 `--config` 参数放在子命令之前。命令加载配置文件同目录下的 `.env`；已有进程环境变量优先。`doctor` 不联网，通过检查不代表外部 API 或邮件已连通。`test-email` 会实际发邮件，请先确认收件配置。
 
 `report` 不带版本号时读取当前版本，带 `vN` 时固定指定修订版；`compare` 需要 2–5 篇已存在本地资料、带版本号的不同论文。每日 `run` 不会为每篇推荐自动生成全文报告。
+
+全文报告的原文表格放在对应正文讨论中，每个编号呈现一次；较长的补充矩阵可以就地展开。生成目录同时保留冻结的表格数据 `tables.json`、正文合成草稿 `report-draft.md` 和内容保全结果 `table-preservation.json`。自动原文定位的限制见 `evidence.json`，不会因核对能力不足删除已有实验数据或把正常完成的任务显示为组件异常。
 
 ## 版本同步
 

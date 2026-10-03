@@ -12,7 +12,7 @@ import shutil
 import uuid
 
 from .models import FigureCandidate, ParsedPaper
-from .task_runtime import task_checkpoint, task_checkpoint_data, task_warning
+from .task_runtime import task_checkpoint, task_checkpoint_data, task_warning, task_progress
 from .utils import read_json, write_json
 
 
@@ -176,7 +176,7 @@ class ReportCheckpoint:
             if not data:
                 return None
             if data["signature"] != self.signature(inputs):
-                task_warning("报告恢复", "部分模型输入或提示词已变化，对应步骤将重新生成。")
+                task_progress("部分模型输入或提示词已变化，对应步骤将重新生成。")
                 return None
             if (not isinstance(data["text"], str) or not data["text"].strip()
                     or fingerprint(data["text"]) != data["hash"]):

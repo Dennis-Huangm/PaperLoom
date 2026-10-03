@@ -87,6 +87,17 @@ document.querySelectorAll('.math-block,.math-inline').forEach(function(node){try
 })();
 
 document.querySelector('#report-print')?.addEventListener('click', () => window.print());
+// Printed reports include the complete matrices, even if the reading view is
+// collapsed. Restore the reader's disclosure choices after printing.
+let printClosedTables = [];
+window.addEventListener('beforeprint', () => {
+  printClosedTables = [...document.querySelectorAll('details.report-table-details:not([open])')];
+  printClosedTables.forEach(table => { table.open = true; });
+});
+window.addEventListener('afterprint', () => {
+  printClosedTables.forEach(table => { table.open = false; });
+  printClosedTables = [];
+});
 const button = document.querySelector('#report-library-add');
 if (button && location.protocol === 'file:') button.remove();
 if (button && location.protocol !== 'file:') {

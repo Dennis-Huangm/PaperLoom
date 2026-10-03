@@ -25,6 +25,7 @@ from .ranker import matched_concept_groups, rank_papers, finish_explanation
 from .plan_selection import evaluate_plan, selectable
 from .render import render_recommendations, render_report
 from .report import finalize_report_structure
+from .report_publication import prepare_publication, present_source_pages
 from .research_clients import ResearchClients
 from .utils import read_json, slugify, write_json
 from .weekly import WeeklySynthesizer
@@ -549,16 +550,26 @@ class DailyPipeline:
                 f"请检查 LLM Base URL、模型名和服务状态（{type(exc).__name__}: {exc}）。",
             )
             report = self.clients.reporter._extractive_report(paper, metadata, method_figures)
-        if checkpoint:
-            checkpoint.publish(resumable=report_quality != "full")
+        table_catalogue = getattr(report, 'tables', None)
+        if table_catalogue is not None:
+            write_json(paper_dir / 'tables.json', table_catalogue.to_dict())
+            (paper_dir / 'report-draft.md').write_text(report.draft, encoding='utf-8')
         if errors:
             report += "\n\n## 运行警告\n\n" + "\n".join(f"- {error}" for error in errors)
-        report = finalize_report_structure(report, method_figures)
+        report = prepare_publication(report, paper, metadata, method_figures, table_catalogue,
+                                     finalize_report_structure)
         report, evidence = attach_evidence(report, parsed, pdf_available=(paper_dir / "paper.pdf").is_file(),
                                            full_report=report_quality == "full")
-        numeric_issues = evidence.get("numeric_audit", {}).get("issues", [])
-        if numeric_issues:
-            task_warning("报告数值核对", f"{len(numeric_issues)} 个实验数值条目需核对：未确认内容已保留并标注，明确归属冲突的单元格已隔离；详情保存在 evidence.json。")
+        if table_catalogue is not None:
+            table_review = table_catalogue.review(report)
+            evidence['table_preservation'] = table_review
+            write_json(paper_dir / 'table-preservation.json', table_review)
+            if table_review['status'] != 'passed':
+                raise RuntimeError('原文表格展示未通过内容保全检查；冻结数据已保存在 tables.json')
+        report, source_displays = present_source_pages(report, evidence['table_coverage'], paper_dir / 'paper.pdf')
+        evidence['table_coverage']['source_displays'] = source_displays
+        # Content verification limits belong to the report and evidence.json;
+        # they are not execution failures or task component warnings.
         write_json(paper_dir / "evidence.json", evidence)
         task_progress("报告内容已生成，正在保存和渲染…", 88)
         report_path = paper_dir / "report.md"
@@ -592,6 +603,8 @@ class DailyPipeline:
                    "model": self.config.llm.model if self.clients.llm.enabled else "",
                    "parsed_pages": len(parsed.page_texts) if parsed else 0,
                    "parsed_characters": len(parsed.text.strip()) if parsed else 0})
+        if checkpoint:
+            checkpoint.publish(resumable=report_quality != "full")
         if (
             self.config.obsidian.enabled
             and self.config.obsidian.auto_sync

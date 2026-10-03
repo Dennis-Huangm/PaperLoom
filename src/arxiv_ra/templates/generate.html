@@ -42,7 +42,20 @@
   </section>
 
   <section class="queue-section">
-    <header><div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div><div class="queue-header-actions"><span><i class="fas fa-stream" aria-hidden="true"></i>最多并行 {{ config.jobs.max_parallel }} 个任务</span><button id="clear-job-history" type="button"><i class="far fa-trash-alt" aria-hidden="true"></i>清除已结束记录</button></div></header>
+    <header>
+      <div><p class="section-kicker">QUEUE</p><h2>后台任务</h2></div>
+      <div class="queue-header-actions">
+        <label class="queue-parallelism" for="jobs-max-parallel" title="选择后立即保存并生效。调低上限不会中断正在运行的任务。">
+          <i class="fas fa-stream" aria-hidden="true"></i><span class="queue-parallelism-label">并行任务</span>
+          <select id="jobs-max-parallel" name="max_parallel" data-saved-value="{{ config.jobs.max_parallel }}" aria-describedby="jobs-parallelism-status">
+            {% for count in range(1, 9) %}<option value="{{ count }}" {% if count == config.jobs.max_parallel %}selected{% endif %}>{{ count }} 个</option>{% endfor %}
+          </select>
+          <i class="fas fa-chevron-down queue-parallelism-chevron" aria-hidden="true"></i>
+        </label>
+        <span id="jobs-parallelism-status" class="queue-control-status" role="status" aria-live="polite">选择后立即生效</span>
+        <button id="clear-job-history" type="button"><i class="far fa-trash-alt" aria-hidden="true"></i>清除已结束记录</button>
+      </div>
+    </header>
     <details class="queue-notice"><summary><i class="fas fa-info-circle" aria-hidden="true"></i>任务保留与恢复说明</summary><p>任务记录在重启后保留，未完成任务标记为已中断，不会自动重跑。重新执行可能再次调用模型或同步；推荐任务恢复时不发送邮件。清除记录不会删除生成的报告和推荐结果。</p></details>
     {% for error in job_load_errors %}<p role="alert">{{ error }}</p>{% endfor %}
     <div id="job-list" class="job-list">

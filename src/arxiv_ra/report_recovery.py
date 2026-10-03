@@ -11,7 +11,7 @@ from .quality import normalized_excerpt, preserve_unverified_content
 def recover_numeric_content(report: str, evidence: dict) -> tuple[str, dict, dict]:
     original_audit = evidence.get('numeric_audit', {})
     stats = {'restored_in_place': 0, 'appended_for_review': 0}
-    if not original_audit.get('issues') or original_audit.get('publication_policy') in {'preserve_unverified_v1', 'table_diagnostics_v2'}:
+    if not original_audit.get('issues') or original_audit.get('publication_policy') in {'preserve_unverified_v1', 'table_diagnostics_v2', 'report_diagnostics_v3'}:
         return report, evidence, stats
     result = deepcopy(evidence)
     audit = result['numeric_audit']

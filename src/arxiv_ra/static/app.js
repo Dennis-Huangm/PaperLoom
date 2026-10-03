@@ -260,6 +260,31 @@ document.querySelector('#job-list')?.addEventListener('click', async (event) => 
   }
 });
 
+document.querySelector('#jobs-max-parallel')?.addEventListener('change', async (event) => {
+  const select = event.currentTarget;
+  const status = document.querySelector('#jobs-parallelism-status');
+  const previous = select.dataset.savedValue;
+  const body = new FormData();
+  body.set('max_parallel', select.value);
+  select.disabled = true;
+  status.textContent = '正在保存…';
+  try {
+    const response = await scopedFetch('/api/jobs/parallelism', {method: 'POST', body});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : '无法保存并行任务数');
+    select.value = String(payload.max_parallel);
+    select.dataset.savedValue = select.value;
+    status.textContent = '已保存，立即生效';
+    toast(`最多并行 ${payload.max_parallel} 个任务；正在运行的任务会继续完成`);
+  } catch (error) {
+    select.value = previous;
+    status.textContent = '保存失败，请重试';
+    toast(error.message);
+  } finally {
+    select.disabled = false;
+  }
+});
+
 document.querySelector('#clear-job-history')?.addEventListener('click', async (event) => {
   if (!window.confirm('清除所有已结束的后台任务记录？生成的报告和推荐结果会保留，运行中的任务不会受影响。')) return;
   const button = event.currentTarget;

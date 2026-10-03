@@ -4,16 +4,45 @@ from __future__ import annotations
 from collections import Counter
 import html
 import re
+import unicodedata
 from xml.etree import ElementTree as ET
 
 from bs4 import BeautifulSoup
 from markdown.extensions.toc import slugify, unique
 from markdown_it import MarkdownIt
 from markdown_it.rules_block.table import escapedSplit, table as parse_table
+from markdown_it.rules_inline.emphasis import tokenize as parse_emphasis
 
 
 class ReportRenderError(ValueError):
     """Do not publish an HTML report that lost recognized Markdown structure."""
+
+
+def _cjk_letter(char):
+    return unicodedata.category(char).startswith('L') and unicodedata.name(char, '').startswith(
+        ('CJK ', 'HIRAGANA ', 'KATAKANA ', 'HANGUL '))
+
+
+def _emphasis(state, silent):
+    """Allow punctuation-ended bold next to unspaced CJK prose.
+
+    CommonMark rejects `**有用性（Helpfulness）**仅评估` because the
+    closing punctuation is followed by a letter. Extend only that boundary,
+    keeping the normal delimiter pairing, nesting and protected token rules.
+    Source Markdown and report data are never rewritten to insert spaces.
+    """
+    start, first = state.pos, len(state.delimiters)
+    accepted = parse_emphasis(state, silent)
+    if not accepted or state.src[start] != '*' or state.pos - start < 2:
+        return accepted
+    before = state.src[start - 1] if start else ' '
+    after = state.src[state.pos] if state.pos < state.posMax else ' '
+    can_open = _cjk_letter(before) and unicodedata.category(after).startswith('P')
+    can_close = unicodedata.category(before).startswith('P') and _cjk_letter(after)
+    for delimiter in state.delimiters[first:]:
+        delimiter.open |= can_open
+        delimiter.close |= can_close
+    return accepted
 
 
 def _math_inline(state, silent):
@@ -22,6 +51,8 @@ def _math_inline(state, silent):
         opening, closing = r'\(', r'\)'
     elif state.src[start] == '$' and not state.src.startswith('$$', start):
         opening = closing = '$'
+        if start + 1 >= state.posMax or state.src[start + 1].isspace():
+            return False
     else:
         return False
     end = start + len(opening)
@@ -32,6 +63,11 @@ def _math_inline(state, silent):
         if (len(state.src[:end]) - len(state.src[:end].rstrip('\\'))) & 1:
             end += len(closing)
             continue
+        # Dollar amounts in adjacent cells are not a paired TeX expression.
+        # Apply the same delimiter boundaries used by table splitting below.
+        if opening == '$' and (state.src[end - 1].isspace()
+                               or (end + 1 < state.posMax and state.src[end + 1].isdigit())):
+            return False
         break
     content = state.src[start + len(opening):end]
     if not content.strip() or '\n' in content:
@@ -65,7 +101,7 @@ def _math_block(state, start, end, silent):
             value = value[len(opening):]
         if closing in value:
             content, tail = value.split(closing, 1)
-            if tail.strip():
+            if tail.strip() and _FORMULA_CITATION.sub('', tail).strip():
                 return False
             parts.append(content)
             if silent:
@@ -73,6 +109,12 @@ def _math_block(state, start, end, silent):
             token = state.push('math_block', 'div', 0)
             token.content = '\n'.join(parts).strip()
             token.map = [start, line + 1]
+            if tail.strip():
+                state.push('paragraph_open', 'p', 1)
+                citation = state.push('inline', '', 0)
+                citation.content = tail.strip()
+                citation.children = []
+                state.push('paragraph_close', 'p', -1)
             state.line = line + 1
             return True
         parts.append(value)
@@ -80,7 +122,8 @@ def _math_block(state, start, end, silent):
 
 
 _FORMULA_CITATION = re.compile(
-    r'\[((?:原文\s+\d+(?:\s*·\s*PDF\s*第\s*\d+\s*页)?)|\d+)\]\((paper\.pdf#page=\d+)\)')
+    r'\[((?:原文\s+\d+(?:\s*·\s*PDF\s*第\s*\d+\s*页)?)|\d+)\]\((paper\.pdf#page=\d+)'
+    r'(?:\s+"原文第\s+\d+\s+页")?\)')
 
 
 def _formula_citations(content):
@@ -119,7 +162,7 @@ def _render_math(renderer, tokens, index, options, env):
 # Mask only balanced code spans for table splitting; the inline parser still
 # receives the original code. Equal-length replacement preserves source maps.
 _CODE_SPAN = re.compile(r'(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)', re.S)
-_TABLE_MATH = re.compile(r'\\\([^\n]+?\\\)|(?<!\\)\$(?!\$)[^\n$]+?(?<!\\)\$')
+_TABLE_MATH = re.compile(r'\\\([^\n]+?\\\)|(?<!\\)\$(?![\s$])[^\n$]+?(?<![\s\\])\$(?!\d)')
 
 
 def _table(state, start, end, silent):
@@ -182,6 +225,7 @@ def _table(state, start, end, silent):
 
 def _parser():
     parser = MarkdownIt('commonmark', {'html': True}).enable(['table', 'strikethrough'])
+    parser.inline.ruler.at('emphasis', _emphasis)
     parser.inline.ruler.before('escape', 'report_math_inline', _math_inline)
     parser.block.ruler.before('fence', 'report_math_block', _math_block,
                               {'alt': ['paragraph', 'reference', 'blockquote', 'list']})

@@ -11,7 +11,7 @@ from .models import ParsedPaper
 
 
 SPAN_VERSION = 1
-ID_TOKEN = re.compile(r"\[\[证据ID:([^\]\n]*)\]\]")
+ID_TOKEN = re.compile(r"\[\[证据ID:((?:(?!\[\[)[^\n])*?)\]\]")
 QUOTE_TOKEN = re.compile(r"\[\[证据:(.*?)\]\]", re.S)
 EXACT_ID = re.compile(r"Q1-([a-f0-9]{24})-(\d{1,6})-(\d{1,10})-(\d{1,10})")
 SYNTHESIS_ID_GUIDANCE = """最终整合引用规则：引用下方程序取回的原文清单时，只输出 [[证据ID:实际ID]]，
@@ -21,6 +21,17 @@ SYNTHESIS_ID_GUIDANCE = """最终整合引用规则：引用下方程序取回�
 ID 的存在只证明文本来源，仍须核对模型、任务、难度、指标、单位和表头对应关系。
 没有清单中的有效 ID 时，写“当前材料缺少可定位原文依据”，不得从近似内容猜测 ID。
 分片笔记中的不可用引用不能被升级成有效引用。"""
+
+
+def normalize_grouped_source_ids(text: str) -> str:
+    """Expand a model's bracketed ID list without inferring any source identity.
+
+    Every emitted ID still goes through the ordinary source validation gate.
+    Leave arbitrary prose and incomplete groups untouched.
+    """
+    pattern = r'\[\[证据ID:\s*[A-Za-z0-9-]+\s*\](?:\s*[,，]\s*\[证据ID:\s*[A-Za-z0-9-]+\s*\])+\s*\]'
+    return re.sub(pattern, lambda match: ' '.join(f'[[证据ID:{key}]]' for key in
+                  re.findall(r'证据ID:\s*([A-Za-z0-9-]+)', match[0])), text)
 ID_GUIDANCE = """优先使用程序提供的原文片段 ID：在陈述所在段落或数值表格行写 [[证据ID:实际ID]]。
 只可引用当前提供的 ID，不能自造、修改 ID 或把 ID 当成论文页码。无需重抄该片段的原文；程序会取回准确文本。
 每条陈述需由所引片段支持，数值还须保留模型/指标/表头归属；片段中有数字不等于支持任意结论。

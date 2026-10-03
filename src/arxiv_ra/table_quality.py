@@ -10,6 +10,7 @@ import unicodedata
 
 from .markdown_rendering import _CODE_SPAN, _TABLE_MATH
 from .quality import numbers
+from .table_schema import reference_label
 
 
 def mask_quotes(text, token):
@@ -103,7 +104,9 @@ def normalize_table_separators(text, token):
 def label(text):
     value = unicodedata.normalize("NFKC", text).strip().casefold()
     value = re.sub(r"\[\d+(?:,\s*\d+)*\][†‡⋆★☆*]*\s*$", "", value)
-    return re.sub(r"\s+", " ", value.strip(" *`†‡⋆★☆"))
+    value = re.sub(r"\s+", " ", value.strip(" *`†‡⋆★☆"))
+    # A known extraction suffix does not turn an evidence column into a metric.
+    return reference_label(value)
 
 
 def scalar(text):

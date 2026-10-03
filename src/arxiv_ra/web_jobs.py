@@ -118,6 +118,19 @@ class JobManager:
         self.store.save(self._record(job))
 
     @staticmethod
+    def _dismiss_content_warning(job):
+        warnings = [w for w in job.warnings if w.get("component") != "报告数值核对"
+                    and not (w.get('component') == '报告恢复' and
+                             w.get('message') == '部分模型输入或提示词已变化，对应步骤将重新生成。')]
+        if len(warnings) == len(job.warnings):
+            return False
+        job.warnings = warnings
+        if job.status == "succeeded_with_warnings":
+            job.status = "succeeded_with_warnings" if warnings else "succeeded"
+            job.detail = f"任务已完成，但有 {len(warnings)} 个组件异常" if warnings else "任务已完成"
+        return True
+
+    @staticmethod
     def _pdf_failure(job: BackgroundJob) -> str | None:
         if job.kind == "report":
             return next((warning["message"] for warning in job.warnings
@@ -153,6 +166,8 @@ class JobManager:
             self.cancel_events[job.id] = threading.Event()
             job.recoverable = bool(self.requests[job.id]) and job.kind in RECOVERABLE
             job.recovery_note = recovery_note(job.kind)
+            if self._dismiss_content_warning(job):
+                self._save(job)
             pdf_failure = self._pdf_failure(job)
             if job.status == "succeeded_with_warnings" and pdf_failure:
                 job.status = "failed"
@@ -374,7 +389,10 @@ class JobManager:
 
     def get(self, job_id: str) -> BackgroundJob | None:
         with self.lock:
-            return self.jobs.get(job_id)
+            job = self.jobs.get(job_id)
+            if job and self._dismiss_content_warning(job):
+                self._save(job)
+            return job
 
     def clear_finished(self) -> int:
         """Forget finished queue entries while preserving active work and result files."""
@@ -445,12 +463,18 @@ class JobManager:
 
     def recent(self, limit: int = 8) -> list[BackgroundJob]:
         with self.lock:
+            for job in self.jobs.values():
+                if self._dismiss_content_warning(job):
+                    self._save(job)
             ordered = list(reversed(list(self.jobs.values())))
             return [job for index, job in enumerate(ordered) if index < limit
                     or job.status in {"queued", "running", "cancelling", "interrupted"} and not job.retry_job_id]
 
     def history(self, page: int, size: int = 25) -> dict:
         with self.lock:
+            for job in self.jobs.values():
+                if self._dismiss_content_warning(job):
+                    self._save(job)
             ordered = list(reversed(list(self.jobs.values())))
             pages = max(1, (len(ordered) + size - 1) // size)
             page = max(1, min(page, pages))

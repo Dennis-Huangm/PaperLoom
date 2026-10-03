@@ -134,6 +134,34 @@ def test_restart_retains_completion_and_preserves_malformed_files(tmp_path):
         stop(manager)
 
 
+@pytest.mark.parametrize('other_warning', [False, True])
+@pytest.mark.parametrize('diagnostic', [
+    {'component': '报告数值核对', 'message': '6 个条目需核对'},
+    {'component': '报告恢复', 'message': '部分模型输入或提示词已变化，对应步骤将重新生成。'},
+])
+def test_legacy_numeric_review_warning_is_removed_on_restore(tmp_path, other_warning, diagnostic):
+    manager = JobManager(tmp_path)
+    job = manager.submit('report', 'test', lambda: tmp_path / 'report.html')
+    wait_job(manager, job)
+    stop(manager)
+    path = tmp_path / '.jobs' / f'{job.id}.json'
+    value = read_json(path)
+    value['job']['status'] = 'succeeded_with_warnings'
+    value['job']['warnings'] = [diagnostic]
+    if other_warning:
+        value['job']['warnings'].append({'component': 'LLM 深度报告', 'message': '服务调用失败'})
+    write_json(path, value)
+    manager = JobManager(tmp_path)
+    try:
+        restored = manager.get(job.id)
+        assert restored.status == ('succeeded_with_warnings' if other_warning else 'succeeded')
+        assert len(restored.warnings) == int(other_warning)
+        assert restored.detail == ('任务已完成，但有 1 个组件异常' if other_warning else '任务已完成')
+        assert read_json(path)['job']['warnings'] == restored.warnings
+    finally:
+        stop(manager)
+
+
 def test_clear_finished_records_keeps_active_jobs_and_result_files(tmp_path):
     manager = JobManager(tmp_path, max_parallel=1)
     result = tmp_path / "result.html"

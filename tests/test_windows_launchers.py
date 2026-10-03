@@ -19,7 +19,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 def project(tmp_path):
     root = tmp_path / 'project with spaces'
     (root / 'scripts').mkdir(parents=True)
-    for name in ('run.ps1', 'start_gui.ps1', 'install_windows_task.ps1'):
+    for name in ('run.ps1', 'start_gui.ps1', 'install_windows_task.ps1', 'install_gui_logon_task.ps1', 'gui_background.pyw'):
         shutil.copy2(SCRIPTS / name, root / 'scripts' / name)
     shutil.copy2(SCRIPTS.parent / 'Start-PaperLoom.cmd', root / 'Start-PaperLoom.cmd')
     (root / 'config.yaml').write_text('output_dir: run\n', encoding='utf-8')
@@ -91,3 +91,19 @@ def test_task_preflight_uses_same_python_and_failure_prevents_registration(proje
     captured = json.loads(Path(env['CAPTURE']).read_text(encoding='utf-8'))
     assert Path(captured['python']) == root / '.venv/Scripts/python.exe'
     assert captured['args'] == ['--config', str(root / 'config.yaml'), 'doctor']
+
+
+def test_windowless_logon_registration_works_with_windows_powershell_51(project, tmp_path):
+    root, env = project
+    registered = tmp_path / 'gui-task.json'
+    command = ("Import-Module ScheduledTasks\n"
+               "function Register-ScheduledTask { param($TaskName,$Action,$Trigger,$Principal,$Settings,$Description,[switch]$Force)\n"
+               f"  @{{Action=$Action;Principal=$Principal;Settings=$Settings}} | ConvertTo-Json -Depth 8 | Set-Content {quote(registered)}\n"
+               "}\n"
+               f"& {quote(root / 'scripts/install_gui_logon_task.ps1')}")
+    result = ps(command, tmp_path, env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    captured = json.loads(registered.read_text(encoding='utf-8-sig'))
+    assert Path(captured['Action']['Execute']) == Path(sys.base_prefix) / 'pythonw.exe'
+    assert 'gui_background.pyw" run --config "' in captured['Action']['Arguments']
+    assert captured['Principal']['RunLevel'] == 0  # Limited, not Highest

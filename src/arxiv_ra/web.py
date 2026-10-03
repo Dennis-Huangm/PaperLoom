@@ -1437,6 +1437,12 @@ def create_app(config_path: Path | str) -> FastAPI:
         )
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
+    @app.post("/api/jobs/parallelism", response_class=JSONResponse)
+    def update_job_parallelism(max_parallel: int = Form(..., ge=1, le=8)) -> JSONResponse:
+        save_config_settings(config_path, {"jobs": {"max_parallel": max_parallel}})
+        jobs.set_max_parallel(max_parallel)
+        return JSONResponse({"max_parallel": jobs.max_parallel})
+
     @app.delete("/api/jobs/completed", response_class=JSONResponse)
     def clear_completed_jobs() -> JSONResponse:
         return JSONResponse({"deleted": jobs.clear_finished()})

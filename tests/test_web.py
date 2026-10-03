@@ -4,6 +4,7 @@ import threading
 import time
 
 import yaml
+import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
@@ -999,6 +1000,77 @@ def test_job_manager_cancels_queued_job_without_running_it(tmp_path: Path) -> No
     assert started.wait(0.1) is False
     release.set()
     manager.executor.shutdown(wait=True)
+
+
+def test_job_parallelism_selector_saves_only_queue_setting_and_survives_restart(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    original = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    app = create_app(config_path)
+    with TestClient(app) as client:
+        page = BeautifulSoup(client.get("/generate").text, "html.parser")
+        select = page.select_one("#jobs-max-parallel")
+        assert [option["value"] for option in select.select("option")] == [str(i) for i in range(1, 9)]
+        assert select.select_one("option[selected]")["value"] == "3"
+        response = client.post("/api/jobs/parallelism", data={"max_parallel": "5"})
+        assert response.status_code == 200
+        assert response.json() == {"max_parallel": 5}
+        assert app.state.jobs.max_parallel == 5
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert saved == {**original, "jobs": {"max_parallel": 5}}
+        refreshed = BeautifulSoup(client.get("/generate").text, "html.parser")
+        assert refreshed.select_one("#jobs-max-parallel option[selected]")["value"] == "5"
+    restarted = create_app(config_path)
+    with TestClient(restarted):
+        assert restarted.state.jobs.max_parallel == 5
+
+
+@pytest.mark.parametrize("value", ["0", "9", "1.5", "invalid", None])
+def test_job_parallelism_rejects_invalid_values_without_changing_config(tmp_path: Path, value) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    original = config_path.read_bytes()
+    app = create_app(config_path)
+    with TestClient(app) as client:
+        response = client.post("/api/jobs/parallelism", data={} if value is None else {"max_parallel": value})
+        assert response.status_code == 422
+        assert config_path.read_bytes() == original
+        assert app.state.jobs.max_parallel == 3
+
+
+def test_job_parallelism_api_applies_to_pending_jobs_without_interrupting_running_jobs(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path)
+    app = create_app(config_path)
+    releases = [threading.Event() for _ in range(3)]
+    started = [threading.Event() for _ in range(3)]
+
+    def task(index):
+        def run():
+            started[index].set()
+            assert releases[index].wait(5)
+            return tmp_path / "run" / f"{index}.html"
+        return run
+
+    with TestClient(app) as client:
+        try:
+            assert client.post("/api/jobs/parallelism", data={"max_parallel": 1}).status_code == 200
+            submitted = [app.state.jobs.submit("report", f"task-{i}", task(i)) for i in range(3)]
+            assert started[0].wait(1)
+            assert not started[1].wait(0.1)
+            assert client.post("/api/jobs/parallelism", data={"max_parallel": 2}).status_code == 200
+            assert started[1].wait(1)
+            assert not started[2].is_set()
+            assert client.post("/api/jobs/parallelism", data={"max_parallel": 1}).status_code == 200
+            assert all(app.state.jobs.get(job.id).status == "running" for job in submitted[:2])
+            releases[0].set()
+            assert not started[2].wait(0.2)
+            releases[1].set()
+            assert started[2].wait(1)
+        finally:
+            for release in releases:
+                release.set()
+            app.state.jobs.executor.shutdown(wait=True)
 
 
 def test_job_cancel_api_and_generate_page_expose_cancel_state(tmp_path: Path) -> None:

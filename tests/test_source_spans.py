@@ -11,6 +11,19 @@ from arxiv_ra.report_metadata import protect_metadata
 from arxiv_ra.source_spans import source_spans, span_batches, cited_span_material
 
 
+def test_grouped_ids_expand_but_unknown_ids_never_become_valid_sources():
+    from arxiv_ra.source_spans import normalize_grouped_source_ids
+    parsed = ParsedPaper(SOURCE, [SOURCE])
+    key = next(iter(source_spans(parsed)))
+    text = f'Score 8526 [[证据ID: {key}], [证据ID: invented]]'
+    output = normalize_grouped_source_ids(text)
+    assert output == f'Score 8526 [[证据ID:{key}]] [[证据ID:invented]]'
+    published, evidence = attach_evidence(output, parsed, pdf_available=True, full_report=True)
+    assert evidence['validated_citations'] == 1
+    assert evidence['rejected_citations'] == 1
+    assert 'Score 8526' in published and 'paper.pdf#page=1' in published
+
+
 SOURCE = "Model CLIP DINOv2 MSE Invalid\nBaseline – no edit 0.9634 0.9011 10488 0\nGPT-4o mini 0.9040 0.8058 8526 14"
 
 
@@ -74,7 +87,7 @@ def test_numbered_subheading_is_not_a_result_but_unsupported_calculation_is():
     key = next(iter(source_spans(parsed)))
     _, evidence = attach_evidence(f'## 关键结果\n\n### 2. 结果\nMSE 8526 [[证据ID:{key}]]\n\n比例 13.9% [[证据ID:{key}]]',
                                   parsed, pdf_available=True, full_report=True)
-    assert [i['numbers'] for i in evidence['numeric_audit']['issues']] == [['13.9%']]
+    assert [i['numbers'] for i in evidence['numeric_audit']['prose_diagnostics']] == [['13.9%']]
 
 
 def test_synthesis_restores_literal_text_and_bounds_selected_bank():

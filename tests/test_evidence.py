@@ -37,7 +37,9 @@ def test_missing_source_results_table_is_visible_in_coverage():
     assert evidence["table_coverage"]["source_count"] == 2
     assert evidence["table_coverage"]["presented"] == [4]
     assert [item["number"] for item in evidence["table_coverage"]["missing"]] == [3]
-    assert "[Table 3](paper.pdf#page=1)" in result
+    assert '原文表格索引' not in result
+    # Publication supplies original-page displays beside the discussion;
+    # evidence review keeps the unmatched matrix in its machine-readable audit.
 
     with_crop = report.replace("## 关键结果", "## 关键结果\n\n![原文 Table 3](source-table-03.png)")
     _, cropped = attach_evidence(with_crop, ParsedPaper("", pages), pdf_available=True, full_report=True)
@@ -89,12 +91,12 @@ def test_numeric_warning_does_not_copy_formatted_claim_into_appendix():
     claim = "### 1. 质量排名\n\n**评测分析**：结果为 13.9%。"
     report, data = attach_evidence("# Paper\n\n## 关键结果\n\n" + claim,
                                   ParsedPaper("", [QUOTE]), pdf_available=True, full_report=True)
-    assert "13.9%" in report and "**[待核对]**" in report
+    assert "13.9%" in report and "**[待核对]**" not in report
     assert "### 1. 质量排名" in report
-    assert data["numeric_audit"]["issues"][0]["original"] == "**评测分析**：结果为 13.9%。"
-    assert "实验数值待核对" in report and "原陈述" not in report
-    assert data["numeric_audit"]["issues"][0]["numbers"] == ["13.9%"]
-    assert "评测分析" in data["numeric_audit"]["issues"][0]["claim"]
+    assert data["numeric_audit"]["prose_diagnostics"][0]["original"] == "**评测分析**：结果为 13.9%。"
+    assert "实验数值待核对" not in report and "原陈述" not in report
+    assert data["numeric_audit"]["prose_diagnostics"][0]["numbers"] == ["13.9%"]
+    assert "评测分析" in data["numeric_audit"]["prose_diagnostics"][0]["claim"]
 
 
 def test_numeric_table_rows_need_their_own_single_page_exact_evidence():

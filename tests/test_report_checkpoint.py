@@ -260,6 +260,36 @@ def test_failed_checkpoint_write_stops_without_marking_chunk_complete(tmp_path, 
     assert checkpoint.state["chunks_done"] == 0
 
 
+def test_annotation_checkpoint_write_failure_is_not_swallowed(tmp_path, monkeypatch):
+    config, clients, checkpoint, parsed = prepared(tmp_path)
+    clients.llm.chat.return_value = '### Table 1: Scores\n\n|Model|Score|\n|---|---|\n|A|91.2|'
+    import arxiv_ra.report_checkpoint as module
+    original = module.write_json
+    def fail(path, value):
+        if path.name == 'table-annotations.json':
+            raise OSError('disk full')
+        original(path, value)
+    monkeypatch.setattr(module, 'write_json', fail)
+    with pytest.raises(CheckpointWriteError):
+        generate(clients, checkpoint, parsed)
+
+
+@pytest.mark.parametrize('filename', ['metadata.json', 'method-figures.json'])
+def test_final_artifact_write_failure_remains_resumable(tmp_path, monkeypatch, filename):
+    config, clients = setup(tmp_path)
+    checkpoint = ReportCheckpoint(config.output_dir, config, paper())
+    import arxiv_ra.pipeline as module
+    original = module.write_json
+    def fail(path, value):
+        if path.name == filename:
+            raise OSError('disk full')
+        original(path, value)
+    monkeypatch.setattr(module, 'write_json', fail)
+    with bind_report_checkpoint(checkpoint), pytest.raises(OSError):
+        DailyPipeline(config, tmp_path, clients=clients)._process_paper(paper(), Path(config.output_dir) / '2026-10-02', False)
+    assert checkpoint.state['resumable'] is True
+
+
 def test_checkpoint_survives_abrupt_process_exit(tmp_path):
     code = '''
 import os, sys
@@ -355,3 +385,16 @@ def test_local_pdf_change_and_checkpoint_path_cannot_escape_storage(tmp_path):
     write_json(checkpoint.root / "parsed.json", record)
     assert checkpoint.restore_parsed(target) is None
     assert not target.parent.joinpath("outside.txt").exists()
+
+
+def test_changed_prompt_recomputes_without_component_warning(tmp_path):
+    from arxiv_ra.report_checkpoint import ReportCheckpoint
+    config, clients = setup(tmp_path)
+    warnings, progress = [], []
+    hooks=TaskHooks(lambda text,pct: progress.append(text), lambda *args: warnings.append(args), lambda:False)
+    with bind_task_hooks(hooks):
+        checkpoint=ReportCheckpoint(tmp_path,config,paper())
+        checkpoint.put('report',['old prompt'],'# Saved report')
+        assert checkpoint.get('report',['new prompt']) is None
+    assert not warnings
+    assert any('重新生成' in text for text in progress)

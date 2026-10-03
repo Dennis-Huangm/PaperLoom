@@ -26,8 +26,8 @@ def test_repairs_dropped_prose_citation_from_full_pdf():
     report = "## 实验设置\n\n- SVGAnim-SFT 含 123k 样本；剩余 1k 样本作为测试集。"
     parsed = ParsedPaper(page, [page])
     original, before = attach_evidence(report, parsed, pdf_available=True, full_report=True)
-    assert len(before["numeric_audit"]["issues"]) == 1
-    assert "1k 样本" in original and "**[待核对]**" in original
+    assert len(before["numeric_audit"]["prose_diagnostics"]) == 1
+    assert "1k 样本" in original and "**[待核对]**" not in original
 
     def chat(_system, prompt):
         candidates = json.loads(prompt.split("候选原文 JSON：\n", 1)[1])
@@ -40,7 +40,7 @@ def test_repairs_dropped_prose_citation_from_full_pdf():
 
     repaired = repair_numeric_citations(report, parsed, chat)
     output, after = attach_evidence(repaired, parsed, pdf_available=True, full_report=True)
-    assert not after["numeric_audit"]["issues"]
+    assert not after["numeric_audit"]["prose_diagnostics"]
     assert "1k 样本作为测试集" in output
 
 
@@ -106,7 +106,7 @@ def test_chinese_metric_name_must_match_source_metric():
     assert repair_numeric_citations(report, parsed, chat) == report
 
 
-def test_rewrites_thousands_count_to_exact_pdf_notation():
+def test_citation_repair_does_not_rewrite_numeric_notation():
     page = ("Annotation workforce includes 2 vendors and 20 annotators. "
             "Annotation cost Approx. $45k total; $6.5/SVG.")
     digest = hashlib.sha256(json.dumps([page], ensure_ascii=False).encode()).hexdigest()[:24]
@@ -124,8 +124,9 @@ def test_rewrites_thousands_count_to_exact_pdf_notation():
 
     repaired = repair_numeric_citations(report, parsed, chat)
     output, evidence = attach_evidence(repaired, parsed, pdf_available=True, full_report=True)
-    assert "$45k" in output
-    assert not evidence["numeric_audit"]["issues"]
+    assert repaired == report
+    assert '45,000 美元' in output
+    assert evidence['numeric_audit']['prose_diagnostics']
 
 
 def test_report_generation_runs_repair_before_publication(monkeypatch):

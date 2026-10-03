@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from decimal import Decimal
 
 from .evidence import TOKEN
 from .models import ParsedPaper
@@ -52,19 +51,6 @@ def _metric_values_bound(claim: str, source: str) -> bool:
                        for segment in segments):
                 return False
     return True
-
-
-def _original_or_literal_equivalent(value: tuple, original: set[tuple], source: set[tuple]) -> bool:
-    if value in original:
-        return True
-    amount, unit = value
-    if value not in source or not isinstance(amount, Decimal):
-        return False
-    if unit == "k":
-        return (amount * 1000, "") in original
-    if unit == "":
-        return (amount / 1000, "k") in original
-    return False
 
 
 def _render_segments(proposal: dict, permitted: set[str]) -> str | None:
@@ -190,7 +176,7 @@ def repair_numeric_citations(
         material = [{"issue_index": item["index"], **candidate}
                     for item in batch for candidate in candidate_bank[item["index"]]]
         prompt = (
-            "逐条检查以下报告原句与 PDF 原文。仅修订有明确原文支持的原句；不要凭相同数字借用别的模型、"
+            "逐条检查以下报告原句与 PDF 原文。只增加引用，不改写、删除或新增原句内容、数字、单位、条件和标点；不要凭相同数字借用别的模型、"
             "指标、任务、单位或实验条件。保留可支持的原数值，不添加新数值。每个分号子句紧跟覆盖其全部数字的引用。"
             "把原句拆成可独立核对的片段，分别列出候选清单中的 source_ids；原句已有的 ID 也必须列出。"
             "只返回纯文字，不要自行写 [[证据ID:...]]；程序负责插入引用。"
@@ -220,6 +206,12 @@ def repair_numeric_citations(
             replacement = _render_segments(proposal, set(allowed[index]) | old_ids)
             if replacement is None:
                 continue
+            # Citation lookup must never improve its score by deleting a claim,
+            # changing a value/unit, or losing a qualitative condition. Only
+            # whitespace and the placement/addition of citation tokens may vary.
+            plain = lambda text: re.sub(r'\s+', '', TOKEN.sub('', text))
+            if plain(replacement) != plain(original):
+                continue
             if (not replacement or len(replacement) > len(original) + 1200 or
                     "\n" in replacement or replacement.startswith("|") or
                     "定量陈述暂不展示" in replacement or current.count(original) != 1):
@@ -234,8 +226,7 @@ def repair_numeric_citations(
             new_numbers = set(numbers(TOKEN.sub("", replacement)))
             anchors = _anchors(original)
             source_text = "\n".join(allowed[index][key]["text"] for key in added)
-            if (not new_numbers or not all(_original_or_literal_equivalent(value, old_numbers,
-                    set(numbers(source_text))) for value in new_numbers)):
+            if not new_numbers or new_numbers != old_numbers:
                 continue
             if anchors and not anchors & _anchors(replacement) & _anchors(source_text):
                 continue

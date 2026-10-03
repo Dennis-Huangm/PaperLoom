@@ -58,6 +58,18 @@ def compact_report(markdown_text: str) -> str:
         result = result.replace(f"](#{anchor})", f"]({target})")
     result = result.replace("请先查看文末“实验数值核对”，再使用这些结果。",
                             "使用前请[核对原文与数值](evidence.json)。")
+    # An unavailable locator is an empty reference, not an experimental result.
+    # Keep the audit wording in saved Markdown/JSON and shorten only source
+    # cells in the reading view. Genuine conflicts and all data cells remain.
+    from .evidence import TOKEN
+    from .table_quality import label, tables
+    edits = []
+    for row in tables(result, TOKEN):
+        for header, (value, start, end) in zip(row['headers'], row['cells']):
+            if label(header) in {'依据', '原文依据', '支持依据'} and value.strip() == '当前材料缺少可定位原文依据':
+                edits.append((row['start'] + start, row['start'] + end, ' — '))
+    for start, end, replacement in sorted(edits, reverse=True):
+        result = result[:start] + replacement + result[end:]
     # Keep references compact; page information belongs in the hover title.
     return re.sub(r'\[(?:原文第 \d+ 页 · 引用 )?(\d+)\]\(paper\.pdf#page=(\d+)\)',
                   lambda m: f'[{m[1]}](paper.pdf#page={m[2]} "原文第 {m[2]} 页")', result)

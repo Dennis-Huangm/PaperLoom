@@ -46,7 +46,9 @@ $publicFiles = @(
     "config.example.yaml", "Setup-PaperLoom.cmd", "Start-PaperLoom.cmd",
     "docs/USAGE.md", "docs/CLI.md", "docs/RELEASE_NOTES.md",
     "scripts/setup_environment.ps1", "scripts/run.ps1", "scripts/start_gui.ps1",
-    "scripts/start_gui_pdf_direct.cmd", "scripts/install_windows_task.ps1"
+    "scripts/start_gui_pdf_direct.cmd", "scripts/install_windows_task.ps1",
+    "scripts/gui_background.pyw", "scripts/manage_gui.ps1",
+    "scripts/install_gui_logon_task.ps1", "scripts/switch_gui_to_logon.ps1"
 )
 $tracked = & git -C $projectRoot ls-files
 if ($LASTEXITCODE -ne 0) { throw "Release builds require a Git checkout." }

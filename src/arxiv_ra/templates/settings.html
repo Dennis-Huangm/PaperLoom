@@ -55,7 +55,7 @@
       <div class="form-columns">
         <label>时区<input name="timezone" value="{{ config.timezone }}" required><small>IANA 时区，例如 Asia/Shanghai。</small></label>
         <label>输出目录<input name="output_dir" value="{{ config.output_dir }}" required><small>修改后需重启 GUI，才能重新挂载报告浏览目录。</small></label>
-        <label>后台并行任务数<input type="number" name="jobs_max_parallel" min="1" max="8" value="{{ config.jobs.max_parallel }}"><small>保存后立即生效。建议 2–4；过高会增加模型 API、网络和内存压力。</small></label>
+        <label>后台并行任务数<select name="jobs_max_parallel">{% for count in range(1, 9) %}<option value="{{ count }}" {% if count == config.jobs.max_parallel %}selected{% endif %}>{{ count }}</option>{% endfor %}</select><small>保存后立即生效。建议 2–4；过高会增加模型 API、网络和内存压力。</small></label>
       </div>
     </section>
 

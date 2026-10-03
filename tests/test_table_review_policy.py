@@ -21,8 +21,8 @@ def test_uncited_table_does_not_suppress_prose_review():
     output, evidence = attach_evidence(report, ParsedPaper('', ['Source text.']),
                                       pdf_available=True, full_report=True)
     assert '| Alpha 5 | 91.2 |' in output
-    assert '**[待核对]** 准确率为 99.9%' in output
-    assert len(evidence['numeric_audit']['issues']) == 1
+    assert '准确率为 99.9%' in output and '**[待核对]**' not in output
+    assert len(evidence['numeric_audit']['prose_diagnostics']) == 1
 
 
 def test_pipeline_does_not_report_component_failure_for_uncited_table(tmp_path):
