@@ -109,8 +109,9 @@ def report_document(
 <header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>PaperLoom</span></a>
 <div class="report-actions"><a href="/reports"><i class="fas fa-arrow-left" aria-hidden="true"></i>返回报告库</a>{library_action}<button type="button" id="report-print"><i class="fas fa-print" aria-hidden="true"></i>打印</button><button class="toc-toggle" type="button" aria-label="展开目录" aria-expanded="false"><i class="fas fa-list" aria-hidden="true"></i>目录</button></div></header>
 <p id="report-action-message" role="status"></p>
+<button id="report-toc-toggle" type="button" aria-controls="report-toc-sidebar" aria-expanded="false" hidden><i class="fas fa-list" aria-hidden="true"></i> 目录</button>
 <button id="report-papers-toggle" type="button" aria-controls="report-papers" aria-expanded="false" hidden><i class="fas fa-book" aria-hidden="true"></i> 论文</button>
-<div class="report-shell"><aside class="report-sidebar"><p class="toc-title">CONTENTS</p><p class="toc-doc-title">{escaped_title}</p><nav class="report-toc" aria-label="报告目录">{toc}</nav></aside><article class="report-article">{body}</article>
+<div class="report-shell"><aside class="report-sidebar" id="report-toc-sidebar"><div class="report-toc-heading"><p class="toc-title">CONTENTS</p><button id="report-toc-close" type="button" aria-label="收起目录"><i class="fas fa-chevron-left" aria-hidden="true"></i> 收起</button></div><p class="toc-doc-title">{escaped_title}</p><nav class="report-toc" aria-label="报告目录">{toc}</nav></aside><article class="report-article">{body}</article>
 <aside id="report-papers" aria-label="本地报告论文" data-arxiv-id="{html.escape(catalog_arxiv_id or arxiv_id, quote=True)}" data-report-id="{html.escape(report_id, quote=True)}" hidden>
 <div id="report-papers-resize" role="separator" tabindex="0" aria-label="调整论文边栏宽度" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="440" aria-valuenow="320"></div>
 <div class="report-papers-heading"><h2>本地报告</h2><button id="report-papers-close" type="button" aria-label="收起论文边栏">收起 <i class="fas fa-chevron-right" aria-hidden="true"></i></button></div>

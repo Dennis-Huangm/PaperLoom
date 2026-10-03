@@ -13,7 +13,6 @@
   const resize = document.querySelector('#report-papers-resize');
   const wide = matchMedia('(min-width:1440px)');
   const toc = document.querySelector('.report-sidebar');
-  const tocToggle = document.querySelector('.toc-toggle');
   // Storage may be disabled; navigation still works without persistence.
   function read(storage, key) { try { return window[storage].getItem(key); } catch { return null; } }
   function save(storage, key, value) { try { window[storage].setItem(key, value); } catch { /* optional */ } }
@@ -32,8 +31,7 @@
     resize.setAttribute('aria-valuenow', String(Math.round(width)));
   }
   function closeToc() {
-    toc?.classList.remove('open');
-    tocToggle?.setAttribute('aria-expanded', 'false');
+    if (!matchMedia('(min-width:761px)').matches) document.dispatchEvent(new Event('report-toc-close'));
   }
   function setOpen(value, remember = true) {
     open = value;
@@ -122,7 +120,7 @@
     if (loaded) render();
   });
   clear.addEventListener('click', () => { search.value = ''; search.dispatchEvent(new Event('input')); search.focus(); });
-  tocToggle?.addEventListener('click', () => { if (open && !wide.matches) setOpen(false, false); });
+  document.addEventListener('report-toc-opening', () => { if (open && !wide.matches) setOpen(false, false); });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
       if (open) close();

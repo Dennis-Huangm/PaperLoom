@@ -1,4 +1,5 @@
 """Serve disposable local reports for report_smoke.cjs; no user data or services."""
+import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -34,4 +35,4 @@ for number, title in enumerate([
     (directory / "report.md").write_text(text, encoding="utf-8")
     render_report(text, directory / "report.html", title, aid)
 print(f"REPORT_PREVIEW_READY {root}", flush=True)
-uvicorn.run(create_app(config), host="127.0.0.1", port=8771, log_level="warning")
+uvicorn.run(create_app(config), host="127.0.0.1", port=int(os.environ.get("REPORT_PREVIEW_PORT", "8771")), log_level="warning")
