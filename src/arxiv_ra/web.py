@@ -255,7 +255,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                 "script-src 'self'; script-src-attr 'none'; object-src 'none'; "
                 "base-uri 'none'; frame-src 'none'; form-action 'none'"
             )
-        if request.url.path.startswith(("/settings", "/search", "/conferences", "/backups", "/schedules")):
+        if request.url.path.startswith(("/reading", "/api/reading", "/settings", "/search", "/conferences", "/backups", "/schedules")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -284,6 +284,8 @@ def create_app(config_path: Path | str) -> FastAPI:
         return base
 
     register_conference_routes(app, templates, context, current_config, jobs, output_root, project_root)
+    from .web_reading import register_reading_routes
+    register_reading_routes(app, templates, context, current_config, jobs, output_root)
 
     def raise_zotero_http_error(exc: Exception) -> None:
         if isinstance(exc, ZoteroAuthorizationRequired):

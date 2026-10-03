@@ -81,7 +81,7 @@ def test_reader_assets_change_url_after_a_script_update(tmp_path, monkeypatch):
     # Model two installed releases without changing the application's real assets.
     static = tmp_path / "static"
     static.mkdir()
-    for filename in ("report.js", "report-browser.js", "report-browser.css"):
+    for filename in ("report.js", "report-browser.js", "report-browser.css", "reading-chat.js", "reading-chat.css"):
         (static / filename).write_text("first release", encoding="utf-8")
     monkeypatch.setattr(render, "__file__", str(tmp_path / "render.py"))
 

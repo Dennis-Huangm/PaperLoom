@@ -158,7 +158,7 @@ def report_document(
 <link rel="stylesheet" href="{assets}/vendor/fontawesome/css/all.min.css">
 <link rel="icon" href="{assets}/app-icon.ico" sizes="any">
 <link rel="stylesheet" href="{assets}/vendor/katex/katex.min.css">
-<style>{REPORT_STYLE}</style><link rel="stylesheet" href="{reader_css}"></head><body>
+<style>{REPORT_STYLE}</style><link rel="stylesheet" href="{reader_css}"><link rel="stylesheet" href="{_reader_asset_url(asset_base, 'reading-chat.css')}"></head><body>
 <header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>PaperLoom</span></a>
 <div class="report-actions"><a href="/reports"><i class="fas fa-arrow-left" aria-hidden="true"></i>返回报告库</a>{library_action}<button type="button" id="report-print"><i class="fas fa-print" aria-hidden="true"></i>打印</button><button class="toc-toggle" type="button" aria-label="展开目录" aria-expanded="false"><i class="fas fa-list" aria-hidden="true"></i>目录</button></div></header>
 <p id="report-action-message" role="status"></p>
@@ -173,7 +173,7 @@ def report_document(
 <nav id="report-papers-list" aria-label="切换论文报告"></nav></aside></div>
 <button id="report-toc-backdrop" class="report-nav-backdrop" type="button" aria-label="关闭目录边栏" tabindex="-1" hidden></button>
 <button id="report-papers-backdrop" class="report-nav-backdrop" type="button" aria-label="关闭论文边栏" tabindex="-1" hidden></button>
-<script defer src="{assets}/vendor/katex/katex.min.js"></script><script defer src="{reader_script}"></script><script defer src="{browser_script}"></script></body></html>"""
+<script defer src="{assets}/vendor/katex/katex.min.js"></script><script defer src="{reader_script}"></script><script defer src="{browser_script}"></script><script defer src="{_reader_asset_url(asset_base, 'reading-chat.js')}"></script></body></html>"""
 
 def _local_asset_base(destination: Path) -> str:
     # Disk artifacts must also work when opened via file://.

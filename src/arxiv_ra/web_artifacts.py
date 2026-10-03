@@ -40,7 +40,7 @@ class ReportStaticFiles(StaticFiles):
                                catalog_arxiv_id=str(paper.get('arxiv_id') or ''))
 
     async def get_response(self, path, scope):
-        if any(part.casefold() in {".jobs", ".search", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
+        if any(part.casefold() in {".reading", ".jobs", ".search", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
             from starlette.exceptions import HTTPException
             raise HTTPException(status_code=404)
         if Path(path).name == 'index.html' and Path(path).parts and Path(path).parts[0] == 'citations':

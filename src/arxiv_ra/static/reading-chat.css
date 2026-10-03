@@ -1,0 +1,17 @@
+.reading-chat{display:flex;flex-direction:column;gap:12px;font:14px/1.6 system-ui,sans-serif;color:#273545;min-width:0}
+#reading-panel{max-width:1000px;margin:auto;background:#fff;padding:20px;border:1px solid #dce4e8;border-radius:14px}
+.reading-chat button,.reading-chat input,.reading-chat textarea,.reading-chat select{font:inherit;border:1px solid #cbd5df;border-radius:7px;padding:7px 10px;background:#fff;color:inherit;max-width:100%;box-sizing:border-box}
+.reading-chat button{cursor:pointer}.reading-chat button:hover{background:#edf4fa}.reading-chat button:disabled{opacity:.5;cursor:default}
+.reading-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.reading-toolbar select{min-width:0;flex:1}
+.reading-status{color:#536678;font-size:13px;margin:0}.reading-error{color:#a32c25}
+.reading-messages{display:flex;flex-direction:column;gap:15px;overflow:auto;max-height:60vh;min-height:180px;padding:3px;overflow-wrap:anywhere}
+.reading-message{padding:12px;border-radius:10px;background:#f3f7fa;border:1px solid #e5ebef}.reading-message.user{background:#eaf5f3}.reading-message p{margin:6px 0}.reading-message pre{overflow:auto}.reading-message table{display:block;overflow:auto}
+.reading-message small{display:block;color:#677889}.reading-message blockquote{margin:8px 0;padding-left:10px;border-left:3px solid #9ab6c8;font-size:12px}
+.reading-message img,.reading-previews img{max-width:150px;max-height:120px;object-fit:contain}.reading-previews{display:flex;gap:8px;flex-wrap:wrap}
+.reading-compose textarea{width:100%;min-height:85px;resize:vertical}.reading-selection{padding:8px;background:#fff6dc;max-height:130px;overflow:auto;white-space:pre-wrap}
+.reading-settings{display:grid;gap:8px;padding:10px;background:#f5f8fb}.reading-settings label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.reading-settings input:not([type=checkbox]){flex:1;min-width:100px}
+.reading-history{max-height:220px;overflow:auto}.reading-history button{display:block;width:100%;text-align:left;margin:5px 0}.reading-tabs{display:flex;gap:6px;margin:8px 0}.reading-tabs button{padding:7px;border:1px solid #cad7df;border-radius:6px;background:#fff;cursor:pointer}
+#report-reading{padding:0 10px 15px;overflow:auto;flex:1;min-height:0}#report-reading .reading-messages{max-height:48vh}#report-reading .reading-chat{font-size:13px}
+#report-papers.reading-active>#report-papers-search,#report-papers.reading-active>.report-papers-search-label,#report-papers.reading-active>#report-papers-status,#report-papers.reading-active>#report-papers-list,#report-papers.reading-active>#report-papers-retry,#report-papers.reading-active>#report-papers-clear{display:none!important}
+.reading-chat [hidden]{display:none!important}.reading-paper{font-weight:600}.reading-citations{font-size:12px}.reading-citations summary{cursor:pointer}
+@media print{#report-reading,.reading-tabs,.reading-open{display:none!important}}

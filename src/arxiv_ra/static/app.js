@@ -899,6 +899,12 @@ if (dataNode) {
     const reportForm = document.querySelector('#inspector-report-form');
     const reportOpen = document.querySelector('#inspector-report-open');
     const selectedId = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
+    const readingLink = document.querySelector('#inspector-reading');
+    if (readingLink) {
+      const readingQuery = new URLSearchParams(new URL(readingLink.href).search);
+      readingQuery.set('arxiv_id', selectedId);
+      readingLink.href = '/reading?' + readingQuery.toString();
+    }
     if (arxiv) arxiv.href = paper.abs_url;
     if (pdf) pdf.href = paper.pdf_url;
     if (reportId) reportId.value = selectedId;
