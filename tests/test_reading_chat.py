@@ -61,6 +61,88 @@ def wait_answer(client, sid):
     pytest.fail('answer did not finish')
 
 
+@pytest.mark.parametrize('failure', ['gateway', 'midstream', 'bad_request', 'persistent'])
+def test_reading_transport_recovery_at_http_boundary(config_path, monkeypatch, failure):
+    import httpx
+    from types import SimpleNamespace as NS
+    from openai import InternalServerError, BadRequestError
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY', 'fixture')
+    attempts = []
+    def chunk(text=None, calls=None, finish='stop'):
+        return NS(choices=[NS(delta=NS(content=text, tool_calls=calls), finish_reason=finish)])
+    def complete(_self, **kwargs):
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            return iter([chunk(calls=[NS(index=0,id='read-1',function=NS(name='metadata',arguments='{}'))],finish='tool_calls')])
+        if len(attempts) == 2 or failure == 'persistent':
+            response=httpx.Response(502 if failure != 'bad_request' else 400, request=httpx.Request('POST','https://fixture.invalid'))
+            exc=(BadRequestError if failure == 'bad_request' else InternalServerError)('private-provider-details',response=response,body=None)
+            if failure == 'midstream':
+                def interrupted():
+                    yield chunk('保留这段已输出的回答',finish=None)
+                    raise exc
+                return interrupted()
+            raise exc
+        return iter([chunk('已恢复，继续解释当前论文。')])
+    monkeypatch.setattr(Completions, 'create', complete)
+    with TestClient(create_app(config_path)) as client:
+        sid=new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'解释论文','request_id':'recover'})
+        answer=wait_answer(client,sid)['messages'][-1]
+        assert 'private-provider-details' not in str(answer)
+        if failure == 'gateway':
+            assert answer['status']=='completed',answer
+            assert len(attempts)==3
+            assert attempts[1]==attempts[2], 'Retry only the failed model request'
+            assert len(answer['steps'])==1, 'Do not repeat executed tools'
+            assert answer['steps'][0]['status']=='completed'
+        else:
+            assert answer['status']=='failed'
+            assert len(attempts)==(4 if failure == 'persistent' else 2)
+            if failure == 'persistent':assert 'HTTP 502' in answer['detail']
+            if failure == 'midstream':assert answer['text']=='保留这段已输出的回答'
+
+
+def test_tool_budget_never_reports_empty_answer_as_completed(config_path, monkeypatch):
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY','fixture')
+    def complete(_self, **kwargs):
+        call=NS(index=0,id='metadata-call',function=NS(name='metadata',arguments='{}'))
+        return iter([NS(choices=[NS(delta=NS(content=None,tool_calls=[call]),finish_reason='tool_calls')])])
+    monkeypatch.setattr(Completions,'create',complete)
+    with TestClient(create_app(config_path)) as client:
+        sid=new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'解释论文','request_id':'limit'})
+        answer=wait_answer(client,sid)['messages'][-1]
+        assert answer['status']=='failed', 'An endpoint ignoring tool_choice must not produce an empty success'
+
+
+def test_polling_while_streaming_never_races_windows_file_replace(config_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY','fixture')
+    def complete(_self, **kwargs):
+        for _ in range(100):
+            yield NS(choices=[NS(delta=NS(content='流式文字',tool_calls=None),finish_reason=None)])
+            time.sleep(.001)
+        yield NS(choices=[NS(delta=NS(content=None,tool_calls=None),finish_reason='stop')])
+    monkeypatch.setattr(Completions,'create',complete)
+    with TestClient(create_app(config_path)) as client:
+        sid=new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'解释论文','request_id':'stream'})
+        def poll():
+            for _ in range(30):
+                response=client.get('/api/reading/sessions/'+sid)
+                assert response.status_code==200
+                assert response.json()['id']==sid
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for future in [pool.submit(poll) for _ in range(4)]:future.result()
+        assert wait_answer(client,sid)['messages'][-1]['status']=='completed'
+
+
 def test_agent_reads_pdf_and_persists_verified_evidence(config_path, monkeypatch):
     import fitz
     import json
@@ -200,7 +282,7 @@ def test_budget_tool_scope_and_unverified_links(config_path, monkeypatch):
         if kwargs['tool_choice'] != 'none':
             call = NS(index=0, id='scope', function=NS(name='read_pages', arguments='{"start":1,"end":1,"path":"another.pdf"}'))
             return iter([NS(choices=[NS(delta=NS(content=None, tool_calls=[call]), finish_reason='tool_calls')])])
-        assert '越界' in kwargs['messages'][-1]['content']
+        assert any('越界' in m.get('content', '') for m in kwargs['messages'] if m['role'] == 'tool')
         return iter([NS(choices=[NS(delta=NS(content='证据不足。[[来源:invented]] [原文](https://arxiv.org/pdf/fake#page=99)', tool_calls=None), finish_reason='stop')])])
     monkeypatch.setattr(Completions, 'create', complete)
     with TestClient(create_app(config_path)) as client:

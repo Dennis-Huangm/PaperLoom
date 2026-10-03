@@ -21,14 +21,15 @@
     host = document.createElement('div'); host.id = 'report-reading'; host.hidden = true;
     Object.assign(host.dataset, reportButton ? reportButton.dataset : papers.dataset);
     papers.append(host);
-    listTab.onclick = () => {host.hidden = true; papers.classList.remove('reading-active');};
-    chatTab.onclick = () => {host.hidden = false; papers.classList.add('reading-active');};
+    listTab.onclick = () => {host.hidden = true; papers.classList.remove('reading-active'); listTab.classList.add('active'); chatTab.classList.remove('active'); papers.querySelector('h2').textContent = '本地报告';};
+    chatTab.onclick = () => {host.hidden = false; papers.classList.add('reading-active'); chatTab.classList.add('active'); listTab.classList.remove('active'); papers.querySelector('h2').textContent = '论文助手';};
+    listTab.classList.add('active');
     const open = document.createElement('button'); open.className = 'reading-open'; open.textContent = '阅读对话 / 提问选区';
     document.querySelector('.report-actions').append(open);
     open.onclick = async () => {
-      const selection = window.getSelection();
+      const selectedRange = window.getSelection();
       const article = document.querySelector('.report-article');
-      const text = selection && article.contains(selection.anchorNode) && article.contains(selection.focusNode) ? selection.toString() : '';
+      const text = selectedRange && article.contains(selectedRange.anchorNode) && article.contains(selectedRange.focusNode) ? selectedRange.toString() : '';
       if (papers.hidden) document.querySelector('#report-papers-toggle').click();
       chatTab.click();
       try {
@@ -46,30 +47,46 @@
   }
   host.classList.add('reading-chat');
   // This is fixed application markup. All external text is assigned via textContent.
-  host.innerHTML = `<div class="reading-paper"></div>
-    <div class="reading-toolbar"><button type="button" data-action="history">历史记录</button><button type="button" data-action="new">新对话</button><button type="button" data-action="rename">重命名</button><button type="button" data-action="delete">删除</button></div>
-    <section class="reading-history" hidden><div class="reading-toolbar"><select aria-label="历史范围"><option value="current">当前论文</option><option value="all">全部论文</option></select><input type="search" placeholder="搜索会话标题" aria-label="搜索会话标题"></div><div class="reading-history-list"></div></section>
-    <details><summary>阅读模型设置</summary><form class="reading-settings">
+  host.innerHTML = `<header class="reading-header"><div class="reading-brand"><span class="reading-brand-icon" aria-hidden="true">✦</span><strong>论文助手</strong><span class="reading-header-note">和论文深入聊聊</span></div>
+    <div class="reading-toolbar"><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button><details class="reading-menu"><summary aria-label="会话操作" title="会话操作">•••</summary><div><button type="button" data-action="rename">重命名会话</button><button type="button" data-action="delete">删除会话</button></div></details></div></header>
+    <div class="reading-paper" title="当前论文">选择一篇论文，开始阅读</div>
+    <section class="reading-history" hidden><div class="reading-history-heading"><strong>会话记录</strong><button type="button" data-action="close-history" aria-label="收起历史记录">×</button></div><div class="reading-history-filters"><select aria-label="历史范围"><option value="current">当前论文</option><option value="all">全部论文</option></select><input type="search" placeholder="搜索会话…" aria-label="搜索会话标题"></div><div class="reading-history-list"></div><form class="reading-start"><label for="reading-aid">从论文开始</label><div><input id="reading-aid" aria-label="arXiv ID" placeholder="arXiv ID，如 2603.29852v2" required><button title="打开论文" aria-label="打开论文">↗</button></div></form></section>
+    <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>阅读模型设置</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div><form class="reading-settings">
     <label><input type="checkbox" name="independent">独立配置阅读模型</label>
     <label>模型<input name="model" maxlength="200"></label><label>服务地址<input name="base_url" placeholder="默认官方接口"></label>
     <label>API Key<input type="password" name="api_key" autocomplete="new-password" placeholder="留空保留已有密钥"></label>
     <label><input type="checkbox" name="clear_key">清除独立密钥</label><label><input type="checkbox" name="images">模型支持图片</label>
-    <label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button>保存设置</button></form></details>
+    <label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button class="reading-primary">保存设置</button></form></dialog>
     <p class="reading-status" role="status"></p><div class="reading-messages" aria-live="polite"></div>
-    <form class="reading-compose"><div class="reading-selection" hidden><span></span><button type="button">移除选区</button></div>
-    <div class="reading-previews"></div><textarea aria-label="向论文提问" placeholder="哪里没看懂？可以继续追问，也可以粘贴截图。" maxlength="16000"></textarea>
-    <div class="reading-toolbar"><label>图片<input type="file" accept="image/png,image/jpeg,image/webp" multiple></label><button type="submit">发送</button><button type="button" data-action="stop">停止</button><button type="button" data-action="retry">重试回答</button></div></form>`;
+    <form class="reading-compose"><div class="reading-suggestions"><button type="button" data-prompt="请查阅原文，按研究问题、核心方法、实验结果和局限总结这篇论文，并给出原文依据。">总结论文</button><button type="button" data-prompt="请查阅论文的方法与实验部分，梳理最值得关注的内容，并解释关键概念，提供原文依据。">论文重点</button><button type="button" data-action="explain">解释选区</button></div><div class="reading-input-box"><div class="reading-selection" hidden><span></span><button type="button" title="移除选区" aria-label="移除选区">×</button></div>
+    <div class="reading-previews"></div><textarea aria-label="向论文提问" placeholder="向论文提问，也可以粘贴图表截图…" maxlength="16000" rows="2"></textarea>
+    <div class="reading-input-actions"><span>Enter 发送 · Shift + Enter 换行</span><button type="button" data-action="retry" hidden>重试回答</button><button type="button" data-action="stop" hidden>■ 停止</button><button type="submit" class="reading-send" title="发送问题" aria-label="发送问题">↑</button></div></div>
+    <div class="reading-footer"><button type="button" data-action="new">＋ 新对话</button><button type="button" data-action="attach" title="附加图片，也可直接粘贴截图">＋ 图片</button><input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><button type="button" class="reading-model-label" data-action="model" title="阅读模型设置">加载模型…</button><span class="reading-grounded" title="按需查阅当前论文原文">原文查阅</span></div></form>`;
   const $ = selector => host.querySelector(selector);
+  if(papers)$('.reading-brand strong').textContent='对话';
   const input = $('textarea'), status = $('.reading-status'), messages = $('.reading-messages');
   const compose = $('.reading-compose'), settingsForm = $('.reading-settings');
   const selectionBox = $('.reading-selection'), history = $('.reading-history');
   let session = null, selection = '', pictures = [], requestToken = null, busy = false, generation = 0, lastRender = '';
   let currentAid = host.dataset.arxivId || '', currentReport = host.dataset.reportId || '';
   let profile = '';
+  let historyRequest = 0;
+  const labels = {queued:'等待开始',running:'正在回答',completed:'',failed:'回答未完成',stopped:'已停止',interrupted:'已中断'};
+  const expanded = new Set();
+  function setHistory(open) {history.hidden = !open; host.classList.toggle('history-open', open); $('[data-action=history]').setAttribute('aria-expanded', String(open)); if(open) listHistory().catch(error);}
+  const settingsDialog = $('.reading-settings-dialog');
+  $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => settingsDialog.showModal();
+  $('[data-action=close-settings]').onclick = () => settingsDialog.close();
+  $('[data-action=close-history]').onclick = () => setHistory(false);
+  $('[data-action=attach]').onclick = () => compose.querySelector('[type=file]').click();
+  input.addEventListener('keydown', event => {if(event.key === 'Enter' && !event.shiftKey && !event.isComposing) {event.preventDefault(); if(!compose.querySelector('[type=submit]').disabled)compose.requestSubmit();}});
+  host.querySelectorAll('[data-prompt]').forEach(button => {button.onclick = () => {input.value = button.dataset.prompt; input.oninput(); input.focus();};});
+  $('[data-action=explain]').onclick = () => {if(!selection) {status.textContent='先在报告正文中选中文字，再点击“阅读对话 / 提问选区”。';return;} input.value='请结合原文解释这段选区，说明关键概念及其在论文中的作用。'; input.oninput(); input.focus();};
+  $('.reading-start').onsubmit = event => {event.preventDefault();saveDraft(); generation++; session=null; currentAid=$('#reading-aid').value.trim(); currentReport=''; selection=''; pictures=[]; input.value='';showSelection();showPictures();start().catch(error);};
   const draftKey = () => 'paperloom.reading.draft:' + (session?.id || currentAid) + ':' + currentReport;
   function saveDraft() {try {sessionStorage.setItem(draftKey(), JSON.stringify({text: input.value, selection, report: currentReport}));} catch { /* optional */ }}
   function restoreDraft() {try {const d = JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); input.value = d.text || ''; selection = d.report === currentReport ? d.selection || '' : ''; showSelection();} catch { /* optional */ }}
-  function showSelection() {selectionBox.hidden = !selection; selectionBox.querySelector('span').textContent = selection;}
+  function showSelection() {selectionBox.hidden = !selection; selectionBox.querySelector('span').textContent = selection; $('[data-action=explain]').disabled = !selection;}
   function setSelection(text) {selection = text.slice(0, 20000); showSelection(); saveDraft();}
   selectionBox.querySelector('button').onclick = () => setSelection('');
   input.oninput = () => {requestToken = null; saveDraft();};
@@ -86,31 +103,58 @@
   function render(value) {
     session = value;
     $('.reading-paper').textContent = value.paper.title + ' · v' + value.paper.version;
+    $('.reading-paper').title = value.paper.title + ' · v' + value.paper.version;
     const active = value.messages.some(m => ['queued', 'running'].includes(m.status));
     compose.querySelector('[type=submit]').disabled = active || busy;
     $('[data-action=stop]').disabled = !active;
+    $('[data-action=stop]').hidden = !active;
+    compose.querySelector('[type=submit]').hidden = active;
     const last = value.messages.at(-1);
     $('[data-action=retry]').disabled = !last || !['failed', 'stopped', 'interrupted'].includes(last.status);
+    $('[data-action=retry]').hidden = $('[data-action=retry]').disabled;
+    $('[data-action=rename]').disabled = $('[data-action=delete]').disabled = !session;
     const stamp = JSON.stringify(value.messages);
     if (stamp === lastRender) return;
     status.classList.remove('reading-error');
-    status.textContent = (last?.detail || '可以开始提问') + (last?.summarized ? ' · 较早讨论已使用摘录摘要' : '');
-    if (last?.material) status.textContent += ` · 已读取 ${last.material.read_pages?.length || 0}/${last.material.total_pages || '?'} 页 · ${last.material.source_note || ''}`;
+    status.textContent = active ? (last?.detail || '正在准备回答…') : '';
+    status.classList.toggle('is-active', active);
     lastRender = stamp;
     const nearEnd = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 100;
     messages.replaceChildren();
+    if(!value.messages.length) showWelcome();
     for (const message of value.messages) {
       const box = textNode('div', '', 'reading-message ' + message.role);
-      box.append(textNode('small', message.role === 'user' ? '你' : `${message.model} · ${message.status}`));
+      const meta = textNode('div', '', 'reading-message-meta');
+      meta.append(textNode('span', message.role === 'user' ? 'YOU' : 'AI', 'reading-role'));
+      if(message.role === 'assistant') meta.append(textNode('span', labels[message.status] || '', 'reading-message-state'));
+      box.append(meta);
+      if(message.role === 'assistant' && (message.steps?.length || message.material)) {
+        const trace = document.createElement('details'); trace.className='reading-trace';
+        const key = message.id + ':trace'; trace.open=expanded.has(key);
+        const material=message.material;
+        trace.append(textNode('summary', '查阅过程' + (material?.total_pages ? ` · 已读 ${material.read_pages?.length || 0}/${material.total_pages} 页` : '')));
+        for(const step of message.steps || [])trace.append(textNode('div', `${step.status === 'failed' ? '!' : step.status === 'running' ? '◌' : '✓'} ${step.label}${step.summary ? ' · '+step.summary : ''}`, 'reading-step '+step.status));
+        if(material?.source_note)trace.append(textNode('small',material.source_note));
+        trace.ontoggle=()=>{if(trace.open)expanded.add(key);else expanded.delete(key);}; box.append(trace);
+      }
       if (message.selection) box.append(textNode('blockquote', message.selection + (message.report?.missing ? '（来源报告已删除）' : '')));
       const body = document.createElement('div');
       if (message.role === 'assistant' && message.html) body.innerHTML = message.html; // server-sanitized Markdown only
       else body.textContent = message.text;
       box.append(body);
+      if(message.role === 'assistant' && ['failed','stopped','interrupted'].includes(message.status))box.append(textNode('div',message.detail || labels[message.status],'reading-failure'));
+      if(message.role === 'assistant' && message.status === 'completed' && message.limited)box.append(textNode('small','本轮已达查阅或输出上限，可以继续追问。'));
+      if(message.role === 'assistant' && !message.text && ['running','queued'].includes(message.status))box.append(textNode('div','正在查阅并整理回答…','reading-thinking'));
+      if(message.role === 'assistant' && message.text) {
+        const actions=textNode('div','','reading-answer-actions'); const copy=textNode('button','复制回答');copy.type='button';
+        copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.textContent='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
+        actions.append(copy,textNode('span',message.model || '')); box.append(actions);
+      }
       for (const data of message.images || []) {const img = document.createElement('img'); img.src = data; img.alt = '本条问题图片'; box.append(img);}
       if (message.citations?.length) {
         const details = document.createElement('details'); details.className = 'reading-citations';
-        details.append(textNode('summary', '查看原文摘录'));
+        details.append(textNode('summary', `原文依据 · ${message.citations.length} 处`));
+        const key=message.id+':sources';details.open=expanded.has(key);details.ontoggle=()=>{if(details.open)expanded.add(key);else expanded.delete(key);};
         for (const c of message.citations) {
           const quote = textNode('blockquote', c.quote + '\n' + c.source_note);
           if (c.available) {const a = textNode('a', `原文第 ${c.page} 页`); a.href = c.url; a.target = '_blank'; a.rel = 'noopener'; quote.append(a);}
@@ -126,6 +170,13 @@
     });
     if (nearEnd) messages.scrollTop = messages.scrollHeight;
   }
+  function showWelcome() {
+    const empty = textNode('div','','reading-welcome');
+    empty.append(textNode('div','✦','reading-welcome-icon'),textNode('h2','从一个问题，读懂这篇论文'),textNode('p','解释概念、拆解方法、核实实验结论。\n回答会按需查阅原文，并保留可追溯的依据。'));
+    const tips=textNode('div','','reading-welcome-tips');
+    for(const prompt of ['这篇论文解决了什么问题？','核心方法为什么有效？','实验结论有哪些局限？']) {const button=textNode('button',prompt+' ↗');button.type='button';button.onclick=()=>{input.value=prompt;input.oninput();input.focus();};tips.append(button);}
+    empty.append(tips);messages.append(empty);
+  }
   async function refresh() {
     if (!session) return;
     const sid = session.id, ticket = generation;
@@ -133,7 +184,7 @@
     if (ticket === generation && session?.id === sid) render(value);
   }
   async function start(fresh = false) {
-    if (!currentAid) {history.hidden = false; history.querySelector('select').value = 'all'; await listHistory(); return;}
+    if (!currentAid) {history.querySelector('select').value = 'all'; setHistory(true); messages.replaceChildren();showWelcome();return;}
     busy = true;
     const ticket = ++generation;
     status.textContent = '正在确认论文版本…';
@@ -142,22 +193,27 @@
         origin: host.dataset.origin || '', source_date: host.dataset.sourceDate || ''});
       if (ticket !== generation) return;
       session = value; await refresh();
+      if(!history.hidden)await listHistory();
       // Keep a question drafted before version resolution.
       if (!input.value) restoreDraft();
-    } finally {busy = false; if(session) compose.querySelector('[type=submit]').disabled = session.messages.some(m => ['queued','running'].includes(m.status));}
+    } finally {busy = false; if(session) compose.querySelector('[type=submit]').disabled = !!session.messages?.some(m => ['queued','running'].includes(m.status));}
   }
   async function listHistory() {
+    const request = ++historyRequest;
     const aid = history.querySelector('select').value === 'current' ? currentAid : '';
     const q = history.querySelector('input').value;
     const rows = await api('/sessions?' + new URLSearchParams({arxiv_id: aid, q}));
+    if(request !== historyRequest)return;
     const list = $('.reading-history-list'); list.replaceChildren();
     for (const row of rows) {
-      const button = textNode('button', `${row.title} · v${row.paper.version} · ${new Date(row.updated_at).toLocaleString()}`);
+      const button = textNode('button', '', 'reading-history-row');
+      button.classList.toggle('selected', row.id === session?.id);
+      button.append(textNode('strong',row.title),textNode('span',`v${row.paper.version} · ${new Date(row.updated_at).toLocaleString([], {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}`));button.title=row.title+'\n'+row.paper.title;
       button.onclick = async () => {
         saveDraft(); generation++; session = row;
         currentAid = row.paper.arxiv_id + 'v' + row.paper.version;
         currentReport = ''; selection = ''; pictures = []; showPictures(); input.value = ''; restoreDraft();
-        try {await refresh();} catch(e) {error(e);}
+        try {lastRender='';await refresh();if(papers || innerWidth < 850)setHistory(false);else await listHistory();} catch(e) {error(e);}
       };
       list.append(button);
     }
@@ -165,12 +221,12 @@
   }
   history.querySelector('select').onchange = () => listHistory().catch(error);
   history.querySelector('input').oninput = () => listHistory().catch(error);
-  $('[data-action=history]').onclick = () => {history.hidden = !history.hidden; if(!history.hidden) listHistory().catch(error);};
+  $('[data-action=history]').onclick = () => setHistory(history.hidden);
   $('[data-action=new]').onclick = () => {saveDraft(); input.value = ''; selection = ''; pictures = []; showSelection(); showPictures(); start(true).catch(error);};
   $('[data-action=rename]').onclick = async () => {if(!session)return; const title=prompt('会话标题',session.title); if(title)try{await api('/sessions/'+session.id,'PATCH',{title}); await refresh(); await listHistory();}catch(e){error(e);}};
   $('[data-action=delete]').onclick = async () => {
     if(!session || !confirm('删除此会话及其专属图片？正在生成的回答也会停止。'))return;
-    try {await api('/sessions/'+session.id,'DELETE'); generation++; session=null; messages.replaceChildren(); lastRender=''; status.textContent='会话已删除'; await listHistory();}catch(e){error(e);}
+    try {const sid=session.id;await api('/sessions/'+sid,'DELETE');if(session?.id!==sid)return; generation++; session=null; input.value='';selection='';pictures=[];showSelection();showPictures();messages.replaceChildren();showWelcome(); lastRender=''; status.textContent='会话已删除';setHistory(true);}catch(e){error(e);}
   };
   $('[data-action=stop]').onclick = () => session && api('/sessions/'+session.id+'/stop','POST',{}).then(refresh).catch(error);
   async function send(payload, preserveDraft = false) {
@@ -187,7 +243,8 @@
         if(pictures === submittedPictures)pictures=[];
       }
       requestToken=null; showSelection(); showPictures(); saveDraft(); await refresh();
-    } finally {busy=false; compose.querySelector('[type=submit]').disabled=session?.messages.some(m=>['queued','running'].includes(m.status));}
+      if(!history.hidden)await listHistory();
+    } finally {busy=false; compose.querySelector('[type=submit]').disabled=!!session?.messages?.some(m=>['queued','running'].includes(m.status));}
   }
   compose.onsubmit = async event => {
     event.preventDefault(); if(!input.value.trim())return;
@@ -219,13 +276,14 @@
     event.preventDefault();const form=new FormData(settingsForm);const body=Object.fromEntries(form);
     for(const key of ['independent','images','clear_key'])body[key]=form.has(key);
     for(const key of ['max_tools','max_tokens'])body[key]=Number(body[key]);
-    try{await api('/settings','PUT',body);settingsForm.elements.api_key.value='';status.textContent='阅读设置已保存，应用于下一轮回答';}catch(e){error(e);}
+    try{const saved=await api('/settings','PUT',body);settingsForm.elements.api_key.value='';$('.reading-model-label').textContent=saved.model;settingsDialog.close();status.textContent='阅读设置已保存，应用于下一轮回答';}catch(e){error(e);}
   };
   restoreDraft();
   api('/settings').then(value=>{
     profile=value.profile_id;
+    $('.reading-model-label').textContent=value.model;
     for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
-    return start();
+    return start().then(()=>{if(!papers && innerWidth >= 850)setHistory(true);});
   }).catch(error);
   setInterval(()=>{if(session && !busy)refresh().catch(error);},1000);
 })();

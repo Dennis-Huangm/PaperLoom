@@ -16,7 +16,7 @@ from .research_clients import ResearchClients
 from .utils import read_json, write_json
 from .task_runtime import TaskCancelled, task_checkpoint
 from .reading_sources import ReadingSources
-from .reading_model import run_reading
+from .reading_model import run_reading, create_completion, failure_message
 
 
 def timestamp():
@@ -45,14 +45,18 @@ class ReadingService:
         return self.folder / f'{sid}.json'
 
     def get(self, sid):
-        value = read_json(self.path(sid), None)
+        # Windows can reject opening a file while its atomic replacement completes.
+        # Polling readers must share the writer lock, not just other writers.
+        with self.lock:
+            value = read_json(self.path(sid), None)
         if value is None:
             raise LookupError('阅读会话不存在')
         return value
 
     def save(self, value):
-        value['updated_at'] = timestamp()
-        write_json(self.path(value['id']), value)
+        with self.lock:
+            value['updated_at'] = timestamp()
+            write_json(self.path(value['id']), value)
 
     def present(self, sid):
         from .render import markdown_with_math
@@ -206,6 +210,8 @@ class ReadingService:
                     'request_id': request_id, 'created_at': timestamp(), 'retry_of': retry_of}
             answer = {'id': uuid.uuid4().hex, 'role': 'assistant', 'text': '', 'status': 'queued',
                       'model': model, 'citations': [], 'created_at': timestamp(), 'detail': '排队中'}
+            if not value['messages'] and value['title'] == value['paper']['title']:
+                value['title'] = ' '.join(text.split())[:60]
             value['messages'].extend([user, answer])
             self.save(value)
             try:
@@ -260,7 +266,7 @@ class ReadingService:
                     update(detail='正在整理较早讨论')
                     allowance = min(1000, settings['max_tokens'] // 3)
                     output_budget -= allowance
-                    result = client.with_options(max_retries=0, timeout=60).chat.completions.create(
+                    result = create_completion(client, update, checkpoint,
                         model=model, messages=[{'role': 'system', 'content':
                             '压缩阅读讨论，保留用户问题、已解释概念、未决问题和引用 ID。不要创造事实。摘要不是原文证据。'},
                             {'role': 'user', 'content': text}], max_tokens=allowance)
@@ -291,7 +297,7 @@ class ReadingService:
             raise
         except Exception as exc:
             # SDK exceptions may include request details; do not persist credentials or raw responses.
-            message = f'阅读失败（{type(exc).__name__}）。请检查模型的工具／图片能力及网络连接后重试。'
+            message = failure_message(exc)
             try:
                 update(status='failed', detail=message)
             except TaskCancelled:
