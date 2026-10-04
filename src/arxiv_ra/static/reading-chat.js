@@ -200,7 +200,11 @@ ${f.text}`));row.append(pieces);}
       if(message.role === 'assistant' && message.reasoning) {
         const thinking=document.createElement('details');thinking.className='reading-reasoning';
         thinking.open=['running','queued'].includes(message.status) || expanded.has(message.id+':reasoning');
-        thinking.append(textNode('summary','思考过程 · 模型返回'),textNode('div',message.reasoning));
+        const content=document.createElement('div');
+        for(const paragraph of message.reasoning.trim().split(/\n\s*\n/)) {
+          if(paragraph.trim())content.append(textNode('p',paragraph.trim()));
+        }
+        thinking.append(textNode('summary','思考过程 · 模型返回'),content);
         thinking.ontoggle=()=>{if(thinking.open)expanded.add(message.id+':reasoning');else expanded.delete(message.id+':reasoning');};box.append(thinking);
       }
       if (message.selection) box.append(textNode('blockquote', message.selection + (message.report?.missing ? '（来源报告已删除）' : '')));
