@@ -98,7 +98,7 @@
   function textNode(tag, text, cls) {const node = document.createElement(tag); node.textContent = text; if(cls) node.className = cls; return node;}
   function iconButton(label, name) {
     const button=textNode('button','','reading-icon-button');button.type='button';button.title=label;button.setAttribute('aria-label',label);
-    const paths={copy:'M9 9h11v11H9z M15 5V3H3v12h2',undo:'M9 5 4 10l5 5 M4 10h10a6 6 0 0 1 6 6v3',close:'m6 6 12 12 M6 18 18 6'};
+    const paths={copy:'M9 9h11v11H9z M15 5V3H3v12h2',undo:'M9 5 4 10l5 5 M4 10h10a6 6 0 0 1 6 6v3',close:'m6 6 12 12 M6 18 18 6',edit:'m16 3 5 5 M4 16 17 3l4 4L8 20H4z',trash:'M3 6h18 M9 6V3h6v3 M5 6l1 15h12l1-15 M10 10v7 M14 10v7'};
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
     const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[name]);svg.append(path);button.append(svg);return button;
   }
@@ -130,7 +130,7 @@
     const current=()=>session?.id===sid && generation===ticket;
     source.addEventListener('snapshot',e=>{if(current())render(JSON.parse(e.data));});
     source.addEventListener('update',e=>{if(!current())return;const update=JSON.parse(e.data),changed=new Map(update.messages.map(m=>[m.id,m]));render({...session,...update,messages:session.messages.map(m=>changed.get(m.id)||m)});});
-    source.addEventListener('deleted',()=>{source.close();if(current()){session=null;messages.replaceChildren();showWelcome();status.textContent='会话已删除';}});
+    source.addEventListener('deleted',()=>{source.close();if(current()){clearDeletedSession();}});
     source.onerror=()=>{if(current())status.textContent='连接暂时中断，正在恢复实时更新…';};
   }
   function render(value) {
@@ -296,8 +296,10 @@ ${f.text}`));row.append(pieces);}
     if(request !== historyRequest)return;
     const list = $('.reading-history-list'); list.replaceChildren();
     for (const row of rows) {
-      const button = textNode('button', '', 'reading-history-row');
-      button.classList.toggle('selected', row.id === session?.id);
+      const item = textNode('div', '', 'reading-history-row');
+      item.classList.toggle('selected', row.id === session?.id);
+      const button = textNode('button', '', 'reading-history-open');
+      button.type='button';
       button.append(textNode('strong',row.title),textNode('span',`v${row.paper.version} · ${new Date(row.updated_at).toLocaleString([], {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}`));button.title=row.title+'\n'+row.paper.title;
       button.onclick = async () => {
         saveDraft(); generation++; session = row;
@@ -305,7 +307,11 @@ ${f.text}`));row.append(pieces);}
         currentReport = ''; selection = ''; pictures = []; showPictures(); input.value = ''; restoreDraft();
         try {lastRender='';await refresh();if(papers || innerWidth < 850)setHistory(false);else await listHistory();} catch(e) {error(e);}
       };
-      list.append(button);
+      const actions=textNode('div','','reading-history-actions');
+      const rename=iconButton('重命名会话','edit'),remove=iconButton('删除会话','trash');
+      remove.classList.add('reading-history-delete');
+      rename.onclick=()=>renameSession(row);remove.onclick=()=>deleteSession(row);
+      actions.append(rename,remove);item.append(button,actions);list.append(item);
     }
     if(!rows.length) list.textContent = '还没有会话';
   }
@@ -313,11 +319,26 @@ ${f.text}`));row.append(pieces);}
   history.querySelector('input').oninput = () => listHistory().catch(error);
   $('[data-action=history]').onclick = () => setHistory(history.hidden);
   $('[data-action=new]').onclick = () => {saveDraft(); input.value = ''; selection = ''; pictures = []; showSelection(); showPictures(); start(true).catch(error);};
-  $('[data-action=rename]').onclick = async () => {if(!session)return; const title=prompt('会话标题',session.title); if(title)try{await api('/sessions/'+session.id,'PATCH',{title}); await refresh(); await listHistory();}catch(e){error(e);}};
-  $('[data-action=delete]').onclick = async () => {
-    if(!session || !confirm('删除此会话及其专属图片？正在生成的回答也会停止。'))return;
-    try {const sid=session.id;await api('/sessions/'+sid,'DELETE');if(session?.id!==sid)return; generation++; session=null;watchSession(); input.value='';selection='';pictures=[];showSelection();showPictures();messages.replaceChildren();showWelcome(); lastRender=''; status.textContent='会话已删除';setHistory(true);}catch(e){error(e);}
-  };
+  async function renameSession(row) {
+    const title=prompt('会话标题',row.title);
+    if(!title?.trim())return;
+    try {await api('/sessions/'+row.id,'PATCH',{title:title.trim()});if(session?.id===row.id)await refresh();await listHistory();}catch(e){error(e);}
+  }
+  async function deleteSession(row) {
+    if(!confirm('删除会话“'+row.title+'”及其专属图片？正在生成的回答也会停止。'))return;
+    try {
+      await api('/sessions/'+row.id,'DELETE');
+      if(session?.id===row.id)clearDeletedSession();
+      await listHistory();
+    }catch(e){error(e);}
+  }
+  function clearDeletedSession() {
+    generation++;session=null;watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
+    showSelection();showPictures();messages.replaceChildren();showWelcome();lastRender='';status.textContent='会话已删除';
+    $('[data-action=rename]').disabled=$('[data-action=delete]').disabled=true;setHistory(true);
+  }
+  $('[data-action=rename]').onclick = () => session && renameSession(session);
+  $('[data-action=delete]').onclick = () => session && deleteSession(session);
   $('[data-action=stop]').onclick = () => session && api('/sessions/'+session.id+'/stop','POST',{}).then(refresh).catch(error);
   async function send(payload, preserveDraft = false) {
     if(busy)return;

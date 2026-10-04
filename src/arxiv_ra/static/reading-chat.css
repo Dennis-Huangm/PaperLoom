@@ -43,3 +43,10 @@
 .reading-chat .reading-icon-button{width:28px;height:28px;padding:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted,#69727d)}.reading-icon-button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.reading-answer-actions{gap:4px}.reading-answer-actions>span{margin-left:8px}
 .reading-context-info{font-size:11px;background:#fff3e7;padding:7px 10px;border:1px solid #ecd9c7;border-radius:6px;color:#9b571d}.reading-step details{padding:4px 0;font-size:11px}.reading-step blockquote{max-height:150px;overflow:auto;font-size:11px;color:#69727d}.reading-reasoning{margin:8px 0 16px;color:#69727d;font-size:12px}.reading-reasoning summary{cursor:pointer;font-weight:600;color:#a95108}.reading-reasoning>div{white-space:pre-wrap;border-left:2px solid #eadbcb;margin:10px 0 0 5px;padding-left:12px;line-height:1.7}.reading-message.user{border-radius:10px}.reading-welcome-icon{border-radius:12px}
 @media(min-width:1100px){body.reading-dock-open .report-topbar{right:auto}}
+
+/* Keep history actions separate from the button that opens the conversation. */
+.reading-history-row{flex-direction:row;align-items:center;gap:4px;padding:3px!important}
+.reading-history-open{display:flex;flex:1;min-width:0;flex-direction:column;gap:7px;text-align:left;white-space:normal!important;padding:9px!important}
+.reading-history-actions{display:flex;flex-shrink:0;gap:1px;padding-right:3px}
+.reading-history-actions .reading-icon-button{width:28px;height:30px;padding:5px;color:var(--rc-muted)}
+.reading-history-actions .reading-history-delete:hover{color:#b13f32;background:#fff0ec}

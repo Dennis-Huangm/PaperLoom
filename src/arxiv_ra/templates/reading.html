@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}阅读对话 · PaperLoom{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/reading-chat.css?v=20261004-reading-stream">
+<link rel="stylesheet" href="/static/reading-chat.css?v=20261004-history-actions">
 <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
 <section class="reading-page-heading"><h1>论文阅读对话</h1><p>让每一个问题，都回到原文中找到答案。</p></section>
 <div id="reading-panel" data-arxiv-id="{{ arxiv_id }}" data-report-id="{{ report_id }}" data-origin="{{ origin }}" data-source-date="{{ source_date }}" data-profile-id="{{ config.profile_id }}"></div>
 <script defer src="/static/vendor/katex/katex.min.js"></script>
-<script defer src="/static/reading-chat.js?v=20261004-reading-stream"></script>
+<script defer src="/static/reading-chat.js?v=20261004-history-actions"></script>
 {% endblock %}
