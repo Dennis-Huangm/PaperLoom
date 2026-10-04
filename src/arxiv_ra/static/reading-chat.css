@@ -53,3 +53,18 @@
 
 .reading-message .reading-reasoning>div>p{margin:0 0 .65em;line-height:1.65;white-space:pre-wrap}
 .reading-message .reading-reasoning>div>p:last-child{margin-bottom:0}
+
+/* Compact questions and source activity, leaving more room for the answer. */
+.reading-message.user{padding:8px 14px}
+.reading-message.user .reading-message-meta{margin-bottom:4px}
+.reading-message.user .reading-role{padding:1px 6px}
+.reading-message.user .reading-answer-actions{margin-top:3px}
+.reading-message.user .reading-icon-button{width:26px;height:24px;padding:4px}
+.reading-trace{margin-bottom:8px;line-height:1.5}
+.reading-trace>summary{padding:2px 0}
+.reading-message .reading-context-info{margin:5px 0 6px;padding:5px 9px;line-height:1.5}
+.reading-trace .reading-step{padding:3px 9px;line-height:1.5}
+.reading-trace .reading-step details{margin:0;padding:0}
+.reading-trace .reading-step summary{padding:1px 0;font-weight:500;line-height:1.5}
+.reading-trace .reading-step blockquote{margin:4px 0;padding:5px 9px}
+.reading-trace>small{margin-top:3px;line-height:1.5}
