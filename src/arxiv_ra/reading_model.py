@@ -62,10 +62,11 @@ def step_label(name, args):
     return {'metadata': '查看论文信息', 'read_report': '阅读报告'}.get(name, '查阅材料')
 
 
-def run_reading(client, model, messages, sources, update, checkpoint, *, max_tools, max_tokens):
+def run_reading(client, model, messages, sources, update, checkpoint, *, max_tools, max_tokens, reasoning_effort=''):
     calls_used, remaining = 0, max_tokens
     full = ''
     steps = []
+    reasoning = ''
     reserve = min(1000, max_tokens // 3)
     while remaining > 0:
         checkpoint()
@@ -81,10 +82,16 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
         if final:
             messages.append({'role': 'user', 'content': '本轮查阅预算已用完。请立即根据已读材料回答用户问题，使用已核实引用，明确尚未核实的部分；不要再调用工具。'})
         allowance = remaining if final else remaining - reserve
+        context_text = json.dumps(messages, ensure_ascii=False)
+        update(context={'messages': len(messages), 'characters': sum(len(m.get('content', '')) if isinstance(m.get('content'), str) else sum(len(p.get('text', '')) for p in (m.get('content') or [])) for m in messages),
+                        'tools_used': calls_used, 'tools_limit': max_tools,
+                        'images': context_text.count('"type": "image_url"'),
+                        'summarized': any('较早讨论滚动摘要' in str(m.get('content', '')) for m in messages)})
         stream = create_completion(client, update, checkpoint,
             model=model, messages=messages, tools=tools,
             tool_choice='none' if final else 'auto',
-            stream=True, max_tokens=allowance)
+            stream=True, max_tokens=allowance,
+            **({'reasoning_effort': reasoning_effort} if reasoning_effort else {}))
         text = ''
         calls: dict[int, dict[str, Any]] = {}
         reason = None
@@ -96,6 +103,10 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
                 choice = chunk.choices[0]
                 reason = choice.finish_reason or reason
                 delta = choice.delta
+                thought = getattr(delta, 'reasoning_content', None) or getattr(delta, 'reasoning', None)
+                if isinstance(thought, str) and thought:
+                    reasoning = (reasoning + thought)[:24000]
+                    update(reasoning=reasoning, detail='模型正在思考')
                 if delta.content:
                     text += delta.content
                     update(text=full + text)
@@ -133,29 +144,34 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
             checkpoint()
             name = call['function']['name']
             if calls_used >= max_tools:
-                result = {'error': '本轮查阅次数已达上限，请根据已有依据回答并说明限制'}
+                result: dict[str, Any] = {'error': '本轮查阅次数已达上限，请根据已有依据回答并说明限制'}
             else:
                 calls_used += 1
-                entry = {'name': name, 'label': '查阅材料', 'status': 'running'}
-                steps.append(entry)
+                step_record: dict[str, Any] = {'name': name, 'label': '查阅材料', 'status': 'running'}
+                steps.append(step_record)
                 try:
                     args = json.loads(call['function']['arguments'])
                     if not isinstance(args, dict):
                         raise ValueError('工具参数必须是对象')
-                    entry['label'] = step_label(name, args)
-                    update(detail=f"{entry['label']}（{calls_used}/{max_tools}）", steps=steps)
+                    step_record['label'] = step_label(name, args)
+                    update(detail=f"{step_record['label']}（{calls_used}/{max_tools}）", steps=steps)
                     result = sources.execute(name, args)
                 except (ValueError, OSError, RuntimeError) as exc:
                     result = {'error': str(exc)[:400], 'note': '材料不足，不得虚构证据'}
-                entry['status'] = 'failed' if 'error' in result else 'completed'
+                step_record['status'] = 'failed' if 'error' in result else 'completed'
                 if 'error' in result:
-                    entry['summary'] = '未取得有效材料'
+                    step_record['summary'] = '未取得有效材料'
                 elif 'matches' in result:
-                    entry['summary'] = f"找到 {len(result['matches'])} 处匹配"
+                    step_record['summary'] = f"找到 {len(result['matches'])} 处匹配"
                 elif 'pages' in result:
-                    entry['summary'] = f"已读取 {len(result['pages'])} 页"
+                    step_record['summary'] = f"已读取 {len(result['pages'])} 页"
                 elif 'citation_id' in result:
-                    entry['summary'] = '已保存原文依据'
+                    step_record['summary'] = '已保存原文依据'
+                pieces: list[dict[str, Any]] = result.get('pages', result.get('matches', []))
+                if pieces:
+                    step_record['fragments'] = [{'page': p['page'], 'text': p.get('text', '')[:600],
+                                           'characters': len(p.get('text', ''))} for p in pieces[:12]]
+                step_record['characters'] = sum(len(p.get('text', '')) for p in pieces)
                 update(steps=steps)
             picture = result.pop('_image', None)
             messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(result, ensure_ascii=False)})

@@ -116,7 +116,7 @@ class ReadingService:
         with self.lock:
             if not new:
                 existing = next((row for row in self.list(aid)
-                                 if row['paper']['version'] == paper.version), None)
+                                 if row['paper']['version'] == paper.version and not row.get('archived')), None)
                 if existing:
                     return self.get(existing['id'])
             value = {'format': 1, 'id': uuid.uuid4().hex, 'paper': paper.to_dict(),
@@ -139,9 +139,34 @@ class ReadingService:
             self.get(sid)
             self.path(sid).unlink()
 
+    def rollback(self, sid, mid):
+        with self.lock:
+            value = self.get(sid)
+            if value.get('archived'):
+                raise ValueError('归档会话只读，请新建对话')
+            if any(m['status'] in {'queued', 'running'} for m in value['messages']):
+                raise RuntimeError('请先停止正在生成的回答，再回退')
+            index = next((i for i, m in enumerate(value['messages']) if m['id'] == mid), None)
+            if index is None:
+                raise ValueError('这轮对话已改变，请刷新后重试')
+            if value['messages'][index]['role'] == 'assistant':
+                index -= 1
+            if index < 0 or value['messages'][index]['role'] != 'user':
+                raise ValueError('找不到原问题')
+            draft = deepcopy(value['messages'][index])
+            archive = deepcopy(value)
+            archive.update(id=uuid.uuid4().hex, archived=True, title=value['title'] + ' · 回退前归档',
+                           archive_of=sid, created_at=timestamp())
+            self.save(archive)
+            value['messages'] = value['messages'][:index]
+            value.pop('memory', None)
+            self.save(value)
+            return {'session': self.present(sid), 'draft': draft, 'archive_id': archive['id']}
+
     def settings(self, config):
         saved = read_json(self.folder / 'settings' / 'config.json', {})
         return {**{'independent': False, 'model': config.llm.model, 'images': True,
+                   'reasoning_effort': 'high',
                    'max_tools': 10, 'max_tokens': 4000}, **saved,
                 'key_configured': bool(os.getenv('PAPERLOOM_READING_API_KEY')),
                 'base_url': os.getenv('PAPERLOOM_READING_BASE_URL', '')}
@@ -173,6 +198,8 @@ class ReadingService:
             validated.append(picture)
         with self.lock:
             value = self.get(sid)
+            if value.get('archived'):
+                raise ValueError('归档会话只读，请新建对话')
             if any(m.get('request_id') == request_id for m in value['messages']):
                 return value
             if retry_of:
@@ -284,7 +311,8 @@ class ReadingService:
                         self.save(stored)
                     update(summarized=True)
                 answer, limited = run_reading(client, model, messages, sources, update, checkpoint,
-                    max_tools=settings['max_tools'], max_tokens=output_budget)
+                    max_tools=settings['max_tools'], max_tokens=output_budget,
+                    reasoning_effort=settings['reasoning_effort'])
                 used = set(re.findall(r'\[\[来源:([a-zA-Z0-9_-]+)\]\]', answer))
                 update(text=answer, status='completed', limited=limited,
                        citations=[c for c in sources.citations if c['id'] in used],

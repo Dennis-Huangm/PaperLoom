@@ -61,6 +61,64 @@ def wait_answer(client, sid):
     pytest.fail('answer did not finish')
 
 
+def test_rollback_archives_and_clears_future_context(config_path, monkeypatch):
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY','fixture')
+    seen=[]
+    def complete(_self, **kwargs):
+        seen.append(str(kwargs['messages']))
+        yield NS(choices=[NS(delta=NS(content=None,tool_calls=None,reasoning_content='先核对论文问题。'),finish_reason=None)])
+        yield NS(choices=[NS(delta=NS(content='解释内容',tool_calls=None),finish_reason='stop')])
+    monkeypatch.setattr(Completions,'create',complete)
+    with TestClient(create_app(config_path)) as client:
+        sid=new_chat(client)['id']
+        for index,text in enumerate(['前一个问题','需要回退的内容']):
+            client.post(f'/api/reading/sessions/{sid}/messages',json={'text':text,'request_id':str(index)})
+            value=wait_answer(client,sid)
+        assert value['messages'][-1]['reasoning']=='先核对论文问题。'
+        assert value['messages'][-1]['context']['messages']>0
+        result=client.post(f'/api/reading/sessions/{sid}/rollback',json={'message_id':value['messages'][-1]['id']}).json()
+        assert len(result['session']['messages'])==2
+        assert result['draft']['text']=='需要回退的内容'
+        archive=client.get('/api/reading/sessions/'+result['archive_id']).json()
+        assert len(archive['messages'])==4 and archive['archived']
+        assert new_chat(client)['id']==sid
+        assert client.post('/api/reading/sessions/'+archive['id']+'/messages',json={'text':'不应发送','request_id':'archive'}).status_code==400
+        client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'重新提问','request_id':'new'})
+        assert wait_answer(client,sid)['messages'][-1]['status']=='completed'
+        assert '需要回退的内容' not in seen[-1]
+        assert client.post(f'/api/reading/sessions/{sid}/rollback',json={'message_id':value['messages'][-1]['id']}).status_code==400
+
+
+def test_reasoning_visible_before_answer_and_rollback_rejects_running(config_path, monkeypatch):
+    import threading
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    gate=threading.Event()
+    monkeypatch.setenv('LLM_API_KEY','fixture')
+    def complete(_self, **kwargs):
+        yield NS(choices=[NS(delta=NS(content=None,tool_calls=None,reasoning_content='正在核对原文依据'),finish_reason=None)])
+        gate.wait(5)
+        yield NS(choices=[NS(delta=NS(content='解释完成',tool_calls=None),finish_reason='stop')])
+    monkeypatch.setattr(Completions,'create',complete)
+    with TestClient(create_app(config_path)) as client:
+        sid=new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'解释','request_id':'stream-reasoning'})
+        try:
+            for _ in range(100):
+                value=client.get('/api/reading/sessions/'+sid).json()
+                if value['messages'][-1].get('reasoning'):break
+                time.sleep(.01)
+            answer=value['messages'][-1]
+            assert answer['status']=='running' and answer['text']==''
+            assert answer['reasoning']=='正在核对原文依据'
+            assert answer['context']['characters']>0
+            assert client.post(f'/api/reading/sessions/{sid}/rollback',json={'message_id':answer['id']}).status_code==409
+        finally:gate.set()
+        assert wait_answer(client,sid)['messages'][-1]['status']=='completed'
+
+
 @pytest.mark.parametrize('failure', ['gateway', 'midstream', 'bad_request', 'persistent'])
 def test_reading_transport_recovery_at_http_boundary(config_path, monkeypatch, failure):
     import httpx

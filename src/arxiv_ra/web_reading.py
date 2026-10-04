@@ -2,6 +2,7 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from .reading_chat import ReadingService
 from .utils import write_json
@@ -17,6 +18,10 @@ class StartReading(BaseModel):
 
 class RenameReading(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+
+
+class RollbackReading(BaseModel):
+    message_id: str = Field(min_length=1, max_length=100)
 
 
 class ReadingMessage(BaseModel):
@@ -35,6 +40,7 @@ class ReadingSettings(BaseModel):
     api_key: str = Field(default='', max_length=2000)
     clear_key: bool = False
     images: bool = True
+    reasoning_effort: Literal['', 'low', 'medium', 'high'] = 'high'
     max_tools: int = Field(default=10, ge=1, le=30)
     max_tokens: int = Field(default=4000, ge=256, le=32000)
 
@@ -114,6 +120,10 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
     @app.post('/api/reading/sessions/{sid}/stop')
     def stop(sid: str):
         return run(service.stop, sid)
+
+    @app.post('/api/reading/sessions/{sid}/rollback')
+    def rollback(sid: str, body: RollbackReading):
+        return run(service.rollback, sid, body.message_id)
 
     @app.get('/api/reading/sources/{source_id}')
     def source(source_id: str):

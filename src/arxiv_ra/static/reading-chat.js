@@ -14,27 +14,23 @@
     return;
   }
   if (!host) {
-    const tabs = document.createElement('div'); tabs.className = 'reading-tabs';
-    const listTab = document.createElement('button'); listTab.textContent = '论文列表';
-    const chatTab = document.createElement('button'); chatTab.textContent = '阅读对话';
-    tabs.append(listTab, chatTab); papers.querySelector('.report-nav-heading').after(tabs);
-    host = document.createElement('div'); host.id = 'report-reading'; host.hidden = true;
+    host = document.createElement('aside'); host.id = 'report-reading'; host.hidden = true;
+    host.setAttribute('aria-label', '论文阅读助手');
     Object.assign(host.dataset, reportButton ? reportButton.dataset : papers.dataset);
-    papers.append(host);
-    listTab.onclick = () => {host.hidden = true; papers.classList.remove('reading-active'); listTab.classList.add('active'); chatTab.classList.remove('active'); papers.querySelector('h2').textContent = '本地报告';};
-    chatTab.onclick = () => {host.hidden = false; papers.classList.add('reading-active'); chatTab.classList.add('active'); listTab.classList.remove('active'); papers.querySelector('h2').textContent = '论文助手';};
-    listTab.classList.add('active');
+    document.body.append(host);
+    document.addEventListener('reading-dock-opening', () => {
+      if(!papers.hidden)document.querySelector('#report-papers-close').click();
+    });
     const open = document.createElement('button'); open.className = 'reading-open'; open.textContent = '阅读对话 / 提问选区';
     document.querySelector('.report-actions').append(open);
     open.onclick = async () => {
       const selectedRange = window.getSelection();
       const article = document.querySelector('.report-article');
       const text = selectedRange && article.contains(selectedRange.anchorNode) && article.contains(selectedRange.focusNode) ? selectedRange.toString() : '';
-      if (papers.hidden) document.querySelector('#report-papers-toggle').click();
-      chatTab.click();
+      openDock();
       try {
         // The report remains the source even after browsing another paper's history.
-        if (currentReport !== host.dataset.reportId) {
+        if (currentReport !== host.dataset.reportId || session?.archived) {
           saveDraft(); generation++; session = null;
           currentAid = host.dataset.arxivId; currentReport = host.dataset.reportId;
           input.value = ''; selection = ''; pictures = []; showPictures(); showSelection();
@@ -56,14 +52,14 @@
     <label>模型<input name="model" maxlength="200"></label><label>服务地址<input name="base_url" placeholder="默认官方接口"></label>
     <label>API Key<input type="password" name="api_key" autocomplete="new-password" placeholder="留空保留已有密钥"></label>
     <label><input type="checkbox" name="clear_key">清除独立密钥</label><label><input type="checkbox" name="images">模型支持图片</label>
-    <label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button class="reading-primary">保存设置</button></form></dialog>
+    <label>思考强度<select name="reasoning_effort"><option value="high">High · 高</option><option value="medium">Medium · 中</option><option value="low">Low · 低</option><option value="">接口默认（不发送参数）</option></select></label><label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button class="reading-primary">保存设置</button></form></dialog>
     <p class="reading-status" role="status"></p><div class="reading-messages" aria-live="polite"></div>
     <form class="reading-compose"><div class="reading-suggestions"><button type="button" data-prompt="请查阅原文，按研究问题、核心方法、实验结果和局限总结这篇论文，并给出原文依据。">总结论文</button><button type="button" data-prompt="请查阅论文的方法与实验部分，梳理最值得关注的内容，并解释关键概念，提供原文依据。">论文重点</button><button type="button" data-action="explain">解释选区</button></div><div class="reading-input-box"><div class="reading-selection" hidden><span></span><button type="button" title="移除选区" aria-label="移除选区">×</button></div>
     <div class="reading-previews"></div><textarea aria-label="向论文提问" placeholder="向论文提问，也可以粘贴图表截图…" maxlength="16000" rows="2"></textarea>
     <div class="reading-input-actions"><span>Enter 发送 · Shift + Enter 换行</span><button type="button" data-action="retry" hidden>重试回答</button><button type="button" data-action="stop" hidden>■ 停止</button><button type="submit" class="reading-send" title="发送问题" aria-label="发送问题">↑</button></div></div>
     <div class="reading-footer"><button type="button" data-action="new">＋ 新对话</button><button type="button" data-action="attach" title="附加图片，也可直接粘贴截图">＋ 图片</button><input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><button type="button" class="reading-model-label" data-action="model" title="阅读模型设置">加载模型…</button><span class="reading-grounded" title="按需查阅当前论文原文">原文查阅</span></div></form>`;
   const $ = selector => host.querySelector(selector);
-  if(papers)$('.reading-brand strong').textContent='对话';
+  if(papers)installDock();
   const input = $('textarea'), status = $('.reading-status'), messages = $('.reading-messages');
   const compose = $('.reading-compose'), settingsForm = $('.reading-settings');
   const selectionBox = $('.reading-selection'), history = $('.reading-history');
@@ -100,12 +96,38 @@
   }
   function error(e) {status.textContent = e.message; status.classList.add('reading-error');}
   function textNode(tag, text, cls) {const node = document.createElement(tag); node.textContent = text; if(cls) node.className = cls; return node;}
+  function iconButton(label, name) {
+    const button=textNode('button','','reading-icon-button');button.type='button';button.title=label;button.setAttribute('aria-label',label);
+    const paths={copy:'M9 9h11v11H9z M15 5V3H3v12h2',undo:'M9 5 4 10l5 5 M4 10h10a6 6 0 0 1 6 6v3',close:'m6 6 12 12 M6 18 18 6'};
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+    const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[name]);svg.append(path);button.append(svg);return button;
+  }
+  function openDock() {
+    document.dispatchEvent(new Event('reading-dock-opening'));host.hidden=false;document.body.classList.add('reading-dock-open');
+  }
+  function installDock() {
+    host.classList.add('reading-dock');
+    const close=iconButton('收起阅读助手','close');close.onclick=()=>{host.hidden=true;document.body.classList.remove('reading-dock-open');document.querySelector('.reading-open')?.focus();};
+    $('.reading-header .reading-toolbar').append(close);
+    const resize=document.createElement('div');resize.className='reading-dock-resize';resize.tabIndex=0;resize.setAttribute('role','separator');resize.setAttribute('aria-label','调整阅读助手宽度');resize.setAttribute('aria-orientation','vertical');
+    document.body.append(resize);
+    let width=480;try{width=Number(localStorage.getItem('paperloom.reading.width')) || width;}catch{}
+    function size(value){width=Math.max(340,Math.min(Math.min(900,innerWidth),value));document.body.style.setProperty('--reading-width',width+'px');resize.setAttribute('aria-valuenow',Math.round(width));}
+    function save(){try{localStorage.setItem('paperloom.reading.width',width);}catch{}}
+    size(width);window.addEventListener('resize',()=>size(width));
+    resize.onpointerdown=event=>{if(event.button!==0)return;event.preventDefault();resize.setPointerCapture(event.pointerId);const x=event.clientX,w=width;document.body.classList.add('reading-resizing');resize.onpointermove=e=>size(w+x-e.clientX);resize.onlostpointercapture=()=>{resize.onpointermove=null;document.body.classList.remove('reading-resizing');save();};};
+    resize.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();size(event.key==='Home'?340:event.key==='End'?900:width+(event.key==='ArrowLeft'?20:-20));save();};
+    document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
+    document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>{host.hidden=true;document.body.classList.remove('reading-dock-open');});
+  }
   function render(value) {
     session = value;
     $('.reading-paper').textContent = value.paper.title + ' · v' + value.paper.version;
     $('.reading-paper').title = value.paper.title + ' · v' + value.paper.version;
     const active = value.messages.some(m => ['queued', 'running'].includes(m.status));
-    compose.querySelector('[type=submit]').disabled = active || busy;
+    compose.querySelector('[type=submit]').disabled = active || busy || !!value.archived;
+    input.disabled=!!value.archived;
+    if(value.archived)status.textContent='回退前归档 · 只读，可从历史记录查看完整内容';
     $('[data-action=stop]').disabled = !active;
     $('[data-action=stop]').hidden = !active;
     compose.querySelector('[type=submit]').hidden = active;
@@ -116,7 +138,7 @@
     const stamp = JSON.stringify(value.messages);
     if (stamp === lastRender) return;
     status.classList.remove('reading-error');
-    status.textContent = active ? (last?.detail || '正在准备回答…') : '';
+    status.textContent = value.archived ? '回退前归档 · 只读' : active ? (last?.detail || '正在准备回答…') : '';
     status.classList.toggle('is-active', active);
     lastRender = stamp;
     const nearEnd = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 100;
@@ -128,14 +150,31 @@
       meta.append(textNode('span', message.role === 'user' ? 'YOU' : 'AI', 'reading-role'));
       if(message.role === 'assistant') meta.append(textNode('span', labels[message.status] || '', 'reading-message-state'));
       box.append(meta);
-      if(message.role === 'assistant' && (message.steps?.length || message.material)) {
+      if(message.role === 'assistant' && (message.steps?.length || message.material || message.context)) {
         const trace = document.createElement('details'); trace.className='reading-trace';
-        const key = message.id + ':trace'; trace.open=expanded.has(key);
+        const key = message.id + ':trace'; trace.open=expanded.has(key) || ['running','queued'].includes(message.status);
         const material=message.material;
         trace.append(textNode('summary', '查阅过程' + (material?.total_pages ? ` · 已读 ${material.read_pages?.length || 0}/${material.total_pages} 页` : '')));
-        for(const step of message.steps || [])trace.append(textNode('div', `${step.status === 'failed' ? '!' : step.status === 'running' ? '◌' : '✓'} ${step.label}${step.summary ? ' · '+step.summary : ''}`, 'reading-step '+step.status));
+        if(message.context) {
+          const c=message.context;
+          trace.append(textNode('p', `上下文 ${c.messages} 条 · ${c.characters.toLocaleString()} 字符 · 图片 ${c.images} 张 · 工具 ${c.tools_used}/${c.tools_limit}${c.summarized ? ' · 含历史摘要' : ''}`, 'reading-context-info'));
+        }
+        for(const [stepIndex,step] of (message.steps || []).entries()) {
+          const row=textNode('div', `${step.status === 'failed' ? '!' : step.status === 'running' ? '◌' : '✓'} ${step.label}${step.summary ? ' · '+step.summary : ''}`, 'reading-step '+step.status);
+          if(step.fragments?.length){const pieces=document.createElement('details');const pieceKey=message.id+':fragments:'+stepIndex;pieces.open=expanded.has(pieceKey);pieces.ontoggle=()=>{if(pieces.open)expanded.add(pieceKey);else expanded.delete(pieceKey);};pieces.append(textNode('summary',`PDF 片段 · ${step.fragments.length} 段 / ${step.characters} 字符`));for(const f of step.fragments)pieces.append(textNode('blockquote',`第 ${f.page} 页 · ${f.characters} 字符
+${f.text}`));row.append(pieces);}
+          trace.append(row);
+        }
+
+        if(!message.reasoning)trace.append(textNode('small','当前接口尚未返回思考内容；此处展示实际工具执行记录。'));
         if(material?.source_note)trace.append(textNode('small',material.source_note));
         trace.ontoggle=()=>{if(trace.open)expanded.add(key);else expanded.delete(key);}; box.append(trace);
+      }
+      if(message.role === 'assistant' && message.reasoning) {
+        const thinking=document.createElement('details');thinking.className='reading-reasoning';
+        thinking.open=['running','queued'].includes(message.status) || expanded.has(message.id+':reasoning');
+        thinking.append(textNode('summary','思考过程 · 模型返回'),textNode('div',message.reasoning));
+        thinking.ontoggle=()=>{if(thinking.open)expanded.add(message.id+':reasoning');else expanded.delete(message.id+':reasoning');};box.append(thinking);
       }
       if (message.selection) box.append(textNode('blockquote', message.selection + (message.report?.missing ? '（来源报告已删除）' : '')));
       const body = document.createElement('div');
@@ -145,10 +184,18 @@
       if(message.role === 'assistant' && ['failed','stopped','interrupted'].includes(message.status))box.append(textNode('div',message.detail || labels[message.status],'reading-failure'));
       if(message.role === 'assistant' && message.status === 'completed' && message.limited)box.append(textNode('small','本轮已达查阅或输出上限，可以继续追问。'));
       if(message.role === 'assistant' && !message.text && ['running','queued'].includes(message.status))box.append(textNode('div','正在查阅并整理回答…','reading-thinking'));
-      if(message.role === 'assistant' && message.text) {
-        const actions=textNode('div','','reading-answer-actions'); const copy=textNode('button','复制回答');copy.type='button';
-        copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.textContent='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
-        actions.append(copy,textNode('span',message.model || '')); box.append(actions);
+      if(message.role === 'assistant' && (message.text || !['queued','running'].includes(message.status))) {
+        const actions=textNode('div','','reading-answer-actions'); const copy=iconButton('复制回答','copy');
+        copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.title='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
+        const back=iconButton('回退到本轮提问之前','undo');back.disabled=active || !!value.archived;
+        back.onclick=async()=>{
+          if(!confirm('回退到本轮提问之前？当前完整对话将归档保留，原问题恢复到输入框。'))return;
+          const sid=session.id,ticket=generation;
+          try{const result=await api('/sessions/'+sid+'/rollback','POST',{message_id:message.id});if(session?.id!==sid || generation!==ticket)return;
+            generation++;lastRender='';render(result.session);input.value=result.draft.text;selection=result.draft.selection || '';pictures=result.draft.images || [];currentReport=result.draft.report?.id || '';requestToken=null;showSelection();showPictures();saveDraft();input.focus();if(!history.hidden)await listHistory();
+          }catch(e){error(e);}
+        };
+        actions.append(copy,back,textNode('span',message.model || '')); box.append(actions);
       }
       for (const data of message.images || []) {const img = document.createElement('img'); img.src = data; img.alt = '本条问题图片'; box.append(img);}
       if (message.citations?.length) {
@@ -196,7 +243,7 @@
       if(!history.hidden)await listHistory();
       // Keep a question drafted before version resolution.
       if (!input.value) restoreDraft();
-    } finally {busy = false; if(session) compose.querySelector('[type=submit]').disabled = !!session.messages?.some(m => ['queued','running'].includes(m.status));}
+    } finally {busy = false; if(session) compose.querySelector('[type=submit]').disabled = !!session.archived || !!session.messages?.some(m => ['queued','running'].includes(m.status));}
   }
   async function listHistory() {
     const request = ++historyRequest;
@@ -244,7 +291,7 @@
       }
       requestToken=null; showSelection(); showPictures(); saveDraft(); await refresh();
       if(!history.hidden)await listHistory();
-    } finally {busy=false; compose.querySelector('[type=submit]').disabled=!!session?.messages?.some(m=>['queued','running'].includes(m.status));}
+    } finally {busy=false; compose.querySelector('[type=submit]').disabled=!!session?.archived || !!session?.messages?.some(m=>['queued','running'].includes(m.status));}
   }
   compose.onsubmit = async event => {
     event.preventDefault(); if(!input.value.trim())return;
@@ -285,5 +332,5 @@
     for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
     return start().then(()=>{if(!papers && innerWidth >= 850)setHistory(true);});
   }).catch(error);
-  setInterval(()=>{if(session && !busy)refresh().catch(error);},1000);
+  setInterval(()=>{if(session && !busy)refresh().catch(error);},500);
 })();
