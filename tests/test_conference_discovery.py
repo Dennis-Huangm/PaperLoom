@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from arxiv_ra.config import DiscoveryConfig
 from arxiv_ra.discovery import DiscoveryService
 from arxiv_ra.models import Author, Paper
@@ -12,6 +14,117 @@ def paper(aid='2101.00001', published=None):
     return Paper(aid, 'Reliable agents', [Author('Ada Researcher')], 'Agent reasoning',
                  ['cs.AI'], 'cs.AI', old, old, f'https://arxiv.org/abs/{aid}',
                  f'https://arxiv.org/pdf/{aid}')
+
+
+def test_neurips_follows_main_volume_before_association_and_caches_it(tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    root = 'https://proceedings.neurips.cc/paper_files/paper/2025'
+    main = root + '/vol38-main-conference'
+    pages = {
+        root: '<a href="/paper_files/paper/2025/vol38-main-conference">Advances in Neural Information Processing Systems 38 Main Conference</a>'
+              '<ul class="paper-list"><li data-track="creative_ai_track"><a href="hash/art-Abstract-Creative_AI_Track.html">Art</a><i>Ada Researcher</i></li></ul>',
+        main: '<ul class="paper-list"><li data-track="conference"><a href="/paper_files/paper/2025/hash/test-Abstract-Conference.html">Reliable agents</a><span class="paper-authors">Ada Researcher</span></li></ul>',
+    }
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(
+            lambda r: httpx.Response(200, text=pages[str(r.url)])))
+        cfg = DiscoveryConfig(mode='conference', conferences=['neurips'],
+            conference_year_from=2025, conference_year_to=2025)
+        arxiv = SimpleNamespace(find_by_title=Mock(return_value=[paper()]))
+        papers, states = directory.discover(cfg, arxiv, tmp_path, [])
+        assert len(papers) == 1
+        assert states['neurips:2025']['source_url'] == main
+        assert states['neurips:2025']['directory_count'] == 1
+        assert directory.discover(cfg, arxiv, tmp_path, [])[1]['neurips:2025']['cached']
+        arxiv.find_by_title.assert_called_once_with('Reliable agents')
+
+
+@pytest.mark.parametrize('label', ['Proceedings of ICML 2025', 'ICML 2025 Proceedings'])
+def test_icml_index_accepts_main_proceedings_names_only(label, tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    def handler(request):
+        if request.url.path == '/':
+            return httpx.Response(200, text=f'<ul><li><a href="v267">Volume 267</a> {label}</li>'
+                '<li><a href="v292">Volume 292</a> TerraBytes at ICML 2025</li></ul>')
+        assert request.url.path.rstrip('/') == '/v267'
+        return httpx.Response(200, text='<div class="paper"><p class="title">Reliable agents</p>'
+            '<p class="authors">Ada Researcher</p><p class="links"><a href="https://proceedings.mlr.press/v267/test.html">abs</a></p></div>')
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(handler))
+        cfg = DiscoveryConfig(mode='conference', conferences=['icml'],
+            conference_year_from=2025, conference_year_to=2025)
+        arxiv = SimpleNamespace(find_by_title=Mock(return_value=[paper()]))
+        result = DiscoveryService(cfg, arxiv, None, tmp_path, conferences=directory).discover()
+    assert [p.title for p in result.papers] == ['Reliable agents']
+    assert result.papers[0].conference_publications[0]['conference'] == 'icml'
+    assert result.papers[0].conference_publications[0]['year'] == 2025
+    assert result.sources['icml:2025']['status'] == 'ok'
+    assert result.sources['icml:2025']['directory_count'] == 1
+    arxiv.find_by_title.assert_called_once_with('Reliable agents')
+
+
+def test_acl_untyped_historical_volume_reports_the_actual_limitation(tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    fixture = '<collection><volume id="1"><meta><year>2019</year><venue>acl</venue>'
+    fixture += '<booktitle>Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics</booktitle>'
+    fixture += '</meta><paper id="1"><title>Reliable agents</title></paper></volume></collection>'
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=fixture)))
+        cfg = DiscoveryConfig(mode='conference', conferences=['acl'],
+            conference_year_from=2019, conference_year_to=2019)
+        arxiv = SimpleNamespace(find_by_title=Mock())
+        papers, states = directory.discover(cfg, arxiv, tmp_path, [])
+    assert not papers
+    assert states['acl:2019']['status'] == 'failed'
+    assert '无法可靠区分' in states['acl:2019']['error']
+    arxiv.find_by_title.assert_not_called()
+
+
+@pytest.mark.parametrize('status_code,current,status', [(404, True, 'unpublished'),
+    (404, False, 'failed'), (403, True, 'failed')])
+def test_missing_directory_is_not_a_successful_empty_result(tmp_path, status_code, current, status):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    year = datetime.now(timezone.utc).year - (0 if current else 1)
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(status_code)))
+        cfg = DiscoveryConfig(mode='conference', conferences=['neurips'],
+            conference_year_from=year, conference_year_to=year)
+        papers, states = directory.discover(cfg, SimpleNamespace(), tmp_path, [])
+    assert not papers
+    state = states[f'neurips:{year}']
+    assert state['status'] == status
+    if status_code == 404:
+        assert '官方目录地址' in state['error']
+
+
+@pytest.mark.parametrize('year', [2021, 2022, 2024])
+def test_neurips_preserves_single_volume_formats_and_excludes_other_tracks(year, tmp_path):
+    import httpx
+    from arxiv_ra.conference_discovery import ConferenceClient
+    suffix = '-Conference' if year >= 2022 else ''
+    fixture = f'<ul class="paper-list"><li><a href="/paper_files/paper/{year}/hash/a-Abstract{suffix}.html">Reliable agents</a><i>Ada Researcher</i></li>'
+    fixture += '<li data-track="datasets_and_benchmarks"><a href="b-Abstract-Datasets_and_Benchmarks.html">Dataset</a><i>Ada Researcher</i></li></ul>'
+    with ConferenceClient() as directory:
+        directory.client.close()
+        directory.client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text=fixture)))
+        cfg = DiscoveryConfig(mode='conference', conferences=['neurips'],
+            conference_year_from=year, conference_year_to=year)
+        arxiv = SimpleNamespace(find_by_title=Mock(return_value=[paper()]))
+        result = DiscoveryService(cfg, arxiv, None, tmp_path, conferences=directory).discover()
+    assert [p.title for p in result.papers] == ['Reliable agents']
+    assert result.papers[0].conference_publications[0]['conference'] == 'neurips'
+    assert result.papers[0].conference_publications[0]['year'] == year
+    assert result.sources[f'neurips:{year}']['status'] == 'ok'
+    assert result.sources[f'neurips:{year}']['directory_count'] == 1
+    arxiv.find_by_title.assert_called_once_with('Reliable agents')
 
 
 def test_conference_mode_keeps_old_arxiv_upload_and_roundtrips_evidence(tmp_path):
@@ -211,6 +324,12 @@ def test_manual_browse_is_readonly_until_explicit_collection(tmp_path, monkeypat
         assert job['status'] == 'succeeded', job
         page = client.get('/conferences')
         assert 'Reliable agents' in page.text
+        from bs4 import BeautifulSoup
+        search_form = BeautifulSoup(page.text, 'html.parser').select_one('.conference-search-form')
+        assert search_form.select_one('[name="conference_year_from"]')['value'] == '2024'
+        assert search_form.select_one('[name="conference_year_to"]')['value'] == '2024'
+        assert search_form.select_one('[name="topic_mode"] option[selected]')['value'] == 'browse'
+        assert search_form.select_one('[name="max_candidates"]')['value'] == '2'
         assert cfg.read_bytes() == before and library.state.snapshot() == state
         import re
         search_id = re.search(r'name="search_id" value="([^"]+)"', page.text)[1]

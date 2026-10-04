@@ -134,10 +134,22 @@ def test_feedback_ui_api_scope_undo_and_readonly_history(tmp_path, monkeypatch):
     with TestClient(app) as client:
         data = {"arxiv_id": paper().arxiv_id, "profile_id": "alpha", "verdict": "not_relevant"}
         assert client.post("/api/feedback", data={**data, "scope": "topic"}).status_code == 400
-        feedback = client.post("/api/feedback", data=data).json()["feedback"]
-        assert feedback["scope"] == "paper"
-        assert "仅排除此论文" in client.get("/feedback").text
-        assert "反馈与筛选记录" in client.get("/").text
+        for scope in (None, "paper"):
+            response = client.post("/api/feedback", data=data if scope is None else {**data, "scope": scope})
+            assert response.status_code == 400
+        assert FeedbackStore(output, "alpha").all() == {}
+        # Previously saved paper exclusions remain visible and reversible.
+        legacy = FeedbackStore(output, "alpha").set(paper().to_dict(), "not_relevant")
+        assert "历史单篇排除" in client.get("/feedback").text
+        assert client.post("/api/feedback/undo", data={"arxiv_id": paper().arxiv_id,
+            "expected_updated_at": legacy["updated_at"]}).status_code == 200
+        feedback = client.post("/api/feedback", data={**data, "scope": "topic", "terms": "medical"}).json()["feedback"]
+        assert feedback["scope"] == "topic"
+        dashboard = client.get("/").text
+        assert "反馈与筛选记录" in dashboard
+        assert "仅排除此论文" not in dashboard
+        assert 'id="inspector-negative-button"' not in dashboard
+        assert "加入文献库" in dashboard
         undo = {"arxiv_id": paper().arxiv_id, "profile_id": "alpha", "expected_updated_at": feedback["updated_at"]}
         assert client.post("/api/feedback/undo", data={**undo, "expected_updated_at": "stale"}).status_code == 409
         assert client.post("/api/feedback/undo", data=undo).status_code == 200

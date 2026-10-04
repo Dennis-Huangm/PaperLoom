@@ -45,9 +45,15 @@ def register_conference_routes(app, templates, context, current_config, jobs, ou
             if paths:
                 result = read_result(current.profile_id, paths[0].stem)
         scope = asdict(current.discovery)
+        if result:
+            scope.update(result['scope'])
         scope['mode'] = 'conference'
         return templates.TemplateResponse(request, 'conferences.html', context(request, 'conferences',
-            scope=scope, result=result, saved=PaperLibraryStore(output_root, current.profile_id).all()))
+            scope=scope, result=result, search_options={
+                'topic_mode': result.get('topic_mode', 'direction') if result else 'direction',
+                'topic': result.get('topic', '') if result and result.get('topic_mode') == 'custom' else '',
+                'max_candidates': result.get('max_candidates', 30) if result else 30,
+            }, saved=PaperLibraryStore(output_root, current.profile_id).all()))
 
     @app.post('/api/jobs/conferences')
     async def search_conferences(request: Request):
@@ -98,6 +104,7 @@ def register_conference_routes(app, templates, context, current_config, jobs, ou
                 payload = {'search_id': search_id, 'profile_id': task.config.profile_id,
                     'created_at': datetime.now(timezone.utc).isoformat(), 'scope': scope, 'error': error,
                     'topic_mode': topic_mode, 'topic': discovery.interest_description,
+                    'max_candidates': budget,
                     'sources': result.sources, 'papers': [p.to_dict() for p in selected],
                     'filtered_count': len(ranked) - len(selected), 'rejected': rejected}
                 task_checkpoint()

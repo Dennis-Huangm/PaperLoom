@@ -698,7 +698,8 @@ def test_dashboard_can_save_and_remove_paper_from_profile_library(tmp_path: Path
     assert dashboard.select_one("#inspector-report-open").has_attr("hidden")
     assert "必读" not in home.text
     assert "稍后读" not in home.text
-    assert negative.status_code == 200 and negative.json()["in_library"] is False
+    assert negative.status_code == 400
+    assert "仅排除此论文" not in home.text
     assert invalid_legacy.status_code == 400
     assert saved.status_code == 200 and saved.json()["saved"] is True
     assert saved.json()["feedback"] is None

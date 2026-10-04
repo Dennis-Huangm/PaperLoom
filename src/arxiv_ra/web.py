@@ -1214,6 +1214,8 @@ def create_app(config_path: Path | str) -> FastAPI:
         arxiv_id = arxiv_id.strip()
         if verdict not in VERDICTS:
             raise HTTPException(status_code=400, detail="无效的阅读反馈")
+        if scope != "topic":
+            raise HTTPException(status_code=400, detail="单篇排除功能已移除；请加入文献库表达兴趣，或填写主题词进行屏蔽")
         current = current_config()
         item = selected_paper(arxiv_id, current, origin=origin, source_date=source_date)
         store = FeedbackStore(output_root, current.profile_id)
@@ -1249,7 +1251,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                         PaperLibraryStore(output_root, current.profile_id).all()
                     )
                 ),
-                "message": "已排除此论文，并屏蔽命中所填主题词的论文，可在反馈记录中撤销" if scope == "topic" else "已仅排除此论文，可撤销；未新增主题屏蔽规则",
+                "message": "已排除此论文，并屏蔽命中所填主题词的论文，可在反馈记录中撤销",
                 "obsidian_synced": obsidian_synced,
                 "obsidian_warning": obsidian_warning,
             }

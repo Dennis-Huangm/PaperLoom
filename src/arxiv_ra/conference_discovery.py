@@ -137,15 +137,19 @@ class ConferenceClient:
                         [f'{a.findtext("first", "")} {a.findtext("last", "")}'.strip() for a in p.findall('author')],
                         f'https://aclanthology.org/{ident}/',
                         ''.join(abstract.itertext()) if abstract is not None else ''))
+            if not records and root.findall('volume/paper'):
+                raise ValueError(f'ACL {year} 官方目录已取得，但没有可核验的主会长文分卷，'
+                                 '无法可靠区分长文与短文；当前不支持该目录格式。')
             return records, url
         if conference == 'iclr':
             return self._iclr(year)
         if conference == 'icml':
             root_url = 'https://proceedings.mlr.press/'
             index = BeautifulSoup(self._get(root_url).text, 'html.parser')
-            links = [a for a in index.select('a[href]') if re.search(rf'\bICML {year}\b', a.parent.get_text(' ', strip=True))
-                     and re.fullmatch(r'Volume \d+', a.get_text(strip=True))
-                     and re.search(rf'Proceedings of ICML {year}\b', a.parent.get_text(' ', strip=True))]
+            links = [a for a in index.select('li > a[href]')
+                     if re.fullmatch(r'Volume \d+', a.get_text(strip=True))
+                     and re.fullmatch(rf'Volume \d+ (?:Proceedings of ICML {year}|ICML {year} Proceedings)',
+                                      a.parent.get_text(' ', strip=True))]
             if len(links) != 1:
                 raise LookupError(f'ICML {year} 官方目录尚未公布或该历史届次不在 PMLR 中')
             url = urljoin(root_url, links[0]['href'])
@@ -160,6 +164,17 @@ class ConferenceClient:
         if conference == 'neurips':
             url = f'https://proceedings.neurips.cc/paper_files/paper/{year}'
             soup = BeautifulSoup(self._get(url).text, 'html.parser')
+            # A year landing page may be a companion volume, e.g. Creative AI.
+            main_urls = list(dict.fromkeys(urljoin(url, a['href']) for a in soup.select('a[href]')
+                if 'main conference' in a.get_text(' ', strip=True).casefold()
+                and urlparse(urljoin(url, a['href'])).hostname == 'proceedings.neurips.cc'
+                and re.fullmatch(rf'/paper_files/paper/{year}/[^/]+',
+                                 urlparse(urljoin(url, a['href'])).path)))
+            if len(main_urls) > 1:
+                raise ValueError('NeurIPS 主会目录链接不唯一，无法确认目录范围')
+            if main_urls:
+                url = main_urls[0]
+                soup = BeautifulSoup(self._get(url).text, 'html.parser')
             records = []
             for p in soup.select('.paper-list li'):
                 track = p.get('data-track', '')
@@ -286,7 +301,12 @@ class ConferenceClient:
                     directories.append((key, records))
                 except (httpx.HTTPError, ValueError, KeyError, TypeError, LookupError, ET.ParseError) as exc:
                     missing = isinstance(exc, LookupError) or isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404
-                    state.update(status='unpublished' if missing and year == current_year else 'failed', error=str(exc))
+                    error = str(exc)
+                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+                        state['source_url'] = str(exc.request.url)
+                        reason = '该届论文集可能尚未公布，请稍后重试' if year == current_year else '请核对该届官方来源是否迁移或不受支持'
+                        error = f'{conference.upper()} {year} 官方目录地址未找到（HTTP 404）；{reason}。'
+                    state.update(status='unpublished' if missing and year == current_year else 'failed', error=error)
         papers: list[Paper] = []
         attempts = 0
         excluded = {base_id(a) for a in excluded_ids}

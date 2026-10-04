@@ -162,7 +162,6 @@
 
       <footer class="inspector-actions">
         <button id="inspector-library-button" class="button secondary library-toggle {% if selected.in_library %}active{% endif %}" type="button" data-saved="{{ 'true' if selected.in_library else 'false' }}"><i class="far fa-bookmark" aria-hidden="true"></i><span id="inspector-library-label">{% if selected.in_library %}已加入文献库{% else %}加入文献库{% endif %}</span></button>
-        <button id="inspector-negative-button" class="button secondary" type="button" data-feedback="not_relevant" data-scope="paper"><i class="fas fa-ban" aria-hidden="true"></i>仅排除此论文</button>
         <button id="inspector-undo-feedback" class="button secondary" type="button" hidden><i class="fas fa-undo" aria-hidden="true"></i>撤销反馈</button>
         <form id="inspector-report-form" class="job-form" action="/api/jobs/report" method="post" {% if selected.has_report %}hidden{% endif %}><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
           <input id="inspector-report-id" type="hidden" name="arxiv_id" value="{{ selected.paper.arxiv_id }}{% if selected.paper.version %}v{{ selected.paper.version }}{% endif %}">
