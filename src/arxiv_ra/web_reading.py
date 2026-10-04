@@ -1,6 +1,9 @@
 """HTTP boundary for paper reading conversations."""
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
+import asyncio
+import json
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -103,6 +106,54 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
     @app.get('/api/reading/sessions/{sid}')
     def detail(sid: str):
         return run(service.present, sid)
+
+    @app.get('/api/reading/sessions/{sid}/events')
+    async def events(sid: str):
+        await run_in_threadpool(run, service.get, sid)
+
+        async def stream():
+            loop = asyncio.get_running_loop()
+            changed: asyncio.Queue[bool] = asyncio.Queue(maxsize=1)
+            def enqueue():
+                if changed.empty():
+                    changed.put_nowait(True)
+            def notify():
+                loop.call_soon_threadsafe(enqueue)
+            previous = None
+            subscribed = False
+            try:
+                await run_in_threadpool(service.subscribe, sid, notify)
+                subscribed = True
+                while True:
+                    try:
+                        value = await run_in_threadpool(service.present, sid)
+                    except LookupError:
+                        yield 'event: deleted\ndata: {}\n\n'
+                        return
+                    ids = [m['id'] for m in value['messages']]
+                    if previous is None or ids != [m['id'] for m in previous['messages']]:
+                        event, payload = 'snapshot', value
+                    else:
+                        old = {m['id']: m for m in previous['messages']}
+                        event = 'update'
+                        payload = {k: v for k, v in value.items() if k != 'messages'}
+                        payload['messages'] = [m for m in value['messages'] if m != old.get(m['id'])]
+                    yield f'event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n'
+                    previous = value
+                    while True:
+                        try:
+                            await asyncio.wait_for(changed.get(), timeout=15)
+                            break
+                        except asyncio.TimeoutError:
+                            yield ': keepalive\n\n'
+            except LookupError:
+                yield 'event: deleted\ndata: {}\n\n'
+            finally:
+                if subscribed:
+                    await run_in_threadpool(service.unsubscribe, sid, notify)
+
+        return StreamingResponse(stream(), media_type='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     @app.patch('/api/reading/sessions/{sid}')
     def rename(sid: str, body: RenameReading):

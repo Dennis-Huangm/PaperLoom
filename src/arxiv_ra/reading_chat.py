@@ -8,6 +8,7 @@ import uuid
 import base64
 import os
 import hashlib
+from typing import Callable
 
 from .models import Paper
 from .paper_data import PaperResolver, base_id, local_paper_item, requested_version
@@ -29,6 +30,7 @@ class ReadingService:
         self.folder = root / '.reading'
         self.folder.mkdir(exist_ok=True)
         self.lock = threading.RLock()
+        self.listeners: dict[str, set[Callable[[], None]]] = {}
         for path in self.folder.glob('*.json'):
             value = read_json(path, {})
             changed = False
@@ -57,6 +59,20 @@ class ReadingService:
         with self.lock:
             value['updated_at'] = timestamp()
             write_json(self.path(value['id']), value)
+            for notify in tuple(self.listeners.get(value['id'], ())):
+                notify()
+
+    def subscribe(self, sid, notify):
+        with self.lock:
+            self.get(sid)
+            self.listeners.setdefault(sid, set()).add(notify)
+
+    def unsubscribe(self, sid, notify):
+        with self.lock:
+            listeners = self.listeners.get(sid, set())
+            listeners.discard(notify)
+            if not listeners:
+                self.listeners.pop(sid, None)
 
     def present(self, sid):
         from .render import markdown_with_math
@@ -138,6 +154,8 @@ class ReadingService:
         with self.lock:
             self.get(sid)
             self.path(sid).unlink()
+            for notify in tuple(self.listeners.get(sid, ())):
+                notify()
 
     def rollback(self, sid, mid):
         with self.lock:

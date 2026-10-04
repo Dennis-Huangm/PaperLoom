@@ -61,6 +61,61 @@ def wait_answer(client, sid):
     pytest.fail('answer did not finish')
 
 
+def test_sse_delivers_partial_answer_and_reconnects_without_replay(config_path, monkeypatch):
+    import json
+    import socket
+    import threading
+    import httpx
+    import uvicorn
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    gate=threading.Event()
+    calls=[]
+    monkeypatch.setenv('LLM_API_KEY','fixture')
+    def complete(_self, **kwargs):
+        calls.append(1)
+        yield NS(choices=[NS(delta=NS(content='先显示的文字',reasoning_content='正在核对',tool_calls=None),finish_reason=None)])
+        gate.wait(8)
+        yield NS(choices=[NS(delta=NS(content='，后续内容。',tool_calls=None),finish_reason='stop')])
+    monkeypatch.setattr(Completions,'create',complete)
+    sock=socket.socket();sock.bind(('127.0.0.1',0))
+    port=sock.getsockname()[1]
+    server=uvicorn.Server(uvicorn.Config(create_app(config_path),log_level='error'))
+    thread=threading.Thread(target=lambda:server.run(sockets=[sock]),daemon=True);thread.start()
+    def event(lines):
+        kind=''
+        for line in lines:
+            if line.startswith('event: '):kind=line[7:]
+            if line.startswith('data: '):return kind,json.loads(line[6:])
+        pytest.fail('stream closed before an event')
+    try:
+        for _ in range(200):
+            if server.started:break
+            time.sleep(.01)
+        with httpx.Client(base_url=f'http://127.0.0.1:{port}',timeout=5) as client:
+            sid=new_chat(client)['id']
+            with client.stream('GET',f'/api/reading/sessions/{sid}/events') as response:
+                assert response.headers['content-type'].startswith('text/event-stream')
+                lines=response.iter_lines()
+                assert event(lines)[0]=='snapshot'
+                client.post(f'/api/reading/sessions/{sid}/messages',json={'text':'解释','request_id':'stream'})
+                for _ in range(20):
+                    _,value=event(lines)
+                    answers=[m for m in value['messages'] if m['role']=='assistant']
+                    if answers and answers[-1]['text']:break
+                assert answers[-1]['status']=='running'
+                assert answers[-1]['text']=='先显示的文字'
+                assert answers[-1]['reasoning']=='正在核对'
+            gate.set()
+            assert wait_answer(client,sid)['messages'][-1]['text']=='先显示的文字，后续内容。'
+            with client.stream('GET',f'/api/reading/sessions/{sid}/events') as response:
+                kind,value=event(response.iter_lines())
+                assert kind=='snapshot' and value['messages'][-1]['status']=='completed'
+            assert len(calls)==1
+    finally:
+        gate.set();server.should_exit=True;thread.join(10);sock.close()
+
+
 def test_rollback_archives_and_clears_future_context(config_path, monkeypatch):
     from types import SimpleNamespace as NS
     from openai.resources.chat.completions import Completions

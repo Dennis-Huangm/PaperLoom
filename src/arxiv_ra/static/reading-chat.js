@@ -120,8 +120,22 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
     document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>{host.hidden=true;document.body.classList.remove('reading-dock-open');});
   }
+  let eventSource=null, eventSid='', eventTicket=-1;
+  function watchSession() {
+    if(eventSid===session?.id && eventTicket===generation && eventSource)return;
+    eventSource?.close();eventSource=null;eventSid=session?.id || '';eventTicket=generation;
+    if(!session)return;
+    const sid=session.id,ticket=generation;
+    const source=new EventSource('/api/reading/sessions/'+sid+'/events');eventSource=source;
+    const current=()=>session?.id===sid && generation===ticket;
+    source.addEventListener('snapshot',e=>{if(current())render(JSON.parse(e.data));});
+    source.addEventListener('update',e=>{if(!current())return;const update=JSON.parse(e.data),changed=new Map(update.messages.map(m=>[m.id,m]));render({...session,...update,messages:session.messages.map(m=>changed.get(m.id)||m)});});
+    source.addEventListener('deleted',()=>{source.close();if(current()){session=null;messages.replaceChildren();showWelcome();status.textContent='会话已删除';}});
+    source.onerror=()=>{if(current())status.textContent='连接暂时中断，正在恢复实时更新…';};
+  }
   function render(value) {
-    session = value;
+    if(session?.id===value.id && session.updated_at && value.updated_at && value.updated_at < session.updated_at)return;
+    session = value;watchSession();
     $('.reading-paper').textContent = value.paper.title + ' · v' + value.paper.version;
     $('.reading-paper').title = value.paper.title + ' · v' + value.paper.version;
     const active = value.messages.some(m => ['queued', 'running'].includes(m.status));
@@ -136,16 +150,21 @@
     $('[data-action=retry]').hidden = $('[data-action=retry]').disabled;
     $('[data-action=rename]').disabled = $('[data-action=delete]').disabled = !session;
     const stamp = JSON.stringify(value.messages);
-    if (stamp === lastRender) return;
     status.classList.remove('reading-error');
     status.textContent = value.archived ? '回退前归档 · 只读' : active ? (last?.detail || '正在准备回答…') : '';
+    if (stamp === lastRender) return;
     status.classList.toggle('is-active', active);
     lastRender = stamp;
     const nearEnd = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 100;
-    messages.replaceChildren();
+    const oldNodes=new Map([...messages.querySelectorAll(':scope > .reading-message')].map(node=>[node.dataset.messageId,node]));
+    messages.querySelector('.reading-welcome')?.remove();
+    const valid=new Set(value.messages.map(m=>m.id));
+    for(const [id,node] of oldNodes)if(!valid.has(id))node.remove();
     if(!value.messages.length) showWelcome();
     for (const message of value.messages) {
-      const box = textNode('div', '', 'reading-message ' + message.role);
+      const old=oldNodes.get(message.id),stamp=JSON.stringify(message);
+      if(old?.dataset.stamp===stamp)continue;
+      const box = textNode('div', '', 'reading-message ' + message.role);box.dataset.messageId=message.id;box.dataset.stamp=stamp;
       const meta = textNode('div', '', 'reading-message-meta');
       meta.append(textNode('span', message.role === 'user' ? 'YOU' : 'AI', 'reading-role'));
       if(message.role === 'assistant') meta.append(textNode('span', labels[message.status] || '', 'reading-message-state'));
@@ -177,7 +196,7 @@ ${f.text}`));row.append(pieces);}
         thinking.ontoggle=()=>{if(thinking.open)expanded.add(message.id+':reasoning');else expanded.delete(message.id+':reasoning');};box.append(thinking);
       }
       if (message.selection) box.append(textNode('blockquote', message.selection + (message.report?.missing ? '（来源报告已删除）' : '')));
-      const body = document.createElement('div');
+      const body = document.createElement('div');body.className='reading-message-content';
       if (message.role === 'assistant' && message.html) body.innerHTML = message.html; // server-sanitized Markdown only
       else body.textContent = message.text;
       box.append(body);
@@ -216,12 +235,30 @@ ${f.text}`));row.append(pieces);}
         }
         box.append(details);
       }
-      messages.append(box);
+      if (window.katex) box.querySelectorAll('.math-inline,.math-block').forEach(node => {
+        try {katex.render(node.textContent,node,{displayMode:node.dataset.display==='true',throwOnError:false,trust:false});}catch{}
+      });
+      if(old){
+        const before=old.querySelector('.reading-message-content'),after=box.querySelector('.reading-message-content');
+        if(before && after){patchContent(before,after);after.replaceWith(before);}
+        old.dataset.stamp=stamp;old.replaceChildren(...box.childNodes);
+      }else messages.append(box);
     }
-    if (window.katex) messages.querySelectorAll('.math-inline,.math-block').forEach(node => {
-      try {katex.render(node.textContent, node, {displayMode: node.dataset.display === 'true', throwOnError: false, trust: false});} catch { /* visible source */ }
-    });
     if (nearEnd) messages.scrollTop = messages.scrollHeight;
+  }
+  // Keep existing paragraphs and text nodes while appending streamed text.
+  function patchContent(target, source) {
+    if(target.isEqualNode(source))return;
+    if(target.nodeType!==Node.ELEMENT_NODE){target.nodeValue=source.nodeValue;return;}
+    for(const attr of [...target.attributes])if(!source.hasAttribute(attr.name))target.removeAttribute(attr.name);
+    for(const attr of source.attributes)if(target.getAttribute(attr.name)!==attr.value)target.setAttribute(attr.name,attr.value);
+    [...source.childNodes].forEach((node,index)=>{
+      const old=target.childNodes[index];
+      if(!old)target.append(node.cloneNode(true));
+      else if(old.nodeType!==node.nodeType || old.nodeName!==node.nodeName)old.replaceWith(node.cloneNode(true));
+      else patchContent(old,node);
+    });
+    while(target.childNodes.length>source.childNodes.length)target.lastChild.remove();
   }
   function showWelcome() {
     const empty = textNode('div','','reading-welcome');
@@ -279,7 +316,7 @@ ${f.text}`));row.append(pieces);}
   $('[data-action=rename]').onclick = async () => {if(!session)return; const title=prompt('会话标题',session.title); if(title)try{await api('/sessions/'+session.id,'PATCH',{title}); await refresh(); await listHistory();}catch(e){error(e);}};
   $('[data-action=delete]').onclick = async () => {
     if(!session || !confirm('删除此会话及其专属图片？正在生成的回答也会停止。'))return;
-    try {const sid=session.id;await api('/sessions/'+sid,'DELETE');if(session?.id!==sid)return; generation++; session=null; input.value='';selection='';pictures=[];showSelection();showPictures();messages.replaceChildren();showWelcome(); lastRender=''; status.textContent='会话已删除';setHistory(true);}catch(e){error(e);}
+    try {const sid=session.id;await api('/sessions/'+sid,'DELETE');if(session?.id!==sid)return; generation++; session=null;watchSession(); input.value='';selection='';pictures=[];showSelection();showPictures();messages.replaceChildren();showWelcome(); lastRender=''; status.textContent='会话已删除';setHistory(true);}catch(e){error(e);}
   };
   $('[data-action=stop]').onclick = () => session && api('/sessions/'+session.id+'/stop','POST',{}).then(refresh).catch(error);
   async function send(payload, preserveDraft = false) {
@@ -338,5 +375,6 @@ ${f.text}`));row.append(pieces);}
     for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
     return start().then(()=>{if(!papers && innerWidth >= 850)setHistory(true);});
   }).catch(error);
-  setInterval(()=>{if(session && !busy)refresh().catch(error);},500);
+  window.addEventListener('pagehide',()=>eventSource?.close());
+  window.addEventListener('pageshow',e=>{if(e.persisted){eventSource=null;watchSession();}});
 })();
