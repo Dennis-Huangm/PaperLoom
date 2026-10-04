@@ -22,8 +22,10 @@
       if(!papers.hidden)document.querySelector('#report-papers-close').click();
     });
     const open = document.createElement('button'); open.className = 'reading-open'; open.textContent = '阅读对话 / 提问选区';
+    open.setAttribute('aria-controls',host.id);open.setAttribute('aria-expanded','false');
     document.querySelector('.report-actions').append(open);
     open.onclick = async () => {
+      if(!host.hidden){closeDock();return;}
       const selectedRange = window.getSelection();
       const article = document.querySelector('.report-article');
       const text = selectedRange && article.contains(selectedRange.anchorNode) && article.contains(selectedRange.focusNode) ? selectedRange.toString() : '';
@@ -112,10 +114,16 @@
   }
   function openDock() {
     document.dispatchEvent(new Event('reading-dock-opening'));host.hidden=false;document.body.classList.add('reading-dock-open');
+    document.querySelector('.reading-open')?.setAttribute('aria-expanded','true');
+  }
+  function closeDock(restoreFocus=true) {
+    host.hidden=true;document.body.classList.remove('reading-dock-open');
+    const toggle=document.querySelector('.reading-open');toggle?.setAttribute('aria-expanded','false');
+    if(restoreFocus)toggle?.focus();
   }
   function installDock() {
     host.classList.add('reading-dock');
-    const close=iconButton('收起阅读助手','close');close.onclick=()=>{host.hidden=true;document.body.classList.remove('reading-dock-open');document.querySelector('.reading-open')?.focus();};
+    const close=iconButton('收起阅读助手','close');close.onclick=()=>closeDock();
     $('.reading-header .reading-toolbar').append(close);
     const resize=document.createElement('div');resize.className='reading-dock-resize';resize.tabIndex=0;resize.setAttribute('role','separator');resize.setAttribute('aria-label','调整阅读助手宽度');resize.setAttribute('aria-orientation','vertical');
     document.body.append(resize);
@@ -126,7 +134,7 @@
     resize.onpointerdown=event=>{if(event.button!==0)return;event.preventDefault();resize.setPointerCapture(event.pointerId);const x=event.clientX,w=width;document.body.classList.add('reading-resizing');resize.onpointermove=e=>size(w+x-e.clientX);resize.onlostpointercapture=()=>{resize.onpointermove=null;document.body.classList.remove('reading-resizing');save();};};
     resize.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();size(event.key==='Home'?340:event.key==='End'?900:width+(event.key==='ArrowLeft'?20:-20));save();};
     document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
-    document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>{host.hidden=true;document.body.classList.remove('reading-dock-open');});
+    document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>closeDock(false));
   }
   let eventSource=null, eventSid='', eventTicket=-1;
   function watchSession() {

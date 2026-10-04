@@ -1,6 +1,6 @@
 /* Reading workspace: one scrollable conversation, a stationary composer. */
 .reading-chat{--rc-blue:#c7650e;--rc-ink:#20262d;--rc-muted:#69727d;--rc-line:#d9dcdf;--rc-soft:#fafaf8;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;position:relative;min-height:0;min-width:0;overflow:hidden;color:var(--rc-ink);background:#fff;font:14px/1.65 "Segoe UI","Microsoft YaHei",sans-serif;isolation:isolate}
-.reading-chat *{box-sizing:border-box}.reading-chat [hidden]{display:none!important}
+.reading-chat *{box-sizing:border-box}.reading-chat[hidden],.reading-chat [hidden]{display:none!important}
 .reading-chat button,.reading-chat input,.reading-chat textarea,.reading-chat select{font:inherit;color:inherit;max-width:100%;box-sizing:border-box}
 .reading-chat button{border:1px solid transparent;border-radius:7px;padding:5px 9px;background:transparent;cursor:pointer;line-height:1.5;white-space:nowrap;transition:background .15s,color .15s}
 .reading-chat button:hover{background:#fff3e7;color:#a95108}.reading-chat button:disabled{opacity:.4;cursor:default}.reading-chat :is(button,input,textarea,select,summary):focus-visible{outline:2px solid #c7650e;outline-offset:2px}

@@ -9,6 +9,11 @@ await page.route('**/api/reading/**',r=>{const path=new URL(r.request().url()).p
 await page.route('**/selection-fixture',r=>r.fulfill({contentType:'text/html',body:`<meta charset="utf-8"><div class="report-actions"><button id="report-library-add" data-arxiv-id="2401.12345v1" data-report-id="fixture">收藏</button></div><aside id="report-papers" hidden></aside><article class="report-article"><p id="passage">需要解释的论文内容</p><p id="second">另一个论文选区</p></article><p id="outside">正文之外</p><link rel="stylesheet" href="/static/reading-chat.css"><script src="/static/reading-chat.js"></script>`}));
 await page.goto((process.env.PAPERLOOM_URL||'http://127.0.0.1:8000')+'/selection-fixture');await page.locator('.reading-model-label').filter({hasText:'fixture'}).waitFor({state:'attached'});
 await page.locator('.reading-open').click();
+await page.locator('textarea').fill('保留草稿');
+await page.locator('.reading-open').click();
+assert.equal(await page.locator('#report-reading').isHidden(),true,'second click must close the dock');
+await page.locator('.reading-open').click();
+assert.equal(await page.locator('textarea').inputValue(),'保留草稿');
 const select=async id=>{await page.locator(id).evaluate(n=>{const r=document.createRange();r.selectNodeContents(n);const s=getSelection();s.removeAllRanges();s.addRange(r);});await page.waitForTimeout(100);};
 await select('#passage');assert.equal(await page.locator('[data-action=explain]').isEnabled(),true,'selecting report text must enable Explain Selection');
 await page.getByRole('button',{name:'解释选区',exact:true}).click();assert.equal(await page.locator('.reading-selection span').innerText(),'需要解释的论文内容');assert.match(await page.locator('textarea').inputValue(),/解释/);
