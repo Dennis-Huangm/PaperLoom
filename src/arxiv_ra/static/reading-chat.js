@@ -84,6 +84,14 @@
   function restoreDraft() {try {const d = JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); input.value = d.text || ''; selection = d.report === currentReport ? d.selection || '' : ''; showSelection();} catch { /* optional */ }}
   function showSelection() {selectionBox.hidden = !selection; selectionBox.querySelector('span').textContent = selection; $('[data-action=explain]').disabled = !selection;}
   function setSelection(text) {selection = text.slice(0, 20000); showSelection(); saveDraft();}
+  // Selection survives focus moving to the composer; only a new report range replaces it.
+  if(papers)document.addEventListener('selectionchange',()=>{
+    const range=window.getSelection(),article=document.querySelector('.report-article');
+    if(!range || range.isCollapsed || !article || !article.contains(range.anchorNode) || !article.contains(range.focusNode))return;
+    if(currentReport!==host.dataset.reportId || session?.archived)return;
+    const text=range.toString().trim();
+    if(text && text!==selection)setSelection(text);
+  });
   selectionBox.querySelector('button').onclick = () => setSelection('');
   input.oninput = () => {requestToken = null; saveDraft();};
   async function api(path, method = 'GET', data) {
