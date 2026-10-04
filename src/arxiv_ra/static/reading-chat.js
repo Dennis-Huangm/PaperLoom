@@ -181,6 +181,12 @@ ${f.text}`));row.append(pieces);}
       if (message.role === 'assistant' && message.html) body.innerHTML = message.html; // server-sanitized Markdown only
       else body.textContent = message.text;
       box.append(body);
+      if(message.role === 'user') {
+        const actions=textNode('div','','reading-answer-actions');
+        const copy=iconButton('复制问题','copy');
+        copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.title='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
+        actions.append(copy);box.append(actions);
+      }
       if(message.role === 'assistant' && ['failed','stopped','interrupted'].includes(message.status))box.append(textNode('div',message.detail || labels[message.status],'reading-failure'));
       if(message.role === 'assistant' && message.status === 'completed' && message.limited)box.append(textNode('small','本轮已达查阅或输出上限，可以继续追问。'));
       if(message.role === 'assistant' && !message.text && ['running','queued'].includes(message.status))box.append(textNode('div','正在查阅并整理回答…','reading-thinking'));
