@@ -20,6 +20,6 @@ await page.getByRole('button',{name:'解释选区',exact:true}).click();assert.e
 await select('#second');assert.equal(await page.locator('.reading-selection span').innerText(),'另一个论文选区');
 await select('#outside');assert.equal(await page.locator('.reading-selection span').innerText(),'另一个论文选区');
 await page.getByRole('button',{name:'移除选区'}).click();assert.equal(await page.locator('[data-action=explain]').isDisabled(),true);
-await select('#passage');await page.getByRole('button',{name:'解释选区',exact:true}).click();await page.getByRole('button',{name:'发送问题',exact:true}).click();assert.equal(submitted.selection,'需要解释的论文内容');assert.equal(submitted.report_id,'fixture');
+await select('#passage');await page.getByRole('button',{name:'解释选区',exact:true}).click();await Promise.all([page.waitForResponse(r=>r.url().endsWith('/messages') && r.request().method()==='POST'),page.getByRole('button',{name:'发送问题',exact:true}).click()]);assert.equal(submitted.selection,'需要解释的论文内容');assert.equal(submitted.report_id,'fixture');
 assert.deepEqual(errors,[]);console.log('PASS live selection, replacement, outside exclusion, removal');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

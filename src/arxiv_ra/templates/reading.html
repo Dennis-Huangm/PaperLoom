@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}阅读对话 · PaperLoom{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/reading-chat.css?v=20261005-multi-references">
+<link rel="stylesheet" href="/static/reading-chat.css?v=20261005-reading-modules">
 <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
 <div id="reading-panel" data-arxiv-id="{{ arxiv_id }}" data-report-id="{{ report_id }}" data-origin="{{ origin }}" data-source-date="{{ source_date }}" data-profile-id="{{ config.profile_id }}"></div>
 <script defer src="/static/vendor/katex/katex.min.js"></script>
-<script defer src="/static/reading-chat.js?v=20261005-multi-references"></script>
+<script defer src="/static/reading-chat.js?v=20261005-reading-modules"></script>
 {% endblock %}

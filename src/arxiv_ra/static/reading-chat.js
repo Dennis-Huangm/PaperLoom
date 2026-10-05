@@ -44,36 +44,7 @@
     };
   }
   const reportHistory = host.id === 'report-reading';
-  host.classList.add('reading-chat');
-  // This is fixed application markup. All external text is assigned via textContent.
-  host.innerHTML = `<header class="reading-header"><div class="reading-brand"><span class="reading-brand-icon" aria-hidden="true">✦</span><strong>论文助手</strong><span class="reading-header-note">和论文深入聊聊</span></div>
-    <div class="reading-toolbar"><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button><details class="reading-menu"><summary aria-label="会话操作" title="会话操作">•••</summary><div><button type="button" data-action="rename">重命名会话</button><button type="button" data-action="delete">删除会话</button></div></details></div></header>
-    <div class="reading-paper" title="当前论文">选择一篇论文，开始阅读</div>
-    <section class="reading-history" hidden aria-label="历史记录"><div class="reading-history-heading"><strong>历史记录</strong><button type="button" data-action="close-history">返回对话</button></div><div class="reading-history-filters"><div class="reading-history-scope" role="group" aria-label="历史范围"><button type="button" data-scope="all" aria-pressed="false">全部</button><button type="button" data-scope="current" aria-pressed="true">当前论文</button><span class="reading-history-context"></span></div><input type="search" placeholder="搜索会话…" aria-label="搜索会话标题"></div><div class="reading-history-summary" aria-live="polite"></div><div class="reading-history-list"></div><form class="reading-start"><label for="reading-aid">从论文开始</label><div><input id="reading-aid" aria-label="arXiv ID" placeholder="arXiv ID，如 2603.29852v2" required><button title="打开论文" aria-label="打开论文">↗</button></div></form></section>
-    <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>阅读模型设置</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div><form class="reading-settings">
-    <label><input type="checkbox" name="independent">独立配置阅读模型</label>
-    <label>模型<input name="model" maxlength="200"></label><label>服务地址<input name="base_url" placeholder="默认官方接口"></label>
-    <label>API Key<input type="password" name="api_key" autocomplete="new-password" placeholder="留空保留已有密钥"></label>
-    <label><input type="checkbox" name="clear_key">清除独立密钥</label><label><input type="checkbox" name="images">模型支持图片</label>
-    <label>思考强度<select name="reasoning_effort"><option value="high">High · 高</option><option value="medium">Medium · 中</option><option value="low">Low · 低</option><option value="">接口默认（不发送参数）</option></select></label><label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button class="reading-primary">保存设置</button></form></dialog>
-    <p class="reading-status" role="status"></p><div class="reading-messages" aria-live="polite"></div>
-    <form class="reading-compose"><div class="reading-suggestions"><button type="button" data-prompt="请查阅原文，按研究问题、核心方法、实验结果和局限总结这篇论文，并给出原文依据。">总结论文</button><button type="button" data-prompt="请查阅论文的方法与实验部分，梳理最值得关注的内容，并解释关键概念，提供原文依据。">论文重点</button>${papers ? '<button type="button" data-action="explain">解释选区</button>' : ''}</div><div class="reading-input-box"><div class="reading-selection" hidden><span></span><button type="button" title="移除选区" aria-label="移除选区">×</button></div>
-    <div class="reading-previews"></div><textarea aria-label="向论文提问" placeholder="向论文提问，也可以粘贴图表截图…" maxlength="16000" rows="2"></textarea>
-    <div class="reading-input-actions"><span>Enter 发送 · Shift + Enter 换行</span><button type="button" data-action="retry" hidden>重试回答</button><button type="button" data-action="stop" hidden>■ 停止</button><button type="submit" class="reading-send" title="发送问题" aria-label="发送问题">↑</button></div></div>
-    <div class="reading-footer"><button type="button" data-action="new">＋ 新对话</button><button type="button" data-action="attach" title="附加图片，也可直接粘贴截图">＋ 图片</button><input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><button type="button" class="reading-model-label" data-action="model" title="阅读模型设置">加载模型…</button><span class="reading-grounded" title="按需查阅当前论文原文">原文查阅</span></div></form>`;
-  if (!reportHistory) {
-    host.querySelector('.reading-grounded').title='按需查阅本轮引用论文原文';
-    const panel = host.querySelector('.reading-history');
-    panel.querySelector('.reading-history-heading').innerHTML = '<strong>会话记录</strong><button type="button" data-action="close-history" aria-label="收起历史记录">×</button>';
-    panel.querySelector('.reading-history-scope').remove();
-    panel.querySelector('.reading-history-summary').remove();
-    panel.querySelector('.reading-start').outerHTML = '<button type="button" data-action="new-workspace" class="reading-new-workspace">＋ 新阅读对话</button>';
-    host.querySelector('.reading-paper').outerHTML = '<section class="reading-reference-bar" aria-label="引用论文"><div><strong class="reading-reference-count">引用论文 · 0 篇</strong><button type="button" data-action="add-references">添加论文</button></div><div class="reading-reference-chips"></div><small class="reading-reference-note">从报告库选择论文，开始提问或交叉比较。</small></section>';
-    host.insertAdjacentHTML('beforeend', '<dialog class="reading-reference-dialog"><form><div class="reading-history-heading"><strong>从报告库引用论文</strong><button type="button" data-action="close-references" aria-label="关闭论文选择">×</button></div><input type="search" aria-label="搜索报告论文" placeholder="搜索标题或 arXiv ID"><div class="reading-reference-options"></div><p class="reading-reference-error" role="status"></p><footer><span class="reading-reference-selection-count"></span><button type="submit" class="reading-primary">加入所选</button></footer></form></dialog>');
-    const suggestions = host.querySelectorAll('.reading-suggestions [data-prompt]');
-    suggestions[0].textContent = '总结所选论文'; suggestions[0].dataset.prompt = '请分别总结本轮引用论文的研究问题、方法和结论，注明各篇来源。';
-    suggestions[1].textContent = '交叉对比'; suggestions[1].dataset.prompt = '请比较所选论文的研究问题、方法、实验设置和局限，区分可比与不可直接比较的结果，并注明各篇证据。';
-  }
+  const view=createReadingView(host, reportHistory ? 'report' : 'workspace');
   const $ = selector => host.querySelector(selector);
   if(papers)installDock();
   const input = $('textarea'), status = $('.reading-status'), messages = $('.reading-messages');
@@ -82,10 +53,21 @@
   let session = null, selection = '', pictures = [], requestToken = null, busy = false, generation = 0, lastRender = '';
   let currentAid = host.dataset.arxivId || '', currentReport = host.dataset.reportId || '';
   let profile = '';
-  let historyRequest = 0, historyScope = 'current';
+  const historyController=createConversationHistory({host,view,reportHistory,api,
+    getContext:()=>({session,currentAid}),
+    async onOpen(row) {
+      saveDraft();generation++;session=row;
+      currentAid=reportHistory ? row.paper.arxiv_id+'v'+row.paper.version : '';
+      currentReport='';selection='';pictures=[];showPictures();input.value='';restoreDraft();
+      lastRender='';await refresh();
+      if(papers || innerWidth<850)setHistory(false);else await historyController.refresh();
+    },
+    onDeleted(id){if(session?.id===id)clearDeletedSession();},
+    async onRenamed(id){if(session?.id===id)await refresh();},error,
+  });
   const labels = {queued:'等待开始',running:'正在回答',completed:'',failed:'回答未完成',stopped:'已停止',interrupted:'已中断'};
   const expanded = new Set();
-  function setHistory(open) {history.hidden = !open; host.classList.toggle('history-open', open); $('[data-action=history]').setAttribute('aria-expanded', String(open)); if(open) listHistory().catch(error);}
+  function setHistory(open) {history.hidden = !open; host.classList.toggle('history-open', open); $('[data-action=history]').setAttribute('aria-expanded', String(open)); if(open) historyController.refresh().catch(error);}
   const settingsDialog = $('.reading-settings-dialog');
   $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => settingsDialog.showModal();
   $('[data-action=close-settings]').onclick = () => settingsDialog.close();
@@ -95,15 +77,30 @@
   host.querySelectorAll('[data-prompt]').forEach(button => {button.onclick = () => {input.value = button.dataset.prompt; input.oninput(); input.focus();};});
   const explainButton = $('[data-action=explain]');
   if (explainButton) explainButton.onclick = () => {if(!selection) {status.textContent='先在报告正文中选中文字，再点击“阅读对话 / 提问选区”。';return;} input.value='请结合原文解释这段选区，说明关键概念及其在论文中的作用。'; input.oninput(); input.focus();};
-  if (reportHistory) $('.reading-start').onsubmit = event => {event.preventDefault();saveDraft(); generation++; session=null; currentAid=$('#reading-aid').value.trim(); currentReport=''; selection=''; pictures=[]; input.value='';showSelection();showPictures();start().catch(error);};
   const draftKey = () => 'paperloom.reading.draft:' + (session?.id || currentAid) + ':' + currentReport;
   function saveDraft() {try {sessionStorage.setItem(draftKey(), JSON.stringify({text: input.value, selection, report: currentReport}));} catch { /* optional */ }}
   function restoreDraft() {try {const d = JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); input.value = d.text || ''; selection = d.report === currentReport ? d.selection || '' : ''; showSelection();} catch { /* optional */ }}
-  let referenceCatalog = [], referenceSelection = new Set(), referenceTicket = 0;
+  function updateReferenceScroll() {
+    if(reportHistory)return;
+    const rail=$('.reading-reference-rail'), chips=$('.reading-reference-chips');
+    const contentWidth=[...chips.children].reduce((width,chip)=>width+chip.getBoundingClientRect().width,0)+Math.max(0,chips.children.length-1)*6;
+    rail.classList.toggle('has-overflow',contentWidth>rail.clientWidth+1);
+    $('[data-reference-step="-1"]').disabled=chips.scrollLeft<1;
+    $('[data-reference-step="1"]').disabled=chips.scrollLeft+chips.clientWidth>=chips.scrollWidth-1;
+    rail.classList.toggle('can-scroll-left',chips.scrollLeft>=1);
+    rail.classList.toggle('can-scroll-right',chips.scrollLeft+chips.clientWidth<chips.scrollWidth-1);
+  }
+  if(!reportHistory) {
+    const chips=$('.reading-reference-chips');
+    chips.addEventListener('scroll',updateReferenceScroll,{passive:true});
+    new ResizeObserver(updateReferenceScroll).observe($('.reading-reference-rail'));
+    host.querySelectorAll('[data-reference-step]').forEach(button=>{button.onclick=()=>chips.scrollBy({left:Number(button.dataset.referenceStep)*Math.max(146,chips.clientWidth*.8),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});});
+  }
+
   function renderReferences(value) {
     const refs = value.references || [];
     const active = value.messages.some(m=>['queued','running'].includes(m.status));
-    $('.reading-reference-count').textContent = `引用论文 · ${refs.length} 篇`;
+    $('.reading-reference-count').textContent = `引用 · ${refs.length}`;
     const chips = $('.reading-reference-chips'); chips.replaceChildren();
     for (const ref of refs) {
       const chip = textNode('div','','reading-reference-chip');
@@ -115,8 +112,9 @@
       remove.onclick = () => changeReferences(refs.filter(r=>r.report_id!==ref.report_id).map(r=>r.report_id)).catch(error);
       chip.append(label,remove); chips.append(chip);
     }
+    requestAnimationFrame(updateReferenceScroll);
     $('[data-action=add-references]').disabled = active || busy || !!value.archived;
-    $('.reading-reference-note').textContent = refs.length ? '仅查阅这些论文的报告与对应版本原文；移除引用不会删除历史讨论。' : '从报告库选择一篇或多篇论文，开始提问或交叉比较。';
+    $('.reading-reference-count').title = refs.length ? '仅查阅这些论文的报告与对应版本原文；移除引用不会删除历史讨论。' : '从报告库选择一篇或多篇论文，开始提问或交叉比较。';
   }
   async function changeReferences(reportIds) {
     if(!session)await start();
@@ -124,47 +122,17 @@
     busy=true;render(session);
     try {
       const value=await api('/sessions/'+sid+'/references','PUT',{report_ids:reportIds, mode:'workspace'});
-      if(session?.id===sid && generation===ticket){render(value);if(!history.hidden)await listHistory();}
+      if(session?.id===sid && generation===ticket){render(value);if(!history.hidden)await historyController.refresh();}
     } finally {busy=false;if(session)render(session);}
-  }
-  function drawReferenceOptions() {
-    const dialog=$('.reading-reference-dialog');
-    const query=dialog.querySelector('input[type=search]').value.trim().toLocaleLowerCase();
-    const list=dialog.querySelector('.reading-reference-options');list.replaceChildren();
-    for(const ref of referenceCatalog) {
-      if(!(ref.paper.title+' '+ref.paper.arxiv_id).toLocaleLowerCase().includes(query))continue;
-      const row=textNode('label','','reading-reference-option');
-      const check=document.createElement('input');check.type='checkbox';check.value=ref.report_id;
-      const selected=(session?.references || []).some(r=>r.paper.arxiv_id===ref.paper.arxiv_id);
-      check.disabled=!!ref.missing || selected;check.checked=selected || referenceSelection.has(ref.report_id);
-      check.onchange=()=>{if(check.checked)referenceSelection.add(ref.report_id);else referenceSelection.delete(ref.report_id);updateReferenceCount();};
-      const body=textNode('span','');body.append(textNode('strong',ref.paper.title),textNode('small',`${ref.paper.arxiv_id} · v${ref.paper.version}${selected ? ' · 已引用' : ref.missing ? ' · 报告不可读' : ''}`));row.append(check,body);list.append(row);
-    }
-    if(!list.childElementCount)list.append(textNode('p',query ? '没有匹配的报告论文' : '报告库中暂无可引用论文，请先生成报告。'));
-    updateReferenceCount();
-  }
-  function updateReferenceCount() {
-    $('.reading-reference-selection-count').textContent=`已选 ${referenceSelection.size} 篇`;
-    $('.reading-reference-dialog [type=submit]').disabled=!referenceSelection.size;
   }
   if(!reportHistory) {
     $('[data-action=new-workspace]').onclick=()=> $('[data-action=new]').click();
-    const dialog=$('.reading-reference-dialog');
-    $('[data-action=close-references]').onclick=()=>dialog.close();
-    $('[data-action=add-references]').onclick=async()=>{
-      referenceSelection.clear();referenceTicket=generation;
-      dialog.querySelector('input[type=search]').value='';$('.reading-reference-error').textContent='';
-      $('.reading-reference-options').textContent='正在加载报告库…';dialog.showModal();
-      try {referenceCatalog=(await api('/reports')).reports;drawReferenceOptions();}catch(e){$('.reading-reference-error').textContent=e.message;}
-    };
-    dialog.querySelector('input[type=search]').oninput=drawReferenceOptions;
-    dialog.querySelector('form').onsubmit=async event=>{
-      event.preventDefault();
-      if(referenceTicket!==generation){dialog.close();return;}
-      const submit=dialog.querySelector('[type=submit]');submit.disabled=true;
-      try {await changeReferences([...(session?.references || []).map(r=>r.report_id),...referenceSelection]);dialog.close();}
-      catch(e){$('.reading-reference-error').textContent=e.message;submit.disabled=false;}
-    };
+    const referenceEditor=createReferenceEditor({dialog:$('.reading-reference-dialog'),
+      getContext:()=>({ticket:generation,references:session?.references || []}),
+      loadCatalog:async()=>(await api('/reports')).reports,
+      save:changeReferences,
+    });
+    $('[data-action=add-references]').onclick=()=>referenceEditor.open();
   }
 
   function showSelection() {selectionBox.hidden = !selection; selectionBox.querySelector('span').textContent = selection; if (explainButton) explainButton.disabled = !selection;}
@@ -235,10 +203,8 @@
   function render(value) {
     if(session?.id===value.id && session.updated_at && value.updated_at && value.updated_at < session.updated_at)return;
     session = value;watchSession();
-    if (reportHistory) {
-      $('.reading-paper').textContent = value.paper.title + ' · v' + value.paper.version;
-      $('.reading-paper').title = value.paper.title + ' · v' + value.paper.version;
-    } else renderReferences(value);
+    view.renderPaper(value);
+    if(!reportHistory)renderReferences(value);
     const active = value.messages.some(m => ['queued', 'running'].includes(m.status));
     compose.querySelector('[type=submit]').disabled = active || busy || !!value.archived || (!reportHistory && (!value.references?.length || value.references.some(r=>r.missing)));
     input.disabled=!!value.archived;
@@ -249,7 +215,7 @@
     const last = value.messages.at(-1);
     $('[data-action=retry]').disabled = !last || !['failed', 'stopped', 'interrupted'].includes(last.status);
     $('[data-action=retry]').hidden = $('[data-action=retry]').disabled;
-    $('[data-action=rename]').disabled = $('[data-action=delete]').disabled = !session;
+    view.setSessionActions(!!session);
     const stamp = JSON.stringify(value.messages);
     status.classList.remove('reading-error');
     status.textContent = value.archived ? '回退前归档 · 只读' : active ? (last?.detail || '正在准备回答…') : '';
@@ -314,7 +280,6 @@ ${f.text}`));row.append(pieces);}
         actions.append(copy);box.append(actions);
       }
       if(message.role === 'assistant' && ['failed','stopped','interrupted'].includes(message.status))box.append(textNode('div',message.detail || labels[message.status],'reading-failure'));
-      if(message.role === 'assistant' && message.status === 'completed' && message.limited)box.append(textNode('small','本轮已达查阅或输出上限，可以继续追问。'));
       if(message.role === 'assistant' && !message.text && ['running','queued'].includes(message.status))box.append(textNode('div','正在查阅并整理回答…','reading-thinking'));
       if(message.role === 'assistant' && (message.text || !['queued','running'].includes(message.status))) {
         const actions=textNode('div','','reading-answer-actions'); const copy=iconButton('复制回答','copy');
@@ -324,24 +289,12 @@ ${f.text}`));row.append(pieces);}
           if(!confirm('回退到本轮提问之前？当前完整对话将归档保留，原问题恢复到输入框。'))return;
           const sid=session.id,ticket=generation;
           try{const result=await api('/sessions/'+sid+'/rollback','POST',{message_id:message.id});if(session?.id!==sid || generation!==ticket)return;
-            generation++;lastRender='';render(result.session);input.value=result.draft.text;selection=result.draft.selection || '';pictures=result.draft.images || [];currentReport=result.draft.report?.id || '';requestToken=null;showSelection();showPictures();saveDraft();input.focus();if(!history.hidden)await listHistory();
+            generation++;lastRender='';render(result.session);input.value=result.draft.text;selection=result.draft.selection || '';pictures=result.draft.images || [];currentReport=result.draft.report?.id || '';requestToken=null;showSelection();showPictures();saveDraft();input.focus();if(!history.hidden)await historyController.refresh();
           }catch(e){error(e);}
         };
         actions.append(copy,back,textNode('span',message.model || '')); box.append(actions);
       }
       for (const data of message.images || []) {const img = document.createElement('img'); img.src = data; img.alt = '本条问题图片'; box.append(img);}
-      if (message.citations?.length) {
-        const details = document.createElement('details'); details.className = 'reading-citations';
-        details.append(textNode('summary', `原文依据 · ${message.citations.length} 处`));
-        const key=message.id+':sources';details.open=expanded.has(key);details.ontoggle=()=>{if(details.open)expanded.add(key);else expanded.delete(key);};
-        for (const c of message.citations) {
-          const quote = textNode('blockquote', c.quote + '\n' + c.source_note);
-          if (c.available) {const a = textNode('a', ` ${c.paper_title || c.paper_id || ""} · 原文第 ${c.page} 页`); a.href = c.url; a.target = '_blank'; a.rel = 'noopener'; quote.append(a);}
-          else quote.append(textNode('small', '原文文件已缺失，保留当时摘录'));
-          details.append(quote);
-        }
-        box.append(details);
-      }
       if (window.katex) box.querySelectorAll('.math-inline,.math-block').forEach(node => {
         try {katex.render(node.textContent,node,{displayMode:node.dataset.display==='true',throwOnError:false,trust:false});}catch{}
       });
@@ -368,11 +321,7 @@ ${f.text}`));row.append(pieces);}
     while(target.childNodes.length>source.childNodes.length)target.lastChild.remove();
   }
   function showWelcome() {
-    const empty = textNode('div','','reading-welcome');
-    empty.append(textNode('div','✦','reading-welcome-icon'),textNode('h2',reportHistory ? '从一个问题，读懂这篇论文' : '选几篇论文，一起深入读'),textNode('p','解释概念、拆解方法、核实实验结论。\n回答会按需查阅原文，并保留可追溯的依据。'));
-    const tips=textNode('div','','reading-welcome-tips');
-    for(const prompt of (reportHistory ? ['这篇论文解决了什么问题？','核心方法为什么有效？','实验结论有哪些局限？'] : ['这些论文分别解决了什么问题？','比较它们的方法与实验设置','哪些结论一致，哪些存在分歧？'])) {const button=textNode('button',prompt+' ↗');button.type='button';button.onclick=()=>{input.value=prompt;input.oninput();input.focus();};tips.append(button);}
-    empty.append(tips);messages.append(empty);
+    view.showWelcome(prompt=>{input.value=prompt;input.oninput();input.focus();});
   }
   async function refresh() {
     if (!session) return;
@@ -381,7 +330,7 @@ ${f.text}`));row.append(pieces);}
     if (ticket === generation && session?.id === sid) render(value);
   }
   async function start(fresh = false) {
-    if (reportHistory && !currentAid) {historyScope = 'all'; setHistory(true); messages.replaceChildren();showWelcome();return;}
+    if (reportHistory && !currentAid) {historyController.showAll(); setHistory(true); messages.replaceChildren();showWelcome();return;}
     busy = true;
     const ticket = ++generation;
     status.textContent = '正在确认论文版本…';
@@ -390,7 +339,7 @@ ${f.text}`));row.append(pieces);}
         origin: host.dataset.origin || '', source_date: host.dataset.sourceDate || '', mode: reportHistory ? 'report' : 'workspace'});
       if (ticket !== generation) return;
       session = value; await refresh();
-      if(!history.hidden)await listHistory();
+      if(!history.hidden)await historyController.refresh();
       // Keep a question drafted before version resolution.
       if (!input.value) restoreDraft();
     } catch(e) {
@@ -398,79 +347,16 @@ ${f.text}`));row.append(pieces);}
       throw e;
     } finally {busy = false; if(session) render(session);}
   }
-  async function listHistory() {
-    const request = ++historyRequest;
-    const aid = reportHistory && historyScope === 'current' ? currentAid : '';
-    const q = history.querySelector('input[type=search]').value;
-    history.querySelectorAll('[data-scope]').forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.scope === historyScope));
-      button.disabled = button.dataset.scope === 'current' && !currentAid;
-    });
-    const context = $('.reading-history-context');
-    if (context) {context.textContent = session?.paper?.title || currentAid; context.title = context.textContent;}
-
-    const rows = await api('/sessions?' + new URLSearchParams({arxiv_id: aid, q, mode:reportHistory ? 'report' : ''}));
-    if(request !== historyRequest)return;
-    if (reportHistory) $('.reading-history-summary').textContent = `${historyScope === 'current' ? '当前论文' : '全部论文'} · ${rows.length} 个会话${q.trim() ? ' · 搜索结果' : ''}`;
-    const list = $('.reading-history-list'); list.replaceChildren();
-    for (const row of rows) {
-      const item = textNode('div', '', 'reading-history-row');
-      item.classList.toggle('selected', row.id === session?.id);
-      const button = textNode('button', '', 'reading-history-open');
-      button.type = 'button';
-      if (row.id === session?.id) button.setAttribute('aria-current', 'true');
-      button.append(textNode('strong', row.title === row.paper.title ? '论文对话' : row.title));
-      if (reportHistory) button.append(textNode('span', row.paper.title || row.paper.arxiv_id, 'reading-history-paper-title'));
-      else {const refs=row.references || (row.paper?.arxiv_id ? [{paper:row.paper}] : []); button.append(textNode('span', `${refs.length} 篇 · ` + refs.map(r=>r.paper.title).join('、'), 'reading-history-paper-title'));}
-      const date = reportHistory ? new Date(row.updated_at).toLocaleString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : new Date(row.updated_at).toLocaleString([], {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      button.append(textNode('span', `${reportHistory ? "v" + row.paper.version + " · " : ""}${date}${reportHistory && Number.isInteger(row.message_count) ? ` · ${row.message_count} 条消息` : ''}`, 'reading-history-meta'));
-      button.title = row.title + (reportHistory ? ' · ' + row.paper.title : '');
-      if (row.archived) button.append(textNode('em', '归档 · 只读', 'reading-history-archive'));
-      button.onclick = async () => {
-        saveDraft(); generation++; session = row;
-        currentAid = reportHistory ? row.paper.arxiv_id + 'v' + row.paper.version : '';
-        currentReport = ''; selection = ''; pictures = []; showPictures(); input.value = ''; restoreDraft();
-        try {lastRender='';await refresh();if(papers || innerWidth < 850)setHistory(false);else await listHistory();} catch(e) {error(e);}
-      };
-      const actions = textNode('div', '', 'reading-history-actions');
-      const rename = reportHistory ? textNode('button', '重命名') : iconButton('重命名会话', 'edit');
-      const remove = reportHistory ? textNode('button', '删除') : iconButton('删除会话', 'trash');
-      remove.classList.add('reading-history-delete');
-      rename.type = remove.type = 'button';
-      rename.setAttribute('aria-label', '重命名会话：' + row.title);
-      remove.setAttribute('aria-label', '删除会话：' + row.title);
-      rename.onclick = () => renameSession(row); remove.onclick = () => deleteSession(row);
-      actions.append(rename, remove); item.append(button, actions); list.append(item);
-    }
-    if(!rows.length) list.append(textNode('p', q.trim() ? '没有找到匹配的会话，试试其他关键词。' : '还没有会话，返回对话开始提问吧。', 'reading-history-empty'));
-  }
-  history.querySelectorAll('[data-scope]').forEach(button => {
-    button.onclick = () => {historyScope = button.dataset.scope; listHistory().catch(error);};
-  });
-  history.querySelector('input[type=search]').oninput = () => listHistory().catch(error);
   $('[data-action=history]').onclick = () => setHistory(history.hidden);
   $('[data-action=new]').onclick = () => {if(!reportHistory){currentAid='';currentReport='';} saveDraft(); input.value = ''; selection = ''; pictures = []; showSelection(); showPictures(); start(true).catch(error);};
-  async function renameSession(row) {
-    const title=prompt('会话标题',row.title);
-    if(!title?.trim())return;
-    try {await api('/sessions/'+row.id,'PATCH',{title:title.trim()});if(session?.id===row.id)await refresh();await listHistory();}catch(e){error(e);}
-  }
-  async function deleteSession(row) {
-    if(!confirm('删除会话“'+row.title+'”及其专属图片？正在生成的回答也会停止。'))return;
-    try {
-      await api('/sessions/'+row.id,'DELETE');
-      if(session?.id===row.id)clearDeletedSession();
-      await listHistory();
-    }catch(e){error(e);}
-  }
   function clearDeletedSession() {
     generation++;session=null;watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
     showSelection();showPictures();messages.replaceChildren();showWelcome();lastRender='';status.textContent='会话已删除';
     if(!reportHistory){currentAid='';currentReport='';renderReferences({references:[],messages:[]});compose.querySelector('[type=submit]').disabled=true;}
-    $('[data-action=rename]').disabled=$('[data-action=delete]').disabled=true;setHistory(true);
+    view.setSessionActions(false);
+    setHistory(true);
   }
-  $('[data-action=rename]').onclick = () => session && renameSession(session);
-  $('[data-action=delete]').onclick = () => session && deleteSession(session);
+  view.bindSessionActions(()=>session && historyController.rename(session),()=>session && historyController.remove(session));
   $('[data-action=stop]').onclick = () => session && api('/sessions/'+session.id+'/stop','POST',{}).then(refresh).catch(error);
   async function send(payload, preserveDraft = false) {
     if(busy)return;
@@ -486,7 +372,7 @@ ${f.text}`));row.append(pieces);}
         if(pictures === submittedPictures)pictures=[];
       }
       requestToken=null; showSelection(); showPictures(); saveDraft(); await refresh();
-      if(!history.hidden)await listHistory();
+      if(!history.hidden)await historyController.refresh();
     } finally {busy=false; if(session)render(session);}
   }
   compose.onsubmit = async event => {
@@ -530,4 +416,281 @@ ${f.text}`));row.append(pieces);}
   }).catch(error);
   window.addEventListener('pagehide',()=>eventSource?.close());
   window.addEventListener('pageshow',e=>{if(e.persisted){eventSource=null;watchSession();}});
+  // An editor opening is a transaction: draft selection is committed only on Save.
+  function createReferenceEditor({dialog, getContext, loadCatalog, save}) {
+    const find=selector=>dialog.querySelector(selector);
+    const search=find('input[type=search]'), list=find('.reading-reference-options');
+    const all=find('[data-action=select-all-references]'), submit=find('[type=submit]');
+    let draft=null, revision=0;
+    function visibleChoices() {
+      const query=search.value.trim().toLocaleLowerCase();
+      return draft.catalog.filter(ref=>(ref.paper.title+' '+ref.paper.arxiv_id).toLocaleLowerCase().includes(query));
+    }
+    function selectable(ref) {return !ref.missing || draft.initial.has(ref.report_id);}
+    function current(token) {return draft && token===revision && dialog.open;}
+    function update() {
+      if(!draft)return;
+      const choices=visibleChoices().filter(selectable);
+      const checked=choices.filter(ref=>draft.selected.has(ref.report_id)).length;
+      const locked=draft.loading || draft.saving || !!draft.loadError;
+      all.disabled=locked || !choices.length;
+      all.checked=choices.length>0 && checked===choices.length;
+      all.indeterminate=checked>0 && checked<choices.length;
+      search.disabled=draft.saving;
+      list.querySelectorAll('input').forEach(check=>{check.disabled=locked || check.dataset.selectable!=='true';check.checked=draft.selected.has(check.value);});
+      find('.reading-reference-selection-count').textContent=`已选 ${draft.selected.size} 篇`;
+      const changed=draft.initial.size!==draft.selected.size || [...draft.initial].some(id=>!draft.selected.has(id));
+      submit.textContent=draft.initial.size ? '保存引用' : '加入所选';submit.disabled=locked || !changed;
+    }
+    function draw() {
+      list.replaceChildren();
+      if(draft.loading){list.textContent='正在加载报告库…';update();return;}
+      for(const ref of visibleChoices()) {
+        const row=textNode('label','','reading-reference-option');
+        const check=document.createElement('input');check.type='checkbox';check.value=ref.report_id;
+        check.dataset.selectable=String(selectable(ref));
+        check.onchange=()=>{if(check.checked)draft.selected.add(ref.report_id);else draft.selected.delete(ref.report_id);update();};
+        const body=textNode('span','');body.append(textNode('strong',ref.paper.title),textNode('small',`${ref.paper.arxiv_id} · v${ref.paper.version}${draft.initial.has(ref.report_id) ? ' · 已引用' : ref.missing ? ' · 报告不可读' : ''}`));
+        row.append(check,body);list.append(row);
+      }
+      if(!list.childElementCount && !draft.loadError)list.append(textNode('p',search.value.trim() ? '没有匹配的报告论文' : '报告库中暂无可引用论文，请先生成报告。'));
+      update();
+    }
+    find('[data-action=close-references]').onclick=()=>dialog.close();
+    dialog.addEventListener('close',()=>{if(!dialog.open){revision++;draft=null;}});
+    all.onchange=()=>{
+      if(!draft || all.disabled)return;
+      for(const ref of visibleChoices().filter(selectable)) {
+        if(all.checked)draft.selected.add(ref.report_id);else draft.selected.delete(ref.report_id);
+      }
+      update();
+    };
+    search.oninput=()=>{if(draft)draw();};
+    find('form').onsubmit=async event=>{
+      event.preventDefault();
+      if(!draft || submit.disabled)return;
+      if(draft.ticket!==getContext().ticket){dialog.close();return;}
+      const token=revision, selected=[...draft.selected];draft.saving=true;update();
+      find('.reading-reference-error').textContent='';
+      try {await save(selected);if(current(token))dialog.close();}
+      catch(e){if(current(token))find('.reading-reference-error').textContent=e.message;}
+      finally {if(current(token)){draft.saving=false;update();}}
+    };
+    return {
+      async open() {
+        const token=++revision, context=getContext();
+        const references=context.references.slice();
+        draft={ticket:context.ticket,catalog:[],initial:new Set(references.map(ref=>ref.report_id)),
+          selected:new Set(references.map(ref=>ref.report_id)),loading:true,saving:false,loadError:false};
+        search.value='';find('.reading-reference-error').textContent='';
+        draw();dialog.showModal();
+        try {
+          const reports=await loadCatalog();
+          if(!current(token))return;
+          if(draft.ticket!==getContext().ticket){dialog.close();return;}
+          const pinned=new Set(references.map(ref=>ref.paper.arxiv_id));
+          draft.catalog=[...references,...reports.filter(ref=>!pinned.has(ref.paper.arxiv_id))];
+        }catch(e){if(current(token)){draft.loadError=true;find('.reading-reference-error').textContent=e.message;}}
+        finally {if(current(token)){draft.loading=false;draw();}}
+      },
+    };
+  }
+
+  // History owns result ordering and selection, and reports conversation actions outward.
+  function createConversationHistory({host, view, reportHistory, api, getContext, onOpen, onDeleted, onRenamed, error}) {
+    const $=selector=>host.querySelector(selector), history=$('.reading-history');
+    let historyRequest = 0, historyScope = 'current', historyLoading = false;
+    let batchMode = false, deletingHistory = false, visibleHistory = [];
+    const selectedHistory = new Set();
+    history.querySelector('.reading-history-filters').insertAdjacentHTML('afterend', '<div class="reading-history-batch"><button type="button" data-action="batch-history">批量删除</button><div class="reading-history-selection" hidden><label><input type="checkbox" data-action="select-history">全选</label><span class="reading-history-selected-count"></span><button type="button" data-action="delete-history">删除所选</button></div><p class="reading-history-batch-status" role="status"></p></div>');
+    function updateHistorySelection() {
+      const {currentAid}=getContext();
+      history.classList.toggle('is-selecting', batchMode);
+      $('[data-action=batch-history]').textContent = batchMode ? '取消' : '批量删除';
+      $('[data-action=batch-history]').disabled = deletingHistory;
+      $('.reading-history-selection').hidden = !batchMode;
+      $('.reading-history-selected-count').textContent = `已选 ${selectedHistory.size} 项`;
+      const all = $('[data-action=select-history]');
+      all.checked = visibleHistory.length > 0 && visibleHistory.every(row=>selectedHistory.has(row.id));
+      all.indeterminate = selectedHistory.size > 0 && !all.checked;
+      all.disabled = deletingHistory || historyLoading || !visibleHistory.length;
+      $('[data-action=delete-history]').disabled = deletingHistory || historyLoading || !selectedHistory.size;
+      history.querySelectorAll('.reading-history-check').forEach(check=>{check.checked=selectedHistory.has(check.value);check.disabled=deletingHistory || historyLoading;});
+      history.querySelectorAll('input[type=search],[data-scope]').forEach(el=>{el.disabled=deletingHistory || (el.dataset.scope==='current' && !currentAid);});
+      history.querySelectorAll('.reading-history-actions button,.reading-history-open').forEach(el=>{el.disabled=deletingHistory || historyLoading;});
+    }
+    $('[data-action=batch-history]').onclick = () => {batchMode=!batchMode;selectedHistory.clear();$('.reading-history-batch-status').textContent='';updateHistorySelection();};
+    $('[data-action=select-history]').onchange = event => {selectedHistory.clear();if(event.target.checked)visibleHistory.forEach(row=>selectedHistory.add(row.id));updateHistorySelection();};
+    $('[data-action=delete-history]').onclick = async () => {
+      const ids = [...selectedHistory];
+      if(deletingHistory || historyLoading || !ids.length || !confirm(`确定删除所选 ${ids.length} 个会话及其专属图片？正在生成的回答会停止，此操作无法撤销。`))return;
+      deletingHistory=true;updateHistorySelection();
+      let deleted=0, failure='';
+      $('.reading-history-batch-status').textContent='正在删除…';
+      for(const id of ids) {
+        try {await api('/sessions/'+id,'DELETE');selectedHistory.delete(id);deleted++;onDeleted(id);}
+        catch(e){failure=e.message;}
+      }
+      deletingHistory=false;
+      if(!selectedHistory.size)batchMode=false;
+      try {await listHistory();}catch(e){failure=e.message;}
+      updateHistorySelection();
+      $('.reading-history-batch-status').textContent=`已删除 ${deleted} 个会话。`+(failure ? `部分操作失败：${failure}。可重试未删除的会话。` : '');
+    };
+
+    async function listHistory() {
+      const {session,currentAid}=getContext();
+      const request = ++historyRequest;
+      historyLoading=true;updateHistorySelection();
+      const aid = reportHistory && historyScope === 'current' ? currentAid : '';
+      const q = history.querySelector('input[type=search]').value;
+      history.querySelectorAll('[data-scope]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.scope === historyScope));
+        button.disabled = button.dataset.scope === 'current' && !currentAid;
+      });
+      const context = $('.reading-history-context');
+      if (context) {context.textContent = session?.paper?.title || currentAid; context.title = context.textContent;}
+
+      let rows;
+      try {rows=await api('/sessions?' + new URLSearchParams({arxiv_id: aid, q, mode:reportHistory ? 'report' : ''}));}
+      catch(e){
+        if(request===historyRequest){historyLoading=false;visibleHistory=[];selectedHistory.clear();$('.reading-history-list').replaceChildren();updateHistorySelection();}
+        throw e;
+      }
+      if(request !== historyRequest)return;
+      historyLoading=false;
+      const activeId=getContext().session?.id;
+      view.renderHistorySummary(historyScope, rows.length, q);
+      visibleHistory = rows;
+      const available = new Set(rows.map(row=>row.id));
+      for(const id of selectedHistory)if(!available.has(id))selectedHistory.delete(id);
+      const list = $('.reading-history-list'); list.replaceChildren();
+      for (const row of rows) {
+        const item = textNode('div', '', 'reading-history-row');
+        item.classList.toggle('selected', row.id === activeId);
+        const {button,rename,remove}=view.historyCard(row);
+        if(row.id===activeId)button.setAttribute('aria-current','true');
+        button.onclick=()=>onOpen(row).catch(error);
+        const actions = textNode('div', '', 'reading-history-actions');
+        rename.onclick = () => renameSession(row); remove.onclick = () => deleteSession(row);
+        const check = document.createElement('input');check.type='checkbox';check.className='reading-history-check';check.value=row.id;
+        check.setAttribute('aria-label','选择会话：'+row.title);
+        check.onchange=()=>{if(check.checked)selectedHistory.add(row.id);else selectedHistory.delete(row.id);updateHistorySelection();};
+        actions.append(rename, remove); item.append(check, button, actions); list.append(item);
+      }
+      updateHistorySelection();
+      if(!rows.length) list.append(textNode('p', q.trim() ? '没有找到匹配的会话，试试其他关键词。' : '还没有会话，返回对话开始提问吧。', 'reading-history-empty'));
+    }
+    history.querySelectorAll('[data-scope]').forEach(button => {
+      button.onclick = () => {selectedHistory.clear(); historyScope = button.dataset.scope; listHistory().catch(error);};
+    });
+    history.querySelector('input[type=search]').oninput = () => {selectedHistory.clear();listHistory().catch(error);};
+    async function renameSession(row) {
+      const title=prompt('会话标题',row.title);
+      if(!title?.trim())return;
+      try {await api('/sessions/'+row.id,'PATCH',{title:title.trim()});await onRenamed(row.id);await listHistory();}catch(e){error(e);}
+    }
+    async function deleteSession(row) {
+      if(!confirm('删除会话“'+row.title+'”及其专属图片？正在生成的回答也会停止。'))return;
+      try {
+        await api('/sessions/'+row.id,'DELETE');
+        onDeleted(row.id);
+        await listHistory();
+      }catch(e){error(e);}
+    }
+    return {refresh:listHistory, rename:renameSession, remove:deleteSession,
+      showAll(){historyScope='all';selectedHistory.clear();}};
+  }
+
+  // Reading view module: presentation varies here; session execution stays in the caller.
+  // Fixed application markup only. Paper titles and message text use textContent.
+  function createReadingView(host, mode) {
+    const adapters = {
+      report: {
+        menu: `<details class="reading-menu"><summary aria-label="会话操作" title="会话操作">•••</summary><div><button type="button" data-action="rename">重命名会话</button><button type="button" data-action="delete">删除会话</button></div></details>`,
+        paper: `<div class="reading-paper" title="当前论文">选择一篇论文，开始阅读</div>`,
+        scope: `<div class="reading-history-scope" role="group" aria-label="历史范围"><button type="button" data-scope="all" aria-pressed="false">全部</button><button type="button" data-scope="current" aria-pressed="true">当前论文</button><span class="reading-history-context"></span></div>`,
+        summary: `<div class="reading-history-summary" aria-live="polite"></div>`,
+        historyHeading: `<strong>历史记录</strong><button type="button" data-action="close-history">返回对话</button>`,
+        historyFooter: ``,
+        composeTools: `<div class="reading-suggestions"><button type="button" data-prompt="请查阅原文，按研究问题、核心方法、实验结果和局限总结这篇论文，并给出原文依据。">总结论文</button><button type="button" data-prompt="请查阅论文的方法与实验部分，梳理最值得关注的内容，并解释关键概念，提供原文依据。">论文重点</button><button type="button" data-action="explain">解释选区</button></div>`,
+        groundedTitle: `按需查阅当前论文原文`,
+        dialog: ``,
+        welcomeTitle: `从一个问题，读懂这篇论文`,
+      },
+      workspace: {
+        menu: ``,
+        paper: ``,
+        scope: ``,
+        summary: ``,
+        historyHeading: `<strong>会话记录</strong><button type="button" data-action="close-history" aria-label="收起历史记录">×</button>`,
+        historyFooter: `<button type="button" data-action="new-workspace" class="reading-new-workspace">＋ 新阅读对话</button>`,
+        composeTools: `<div class="reading-compose-tools"><div class="reading-suggestions"><button type="button" data-prompt="请分别总结本轮引用论文的研究问题、方法和结论，注明各篇来源。">总结所选论文</button><button type="button" data-prompt="请比较所选论文的研究问题、方法、实验设置和局限，区分可比与不可直接比较的结果，并注明各篇证据。">交叉对比</button></div><section class="reading-reference-bar" aria-label="引用论文"><strong class="reading-reference-count">引用 · 0</strong><div class="reading-reference-rail"><button type="button" class="reading-reference-nav" data-reference-step="-1" aria-label="查看前面的论文" title="查看前面的论文">‹</button><div class="reading-reference-chips" tabindex="0" aria-label="已引用论文，可横向滚动查看"></div><button type="button" class="reading-reference-nav" data-reference-step="1" aria-label="查看后面的论文" title="查看后面的论文">›</button></div><button type="button" data-action="add-references" title="从报告库添加论文">添加论文</button></section></div>`,
+        groundedTitle: `按需查阅本轮引用论文原文`,
+        dialog: `<dialog class="reading-reference-dialog"><form><div class="reading-history-heading"><strong>从报告库引用论文</strong><button type="button" data-action="close-references" aria-label="关闭论文选择">×</button></div><input type="search" aria-label="搜索报告论文" placeholder="搜索标题或 arXiv ID"><label class="reading-reference-select-all"><input type="checkbox" data-action="select-all-references" disabled><span>全选当前结果</span></label><div class="reading-reference-options"></div><p class="reading-reference-error" role="status"></p><footer><span class="reading-reference-selection-count"></span><button type="submit" class="reading-primary">加入所选</button></footer></form></dialog>`,
+        welcomeTitle: `选几篇论文，一起深入读`,
+      },
+    };
+    const adapter=adapters[mode], isReport=mode==='report';
+    host.classList.add('reading-chat');
+    host.innerHTML = `<header class="reading-header"><div class="reading-brand"><span class="reading-brand-icon" aria-hidden="true">✦</span><strong>论文助手</strong><span class="reading-header-note">和论文深入聊聊</span></div>
+    <div class="reading-toolbar"><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button>${adapter.menu}</div></header>
+    ${adapter.paper}
+    <section class="reading-history" hidden aria-label="历史记录"><div class="reading-history-heading">${adapter.historyHeading}</div><div class="reading-history-filters">${adapter.scope}<input type="search" placeholder="搜索会话、论文或对话内容…" aria-label="搜索会话标题" title="支持会话标题、论文标题、arXiv ID、提问与回答；空格分隔多个关键词"></div>${adapter.summary}<div class="reading-history-list"></div>${adapter.historyFooter}</section>
+    <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>阅读模型设置</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div><form class="reading-settings">
+    <label><input type="checkbox" name="independent">独立配置阅读模型</label>
+    <label>模型<input name="model" maxlength="200"></label><label>服务地址<input name="base_url" placeholder="默认官方接口"></label>
+    <label>API Key<input type="password" name="api_key" autocomplete="new-password" placeholder="留空保留已有密钥"></label>
+    <label><input type="checkbox" name="clear_key">清除独立密钥</label><label><input type="checkbox" name="images">模型支持图片</label>
+    <label>思考强度<select name="reasoning_effort"><option value="high">High · 高</option><option value="medium">Medium · 中</option><option value="low">Low · 低</option><option value="">接口默认（不发送参数）</option></select></label><label>每轮查阅上限<input type="number" name="max_tools" min="1" max="30"></label><label>输出上限<input type="number" name="max_tokens" min="256" max="32000"></label><button class="reading-primary">保存设置</button></form></dialog>
+    <p class="reading-status" role="status"></p><div class="reading-messages" aria-live="polite"></div>
+    <form class="reading-compose">${adapter.composeTools}<div class="reading-input-box"><div class="reading-selection" hidden><span></span><button type="button" title="移除选区" aria-label="移除选区">×</button></div>
+    <div class="reading-previews"></div><textarea aria-label="向论文提问" placeholder="向论文提问，也可以粘贴图表截图…" maxlength="16000" rows="2"></textarea>
+    <div class="reading-input-actions"><span>Enter 发送 · Shift + Enter 换行</span><button type="button" data-action="retry" hidden>重试回答</button><button type="button" data-action="stop" hidden>■ 停止</button><button type="submit" class="reading-send" title="发送问题" aria-label="发送问题">↑</button></div></div>
+    <div class="reading-footer"><button type="button" data-action="new">＋ 新对话</button><button type="button" data-action="attach" title="附加图片，也可直接粘贴截图">＋ 图片</button><input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden><button type="button" class="reading-model-label" data-action="model" title="阅读模型设置">加载模型…</button><span class="reading-grounded" title="${adapter.groundedTitle}">原文查阅</span></div></form>${adapter.dialog}`;
+    const find=selector=>host.querySelector(selector);
+    return {
+      renderPaper(value) {
+        if(!isReport)return;
+        const title=value.paper.title+' · v'+value.paper.version;
+        find('.reading-paper').textContent=title;find('.reading-paper').title=title;
+      },
+      setSessionActions(enabled) {
+        if(!isReport)return;
+        find('[data-action=rename]').disabled=find('[data-action=delete]').disabled=!enabled;
+      },
+      bindSessionActions(rename, remove) {
+        if(!isReport)return;
+        find('[data-action=rename]').onclick=rename;find('[data-action=delete]').onclick=remove;
+      },
+      showWelcome(onPrompt) {
+        const empty=textNode('div','','reading-welcome');
+        empty.append(textNode('div','✦','reading-welcome-icon'),textNode('h2',adapter.welcomeTitle),textNode('p','解释概念、拆解方法、核实实验结论。\n回答会按需查阅原文，并保留可追溯的依据。'));
+        const tips=textNode('div','','reading-welcome-tips');
+        const prompts=isReport ? ['这篇论文解决了什么问题？','核心方法为什么有效？','实验结论有哪些局限？'] : ['这些论文分别解决了什么问题？','比较它们的方法与实验设置','哪些结论一致，哪些存在分歧？'];
+        for(const prompt of prompts){const button=textNode('button',prompt+' ↗');button.type='button';button.onclick=()=>onPrompt(prompt);tips.append(button);}
+        empty.append(tips);find('.reading-messages').append(empty);
+      },
+      renderHistorySummary(scope, count, query) {
+        if(isReport)find('.reading-history-summary').textContent=`${scope==='current' ? '当前论文' : '全部论文'} · ${count} 个会话${query.trim() ? ' · 搜索结果' : ''}`;
+      },
+      historyCard(row) {
+        const button=textNode('button','','reading-history-open');button.type='button';
+        button.append(textNode('strong',row.title===row.paper.title ? '论文对话' : row.title));
+        const refs=row.references || (row.paper?.arxiv_id ? [{paper:row.paper}] : []);
+        const subtitle=isReport ? row.paper.title || row.paper.arxiv_id : `${refs.length} 篇 · `+refs.map(r=>r.paper.title).join('、');
+        button.append(textNode('span',subtitle,'reading-history-paper-title'));
+        const date=isReport ? new Date(row.updated_at).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : new Date(row.updated_at).toLocaleString([],{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+        button.append(textNode('span',`${isReport ? 'v'+row.paper.version+' · ' : ''}${date}${isReport && Number.isInteger(row.message_count) ? ` · ${row.message_count} 条消息` : ''}`,'reading-history-meta'));
+        if(row.search_match)button.append(textNode('span',row.search_match.label+'：'+row.search_match.snippet,'reading-history-match'));
+        button.title=row.title+(isReport ? ' · '+row.paper.title : '');
+        if(row.archived)button.append(textNode('em','归档 · 只读','reading-history-archive'));
+        const rename=isReport ? textNode('button','重命名') : iconButton('重命名会话','edit');
+        const remove=isReport ? textNode('button','删除') : iconButton('删除会话','trash');
+        rename.type=remove.type='button';remove.classList.add('reading-history-delete');
+        rename.setAttribute('aria-label','重命名会话：'+row.title);remove.setAttribute('aria-label','删除会话：'+row.title);
+        return {button,rename,remove};
+      },
+    };
+  }
 })();

@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import re
+import unicodedata
 import threading
 import uuid
 import base64
@@ -21,6 +22,44 @@ from .reading_model import run_reading, create_completion, failure_message
 
 def timestamp():
     return datetime.now(timezone.utc).isoformat()
+
+
+def history_search(row, query):
+    """Match visible conversation text, never hidden tool/report snapshots."""
+    def normalize(text):
+        return ' '.join(unicodedata.normalize('NFKC', text).casefold().split())
+
+    terms = normalize(query).split()
+    if not terms:
+        return {}
+    fields = [('会话标题', row.get('title', ''))]
+
+    def paper_fields(paper):
+        fields.append(('论文标题', paper.get('title', '')))
+        aid = paper.get('arxiv_id', '')
+        fields.append(('论文 ID', aid + (f"v{paper['version']}" if paper.get('version') else '')))
+
+    paper_fields(row.get('paper') or {})
+    for ref in row.get('references', []):
+        paper_fields(ref.get('paper') or {})
+    for message in row.get('messages', []):
+        for ref in message.get('references', []):
+            paper_fields(ref.get('paper') or {})
+        if message.get('role') in {'user', 'assistant'}:
+            fields.append(('提问' if message['role'] == 'user' else '回答', message.get('text', '')))
+    searchable = [(label, text, normalize(text)) for label, text in fields if text]
+    if not all(any(term in normalized for _, _, normalized in searchable) for term in terms):
+        return None
+    # Prefer the field matching the most terms; ties keep title-first ordering.
+    label, text, _ = max(searchable, key=lambda field: sum(term in field[2] for term in terms))
+    text = ' '.join(unicodedata.normalize('NFKC', text).split())
+    # Map case-folded offsets back to display text (casefold can expand characters).
+    offsets = [i for i, char in enumerate(text) for _ in char.casefold()]
+    folded = text.casefold()
+    hits = [folded.find(term) for term in terms if term in folded]
+    start = max(0, offsets[min(hits)] - 30) if hits else 0
+    snippet = ('…' if start else '') + text[start:start + 150] + ('…' if start + 150 < len(text) else '')
+    return {'label': label, 'snippet': snippet}
 
 
 class ReadingService:
@@ -110,13 +149,23 @@ class ReadingService:
     def list(self, aid='', q='', *, include_empty=True, mode=''):
         with self.lock:
             values = [read_json(path, {}) for path in self.folder.glob('*.json')]
-            return sorted([dict({k: v for k, v in row.items() if k != 'messages'},
-                                message_count=len(row.get('messages', []))) for row in values
-                           if (include_empty or row.get('messages'))
-                           and (not mode or row.get('mode', 'report') == mode)
-                           and (not aid or any(r['paper'].get('arxiv_id') == base_id(aid) for r in self.materials.references(row)))
-                           and q.casefold() in row['title'].casefold()],
-                          key=lambda row: row['updated_at'], reverse=True)
+            results = []
+            for row in values:
+                if not include_empty and not row.get('messages'):
+                    continue
+                if mode and row.get('mode', 'report') != mode:
+                    continue
+                if aid and not any(r['paper'].get('arxiv_id') == base_id(aid) for r in self.materials.references(row)):
+                    continue
+                match = history_search(row, q)
+                if match is None:
+                    continue
+                item = dict({k: v for k, v in row.items() if k != 'messages'},
+                            message_count=len(row.get('messages', [])))
+                if match:
+                    item['search_match'] = match
+                results.append(item)
+            return sorted(results, key=lambda row: row['updated_at'], reverse=True)
 
     def report(self, aid, rid):
         report = explicit_report(self.root, base_id(aid), rid)
