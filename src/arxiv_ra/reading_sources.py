@@ -3,6 +3,7 @@ import base64
 import hashlib
 
 import fitz
+import httpx
 
 from .models import Paper
 from .pdf_download import validate_pdf
@@ -121,7 +122,7 @@ class ReadingSources:
                     text = ' '.join(doc[start - 1].get_text().split())
                     if len(quote) < 16 or text.count(quote) != 1:
                         raise ValueError('摘录无法在指定物理页唯一核实，不能生成引用')
-                    cid = hashlib.sha256(f'{self.source_id}:{start}:{quote}'.encode()).hexdigest()[:16]
+                    cid = hashlib.sha256(f'{self.paper.arxiv_id}v{self.paper.version}:{self.source_id}:{start}:{quote}'.encode()).hexdigest()[:16]
                     citation = {'id': cid, 'page': start, 'quote': quote, 'source_id': self.source_id,
                                 'source_note': self.source_note,
                                 'url': f'/api/reading/sources/{self.source_id}#page={start}'}
@@ -132,7 +133,7 @@ class ReadingSources:
                 self.read.update(range(start, end + 1))
                 if name == 'page_image':
                     data = doc[start - 1].get_pixmap(matrix=fitz.Matrix(1.3, 1.3)).tobytes('png')
-                    cid = hashlib.sha256(f'{self.source_id}:{start}:image'.encode()).hexdigest()[:16]
+                    cid = hashlib.sha256(f'{self.paper.arxiv_id}v{self.paper.version}:{self.source_id}:{start}:image'.encode()).hexdigest()[:16]
                     citation = {'id': cid, 'page': start, 'quote': '已读取的原文页面图像（不是逐字文字摘录）',
                                 'kind': 'page_image', 'source_id': self.source_id, 'source_note': self.source_note,
                                 'url': f'/api/reading/sources/{self.source_id}#page={start}'}
@@ -147,3 +148,60 @@ class ReadingSources:
             self.update(material={'status': 'partial', 'total_pages': len(doc),
                                   'read_pages': sorted(self.read), 'source_note': self.source_note})
             return result
+
+
+class ReferencedSources:
+    """A turn-scoped allowlist; each paper owns independent PDF/read-page state."""
+    def __init__(self, root, session, user, clients, update, images=True):
+        from copy import deepcopy
+        self.images, self.update = images, update
+        self.citations = []
+        self.sources = {}
+        self.tools = deepcopy(TOOLS)
+        for definition in self.tools:
+            function = definition['function']
+            function['description'] = function['description'].replace('当前', '所选')
+            function['parameters']['properties']['paper_id'] = {
+                'type': 'string', 'description': '本轮引用论文的 arXiv ID，包含 v 版本后缀'}
+            if function['name'] != 'metadata':
+                function['parameters']['required'].append('paper_id')
+        for ref in user['references']:
+            paper = ref['paper']
+            pid = f"{paper['arxiv_id']}v{paper['version']}"
+            def relay(pid=pid, paper=paper, **fields):
+                if 'citations' in fields:
+                    for citation in fields['citations']:
+                        citation.update(paper_id=pid, paper_title=paper['title'])
+                    known = {c['id']: c for c in self.citations}
+                    known.update({c['id']: c for c in fields['citations']})
+                    self.citations = list(known.values())
+                    fields['citations'] = self.citations
+                if 'material' in fields:
+                    fields['material'] = {**fields['material'], 'paper_id': pid, 'paper_title': paper['title']}
+                self.update(**fields)
+            self.sources[pid] = ReadingSources(root, {'paper':paper}, {'report':ref['report']}, clients, relay, images)
+
+    def execute(self, name, args):
+        if not isinstance(args, dict):
+            raise ValueError('工具参数必须是对象')
+        args = dict(args)
+        pid = args.pop('paper_id', None)
+        if pid is not None and (not isinstance(pid, str) or not pid.strip()):
+            raise ValueError('paper_id 必须是本轮引用论文的非空字符串标识')
+        if name == 'metadata' and pid is None:
+            if args:
+                raise ValueError('工具参数越界')
+            return {'papers':[{'paper_id':key, 'paper':s.session['paper']} for key,s in self.sources.items()]}
+        # Older compatible providers may omit the target in single-paper turns.
+        if pid is None and len(self.sources) == 1:
+            pid = next(iter(self.sources))
+        if pid not in self.sources:
+            raise ValueError('论文不在本轮引用范围内，请使用 metadata 中的 paper_id')
+        source = self.sources[pid]
+        if name in {'search', 'read_pages', 'page_image', 'cite'}:
+            try:
+                source.ensure_pdf()
+            except (OSError, RuntimeError, ValueError, httpx.HTTPError):
+                return {'error':'该论文原文暂不可用；可用 read_report 查阅报告，原文未核实', 'paper_id':pid}
+        result = source.execute(name, args)
+        return {**result, 'paper_id':pid, 'paper_title':source.session['paper']['title']}

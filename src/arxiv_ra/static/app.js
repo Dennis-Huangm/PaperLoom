@@ -901,9 +901,16 @@ if (dataNode) {
     const selectedId = paper.arxiv_id + (paper.version ? `v${paper.version}` : '');
     const readingLink = document.querySelector('#inspector-reading');
     if (readingLink) {
-      const readingQuery = new URLSearchParams(new URL(readingLink.href).search);
-      readingQuery.set('arxiv_id', selectedId);
-      readingLink.href = '/reading?' + readingQuery.toString();
+      if (item.has_report) {
+        const query = new URLSearchParams({arxiv_id:selectedId, origin:'recommendation'});
+        const sourceDate = document.querySelector('#inspector-report-form [name=source_date]')?.value;
+        if(sourceDate)query.set('source_date',sourceDate);
+        readingLink.href = '/reading?' + query.toString();
+        readingLink.removeAttribute('aria-disabled');readingLink.removeAttribute('title');
+      } else {
+        readingLink.removeAttribute('href');readingLink.setAttribute('aria-disabled','true');
+        readingLink.title='生成报告后可阅读对话';
+      }
     }
     if (arxiv) arxiv.href = paper.abs_url;
     if (pdf) pdf.href = paper.pdf_url;

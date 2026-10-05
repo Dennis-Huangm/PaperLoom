@@ -12,11 +12,18 @@ from .utils import write_json
 
 
 class StartReading(BaseModel):
-    arxiv_id: str = Field(min_length=1, max_length=100)
+    arxiv_id: str = Field(default='', max_length=100)
+    report_ids: list[str] | None = None
+    mode: Literal['report', 'workspace'] = 'report'
     report_id: str = ''
     new: bool = False
     origin: str = ''
     source_date: str = ''
+
+
+class ReadingReferenceSelection(BaseModel):
+    report_ids: list[str]
+    mode: Literal['workspace'] | None = None
 
 
 class RenameReading(BaseModel):
@@ -95,13 +102,22 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
             raise HTTPException(409, str(exc)) from exc
 
     @app.get('/api/reading/sessions')
-    def sessions(arxiv_id: str = '', q: str = ''):
-        return service.list(arxiv_id, q)
+    def sessions(arxiv_id: str = '', q: str = '', mode: Literal['', 'report'] = ''):
+        return service.list(arxiv_id, q, include_empty=False, mode=mode)
 
     @app.post('/api/reading/sessions')
     def start(body: StartReading):
         return run(service.create, current_config(), body.arxiv_id, report_id=body.report_id,
-                   new=body.new, origin=body.origin, source_date=body.source_date)
+                   new=body.new, origin=body.origin, source_date=body.source_date,
+                   report_ids=body.report_ids, mode=body.mode)
+
+    @app.get('/api/reading/reports')
+    def reference_catalog():
+        return {'reports': service.materials.catalog()}
+
+    @app.put('/api/reading/sessions/{sid}/references')
+    def references(sid: str, body: ReadingReferenceSelection):
+        return run(service.set_references, sid, body.report_ids, workspace=body.mode == 'workspace')
 
     @app.get('/api/reading/sessions/{sid}')
     def detail(sid: str):

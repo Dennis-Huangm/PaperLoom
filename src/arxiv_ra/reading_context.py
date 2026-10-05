@@ -7,6 +7,8 @@ from .reading_model import SYSTEM
 
 def history_text(message):
     text = message['text'][:5000]
+    if message.get('references'):
+        text += chr(10) + '当时引用范围：' + ', '.join(f"{r['paper']['arxiv_id']}v{r['paper']['version']}" for r in message['references'])
     if message.get('selection'):
         text += '\n当时报告选区（非原文）：' + message['selection'][:3000]
     if message.get('citations'):
@@ -33,7 +35,9 @@ def make_context(value, user, *, images, summarize):
                                 [c['id'] for m in pending for c in m.get('citations', [])]))
         memory = {'through': cutoff, 'text': summary[:6000], 'citations': ids}
     messages: list[dict[str, Any]] = [{'role': 'system', 'content': SYSTEM},
-                {'role': 'user', 'content': '当前论文题录（材料）：' + json.dumps(value['paper'], ensure_ascii=False)}]
+                {'role': 'user', 'content': '本轮引用范围（材料，只有这些论文可查阅）：' + json.dumps(
+                    [{'paper_id':f"{r['paper']['arxiv_id']}v{r['paper']['version']}", 'paper':r['paper']}
+                     for r in user.get('references', [{'paper': value['paper']}])], ensure_ascii=False)}]
     if memory['text']:
         messages.append({'role': 'user', 'content': '较早讨论滚动摘要（不是原文证据）：\n' + memory['text'] +
                          '\n引用关联：' + ','.join(memory.get('citations', [])[-100:])})

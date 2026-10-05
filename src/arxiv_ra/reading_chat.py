@@ -7,16 +7,15 @@ import threading
 import uuid
 import base64
 import os
-import hashlib
 from typing import Callable
 
-from .models import Paper
-from .paper_data import PaperResolver, base_id, local_paper_item, requested_version
+from .paper_data import base_id, requested_version
 from .report_store import explicit_report
 from .research_clients import ResearchClients
 from .utils import read_json, write_json
 from .task_runtime import TaskCancelled, task_checkpoint
-from .reading_sources import ReadingSources
+from .reading_sources import ReferencedSources
+from .reading_references import ReadingReferences
 from .reading_model import run_reading, create_completion, failure_message
 
 
@@ -27,6 +26,7 @@ def timestamp():
 class ReadingService:
     def __init__(self, root: Path, jobs):
         self.root, self.jobs = root, jobs
+        self.materials = ReadingReferences(root)
         self.folder = root / '.reading'
         self.folder.mkdir(exist_ok=True)
         self.lock = threading.RLock()
@@ -77,10 +77,14 @@ class ReadingService:
     def present(self, sid):
         from .render import markdown_with_math
         value = self.get(sid)
+        records = self.materials.index()
+        value['references'] = self.materials.present(self.materials.references(value), records=records)
         for message in value['messages']:
+            if 'references' in message:
+                message['references'] = self.materials.present(message['references'], records=records)
             report = message.get('report')
             if report:
-                report['missing'] = explicit_report(self.root, value['paper']['arxiv_id'], report['id']) is None
+                report['missing'] = report['id'] not in records
                 report.pop('text', None)
             if message['role'] != 'assistant':
                 continue
@@ -95,18 +99,22 @@ class ReadingService:
                     return '（引用未核实）'
                 exists = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
                 item['available'] = exists
-                return f"[原文第 {item['page']} 页]({item['url']})" if exists else f"（原文第 {item['page']} 页，文件已缺失）"
+                label = f"{item.get('paper_id', '')} 原文第 {item['page']} 页".strip()
+                return f"[{label}]({item['url']})" if exists else f"（{label}，文件已缺失）"
             text = re.sub(r'\[\[来源:([a-zA-Z0-9_-]+)\]\]', citation, text)
             for item in citations.values():
                 item['available'] = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
             message['html'] = markdown_with_math(text)[0]
         return value
 
-    def list(self, aid='', q=''):
+    def list(self, aid='', q='', *, include_empty=True, mode=''):
         with self.lock:
             values = [read_json(path, {}) for path in self.folder.glob('*.json')]
-            return sorted([{k: v for k, v in row.items() if k != 'messages'} for row in values
-                           if (not aid or row['paper']['arxiv_id'] == base_id(aid))
+            return sorted([dict({k: v for k, v in row.items() if k != 'messages'},
+                                message_count=len(row.get('messages', []))) for row in values
+                           if (include_empty or row.get('messages'))
+                           and (not mode or row.get('mode', 'report') == mode)
+                           and (not aid or any(r['paper'].get('arxiv_id') == base_id(aid) for r in self.materials.references(row)))
                            and q.casefold() in row['title'].casefold()],
                           key=lambda row: row['updated_at'], reverse=True)
 
@@ -118,27 +126,52 @@ class ReadingService:
             raise ValueError('报告修订版不匹配')
         return report
 
-    def create(self, config, aid, *, report_id='', new=False, origin='', source_date=''):
-        if report_id:
-            item = self.report(aid, report_id).source_item()
-        else:
-            item = local_paper_item(self.root, config.profile_id, aid, origin=origin, source_date=source_date)
-        snapshot = Paper.from_dict(item['paper']) if item else None
-        with ResearchClients(config) as clients:
-            resolver = PaperResolver(config.discovery, clients.arxiv, None, self.root)
-            paper = resolver.resolve(aid, snapshot=snapshot if snapshot and snapshot.version else None)
-        if not paper.version:
-            raise ValueError('尚未确认论文版本，请稍后重试；问题草稿可保留')
+    def create(self, config, aid='', *, report_id='', report_ids=None, mode='report', new=False, origin='', source_date=''):
+        references = (self.materials.resolve(report_ids) if report_ids is not None else
+                      self.materials.resolve([report_id]) if report_id else
+                      self.materials.for_paper(aid) if aid else [])
+        if mode == 'report' and len(references) != 1:
+            raise ValueError('报告侧栏只能引用当前报告对应的一篇论文')
+        if aid and references and (base_id(aid) != references[0]['paper']['arxiv_id'] or
+                requested_version(aid) and requested_version(aid) != references[0]['paper']['version']):
+            raise ValueError('报告与指定论文版本不匹配')
+        paper = references[0]['paper'] if references else {}
         with self.lock:
-            if not new:
-                existing = next((row for row in self.list(aid)
-                                 if row['paper']['version'] == paper.version and not row.get('archived')), None)
+            if mode == 'report' and not new:
+                existing = next((row for row in self.list(aid or paper['arxiv_id'])
+                    if row.get('mode', 'report') == 'report' and row['paper']['version'] == paper['version']
+                    and not row.get('archived')), None)
                 if existing:
-                    return self.get(existing['id'])
-            value = {'format': 1, 'id': uuid.uuid4().hex, 'paper': paper.to_dict(),
-                     'title': paper.title, 'created_at': timestamp(), 'messages': []}
+                    value = self.get(existing['id'])
+                    value['references'] = references
+                    self.save(value)
+                    return value
+            value = {'format': 2, 'id': uuid.uuid4().hex, 'paper': paper, 'mode': mode,
+                     'references': references, 'title': paper.get('title') or '新阅读对话',
+                     'created_at': timestamp(), 'messages': []}
             self.save(value)
             return value
+
+    def set_references(self, sid, report_ids, *, workspace=False):
+        with self.lock:
+            value = self.get(sid)
+            if value.get('archived'):
+                raise ValueError('归档会话只读，请新建对话')
+            if any(m['status'] in {'queued', 'running'} for m in value['messages']):
+                raise RuntimeError('请先停止正在生成的回答，再调整引用')
+            old = {r['report_id']: r for r in self.materials.references(value)}
+            added = {r['report_id']: r for r in self.materials.resolve([rid for rid in report_ids if rid not in old])}
+            references = [deepcopy(old[rid] if rid in old else added[rid]) for rid in dict.fromkeys(report_ids)]
+            if len({r['paper']['arxiv_id'] for r in references}) != len(references):
+                raise ValueError('同一会话不能同时引用同一论文的不同报告版本')
+            if not workspace and value.get('mode', 'report') == 'report':
+                if len(references) != 1 or references[0]['paper']['arxiv_id'] != value['paper']['arxiv_id'] or references[0]['paper']['version'] != value['paper']['version']:
+                    raise ValueError('报告侧栏只能引用当前报告对应的论文版本')
+            value.update(references=references, format=2)
+            if workspace:
+                value['mode'] = 'workspace'
+            self.save(value)
+            return self.present(sid)
 
     def rename(self, sid, title):
         if not title.strip() or len(title) > 200:
@@ -224,38 +257,35 @@ class ReadingService:
                 original = next((m for m in value['messages'] if m['id'] == retry_of and m['role'] == 'user'), None)
                 if not original:
                     raise ValueError('找不到需要重试的问题')
-                # Retrying uses its saved materials even when the original report was removed.
+                # Retry the original question; report eligibility is rechecked below.
                 text, selection, validated = original['text'], original['selection'], original['images']
             if any(m['status'] in {'queued', 'running'} for m in value['messages']):
                 raise RuntimeError('当前会话正在回答，请等待或停止后发送')
-            report = None
+            references = self.materials.references(value)
             if retry_of:
-                assert original is not None
+                references = original.get('references') or references
+            materials = self.materials.snapshot(references)
+            # A retry retains its exact earlier materials, but only after today's
+            # report availability and version check has succeeded.
+            if retry_of and original.get('references'):
+                materials = deepcopy(original['references'])
+            report = None
+            if report_id:
+                report = next((r['report'] for r in materials if r['report_id'] == report_id), None)
+                if report is None:
+                    raise ValueError('选区来源不在本轮引用范围中')
+            elif retry_of:
                 report = deepcopy(original.get('report'))
-            elif report_id:
-                stored = self.report(f"{value['paper']['arxiv_id']}v{value['paper']['version']}", report_id)
-                report = {'id': report_id, 'text': stored.markdown_path.read_text(encoding='utf-8')}
-                if stored.pdf_path.exists():
-                    data = stored.pdf_path.read_bytes()
-                    source_id = hashlib.sha256(data).hexdigest()
-                    destination = self.folder / 'sources' / f'{source_id}.pdf'
-                    destination.parent.mkdir(exist_ok=True)
-                    if not destination.exists():
-                        temporary = destination.with_suffix('.' + uuid.uuid4().hex + '.tmp')
-                        try:
-                            temporary.write_bytes(data)
-                            temporary.replace(destination)
-                        finally:
-                            temporary.unlink(missing_ok=True)
-                    report['source_id'] = source_id
+            elif value.get('mode', 'report') == 'report':
+                report = materials[0]['report']
             if selection and not report:
                 raise ValueError('提问选区需要指定来源报告')
             user = {'id': uuid.uuid4().hex, 'role': 'user', 'text': text, 'selection': selection,
-                    'report': report, 'images': validated, 'status': 'completed',
+                    'report': report, 'references': materials, 'images': validated, 'status': 'completed',
                     'request_id': request_id, 'created_at': timestamp(), 'retry_of': retry_of}
             answer = {'id': uuid.uuid4().hex, 'role': 'assistant', 'text': '', 'status': 'queued',
                       'model': model, 'citations': [], 'created_at': timestamp(), 'detail': '排队中'}
-            if not value['messages'] and value['title'] == value['paper']['title']:
+            if not value['messages'] and value['title'] in {value['paper'].get('title'), '新阅读对话'}:
                 value['title'] = ' '.join(text.split())[:60]
             value['messages'].extend([user, answer])
             self.save(value)
@@ -299,8 +329,10 @@ class ReadingService:
         try:
             update(status='running', detail='正在阅读问题')
             with ResearchClients(config) as clients, OpenAI(api_key=key or 'local', base_url=url, max_retries=0) as client:
-                sources = ReadingSources(self.root, value, user, clients, update, settings['images'])
-                known_citations = {c['id']: c for m in value['messages'][:-2] for c in m.get('citations', [])}
+                sources = ReferencedSources(self.root, value, user, clients, update, settings['images'])
+                allowed = set(sources.sources)
+                known_citations = {c['id']: c for m in value['messages'][:-2]
+                                   for c in m.get('citations', []) if c.get('paper_id') in allowed}
                 sources.citations = list(known_citations.values())
                 update(citations=sources.citations)
                 from .reading_context import make_context

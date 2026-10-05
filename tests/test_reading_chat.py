@@ -6,7 +6,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from arxiv_ra.arxiv_client import ArxivClient
-from arxiv_ra.models import Paper
+from arxiv_ra.models import Paper, Author
 from arxiv_ra.web import create_app
 
 
@@ -18,11 +18,17 @@ def config_path(tmp_path, monkeypatch):
     def get(_self, aid):
         revision = int(aid.rsplit('v', 1)[1]) if 'v' in aid else 2
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        return Paper(arxiv_id=aid.split('v')[0], title='Contrastive learning', authors=['A'],
+        return Paper(arxiv_id=aid.split('v')[0], title='Contrastive learning', authors=[Author(name='A')],
                      abstract='Paired images and text.', published=now, updated=now,
                      categories=['cs.LG'], primary_category='cs.LG',
                      abs_url='', pdf_url='', version=revision)
     monkeypatch.setattr(ArxivClient, 'get', get)
+    from arxiv_ra.utils import write_json
+    for revision in (1, 2):
+        folder = tmp_path / 'run' / '2026-10-01' / 'reports' / ('fixture-v' + str(revision))
+        write_json(folder / 'metadata.json', {'paper': get(None, '2401.12345v' + str(revision)).to_dict()})
+        (folder / 'report.html').write_text('Report', encoding='utf-8')
+        (folder / 'report.md').write_text('Report text', encoding='utf-8')
     return path
 
 
@@ -42,7 +48,7 @@ def test_version_sessions_history_and_restart(config_path):
         assert third['id'] != first['id']
         assert client.patch('/api/reading/sessions/' + first['id'], json={'title': 'Alignment'}).status_code == 200
         found = client.get('/api/reading/sessions', params={'q': 'Alignment'}).json()
-        assert [row['id'] for row in found] == [first['id']]
+        assert found == []  # Renaming a draft does not make it conversation history.
     with TestClient(create_app(config_path)) as client:
         restored = client.get('/api/reading/sessions/' + first['id']).json()
         assert restored['title'] == 'Alignment'
@@ -381,8 +387,8 @@ def test_missing_version_and_report_snapshot_are_not_silently_replaced(config_pa
             raise RuntimeError('offline')
         monkeypatch.setattr(ArxivClient, 'get', unavailable)
         failed = client.post('/api/reading/sessions', json={'arxiv_id': '2501.12345'})
-        assert failed.status_code == 409
-        assert len(client.get('/api/reading/sessions').json()) == 1
+        assert failed.status_code == 400
+        assert client.get('/api/reading/sessions').json() == []
 
 
 def test_budget_tool_scope_and_unverified_links(config_path, monkeypatch):
@@ -452,7 +458,7 @@ def test_unknown_image_capability_fails_without_losing_history(config_path, monk
         assert client.get(f'/api/reading/sessions/{sid}').json()['messages'] == []
 
 
-def test_complete_snapshot_without_version_resolves_online(config_path):
+def test_complete_snapshot_without_version_cannot_bypass_report_gate(config_path):
     from arxiv_ra.utils import write_json
     app = create_app(config_path)
     paper = ArxivClient.get(None, '2401.12345v1').to_dict()
@@ -460,9 +466,8 @@ def test_complete_snapshot_without_version_resolves_online(config_path):
     # Prepare an existing legacy report snapshot with no version.
     write_json(app.state.output_root / '2026-10-03/reports/legacy/metadata.json', {'paper':paper})
     with TestClient(app) as client:
-        response = client.post('/api/reading/sessions', json={'arxiv_id':'2401.12345'})
-        assert response.status_code == 200, response.text
-        assert response.json()['paper']['version'] == 2
+        response = client.post('/api/reading/sessions', json={'arxiv_id':'2401.12345', 'report_id':'2026-10-03/reports/legacy/report.html'})
+        assert response.status_code == 400
 
 
 def test_image_page_reference_and_image_followup(config_path, monkeypatch):
@@ -538,3 +543,24 @@ with TestClient(create_app(sys.argv[1])) as client:
         answer = client.get('/api/reading/sessions/' + sid).json()['messages'][-1]
         assert answer['status'] == 'interrupted'
         assert answer['text'] == 'Saved partial answer'
+
+
+def test_history_excludes_empty_sessions_until_first_message(config_path, monkeypatch):
+    from arxiv_ra.reading_chat import ReadingService
+    monkeypatch.setenv('LLM_API_KEY', 'fixture')
+    # Keep the accepted message queued without calling an external model.
+    monkeypatch.setattr(ReadingService, 'generate', lambda *args: None)
+    with TestClient(create_app(config_path)) as client:
+        empty = new_chat(client)
+        sid = empty['id']
+        assert client.get('/api/reading/sessions').json() == []
+        assert new_chat(client)['id'] == sid
+        assert client.get('/api/reading/sessions/' + sid).json()['messages'] == []
+        response = client.post('/api/reading/sessions/' + sid + '/messages',
+                               json={'text': 'Explain the method', 'request_id': 'first-message'})
+        assert response.status_code == 200
+        assert [row['id'] for row in client.get('/api/reading/sessions').json()] == [sid]
+        new_chat(client, new=True)
+        assert [row['id'] for row in client.get('/api/reading/sessions').json()] == [sid]
+        assert [row['id'] for row in client.get('/api/reading/sessions',
+                params={'arxiv_id': '2401.12345', 'q': 'Explain'}).json()] == [sid]

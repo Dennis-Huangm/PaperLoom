@@ -60,7 +60,9 @@
         <a href="{{ paper.abs_url }}" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
         <a href="{{ paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
         <a href="/collection?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
+        {% if entry.has_report %}
         <a href="/reading?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library">阅读对话</a>
+        {% else %}<span aria-disabled="true" title="生成报告后可阅读对话">阅读对话（需先生成报告）</span>{% endif %}
         {% for target, url in collection_links(paper.arxiv_id).items() if target != 'obsidian' or entry.has_report %}<a href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}
         <form action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
       </footer>
