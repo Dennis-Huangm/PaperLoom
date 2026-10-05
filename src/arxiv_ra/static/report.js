@@ -86,6 +86,18 @@ document.querySelectorAll('.math-block,.math-inline').forEach(function(node){try
   setOpen(desktop.matches && preferredOpen, false);
 })();
 
+// The action row can wrap when the viewport or reading dock changes width.
+// Share its actual height with sticky navigation and anchor scrolling.
+const reportTopbar = document.querySelector('.report-topbar');
+if (reportTopbar) {
+  const updateTopbarHeight = () => {
+    const height = reportTopbar.getBoundingClientRect().height;
+    if (height) document.documentElement.style.setProperty('--report-topbar-height', `${height}px`);
+  };
+  updateTopbarHeight();
+  new ResizeObserver(updateTopbarHeight).observe(reportTopbar);
+}
+
 document.querySelector('#report-print')?.addEventListener('click', () => window.print());
 // Printed reports include the complete matrices, even if the reading view is
 // collapsed. Restore the reader's disclosure choices after printing.

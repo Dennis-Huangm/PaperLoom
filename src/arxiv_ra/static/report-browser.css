@@ -43,4 +43,29 @@
 @media screen and (min-width:1440px){.report-shell.papers-open{grid-template-columns:240px minmax(0,1fr) var(--report-papers-width,320px)}.report-shell.papers-open.toc-collapsed{grid-template-columns:minmax(0,1fr) var(--report-papers-width,320px)}}
 @media screen and (max-width:1439px){#report-papers{box-shadow:-10px 0 32px #30261a12}}
 @media screen and (max-width:760px){.report-shell{padding:0 0 32px}.report-article{padding:28px 20px}.report-sidebar.report-nav-panel{box-shadow:10px 0 32px #30261a12}}
-@media screen and (max-width:760px){.report-topbar{height:auto;min-height:58px;flex-wrap:wrap;gap:8px;padding:10px 12px}.report-actions{max-width:100%;flex-wrap:wrap;gap:5px}.report-actions button{font-size:11px;padding:0 8px}}
+/* Keep report actions reachable while reading, including when the dock narrows the page. */
+@media screen{
+  :root{--report-topbar-height:68px}
+  html:has(.report-topbar){scroll-padding-top:calc(var(--report-topbar-height) + 16px)}
+  .report-topbar{position:sticky;top:0;z-index:28;height:auto;min-height:68px;display:flex;flex-wrap:wrap;gap:12px;padding:12px 22px;background:rgba(255,255,255,.97);box-shadow:0 3px 14px #20262d08}
+  .report-brand{flex-shrink:0}
+  .report-actions{margin-left:auto;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+  .report-actions a,.report-actions button{height:38px;justify-content:center;padding:0 13px;border-radius:8px;font:500 13px/1.4 "Segoe UI","Microsoft YaHei",sans-serif;white-space:nowrap;transition:background .15s,border-color .15s}
+  .report-actions a{border-color:transparent;background:transparent;color:var(--muted)}
+  .report-actions button:hover:not(:disabled),.report-actions a:hover{background:var(--accent-soft);border-color:#e6c5a6;color:var(--accent)}
+  .report-actions button.saved{border-color:#ead7c4;background:#fff8f0;cursor:default}
+  .report-actions .reading-open{background:var(--accent);border-color:var(--accent);color:#fff}
+  .report-actions .reading-open:hover:not(:disabled){background:#a95108;border-color:#a95108;color:#fff}
+  .report-actions :is(a,button):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .report-nav-toggle{top:calc(var(--report-topbar-height) + 24px)}
+  .report-article :is(h1,h2,h3,h4){scroll-margin-top:16px}
+}
+@media screen and (min-width:761px){.report-sidebar.report-nav-panel{top:var(--report-topbar-height);height:calc(100dvh - var(--report-topbar-height))}}
+@media screen and (min-width:1440px){#report-papers{top:var(--report-topbar-height);height:calc(100dvh - var(--report-topbar-height))}}
+@media screen and (max-width:760px){
+  .report-topbar{gap:8px;padding:10px 12px}
+  .report-actions{width:100%;justify-content:flex-start;gap:6px}
+  .report-actions a,.report-actions button{display:inline-flex;min-height:36px;height:auto;padding:8px 10px;font-size:12px}
+  .report-actions .reading-open{margin-left:auto}
+}
+@media(prefers-reduced-motion:reduce){.report-actions a,.report-actions button{transition:none}}
