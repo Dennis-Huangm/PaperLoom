@@ -277,15 +277,15 @@ def test_agent_reads_pdf_and_persists_verified_evidence(config_path, monkeypatch
             handle.write(b'\n%' + b' ' * 11000)
         return destination
 
+    requests = []
     def complete(_self, **kwargs):
+        requests.append(kwargs['tool_choice'])
         messages = kwargs['messages']
         last_tool = next((m for m in reversed(messages) if m['role'] == 'tool'), None)
         if not last_tool:
             name, arguments = 'read_pages', {'start': 1, 'end': 1}
-        elif 'shared embedding' in last_tool['content'] and not 'citation_id' in last_tool['content']:
-            name, arguments = 'cite', {'page': 1, 'quote': 'Paired images and text are mapped to a shared embedding space.'}
         else:
-            cid = json.loads(last_tool['content'])['citation_id']
+            cid = json.loads(last_tool['content'])['pages'][0]['citation_id']
             return iter([NS(choices=[NS(delta=NS(content=f'将配对的图文映射到共同空间。[[来源:{cid}]]', tool_calls=None), finish_reason='stop')])])
         call = NS(index=0, id='call-1', function=NS(name=name, arguments=json.dumps(arguments)))
         return iter([NS(choices=[NS(delta=NS(content=None, tool_calls=[call]), finish_reason='tool_calls')])])
@@ -301,6 +301,8 @@ def test_agent_reads_pdf_and_persists_verified_evidence(config_path, monkeypatch
         value = wait_answer(client, sid)
         answer = value['messages'][-1]
         assert answer['status'] == 'completed', answer
+        assert len(requests) == 2, 'Read once, then answer with the returned evidence'
+        assert [step['name'] for step in answer['steps']] == ['read_pages']
         assert answer['citations'][0]['page'] == 1
         assert 'shared embedding' in answer['citations'][0]['quote']
         assert '共同空间' in answer['text']
@@ -315,6 +317,45 @@ def test_agent_reads_pdf_and_persists_verified_evidence(config_path, monkeypatch
         followup_answer = wait_answer(client, sid)['messages'][-1]
         assert followup_answer['citations'][0]['id'] == citation_id
         assert '引用未核实' not in followup_answer['html']
+
+
+@pytest.mark.parametrize('quote', ['Paired images and text share a space.', 'A made-up quote that is not in the PDF.'])
+def test_repeated_citation_attempts_finish_with_existing_evidence(config_path, monkeypatch, quote):
+    import fitz
+    import json
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+
+    def download(_self, paper, destination):
+        with fitz.open() as doc:
+            doc.new_page().insert_text((50, 60), 'Paired images and text share a space.')
+            doc.save(destination)
+        with destination.open('ab') as handle:
+            handle.write(b'\n%' + b' ' * 11000)
+        return destination
+
+    requests = []
+    def complete(_self, **kwargs):
+        requests.append(kwargs['tool_choice'])
+        results = [json.loads(m['content']) for m in kwargs['messages'] if m['role'] == 'tool']
+        if kwargs['tool_choice'] == 'none':
+            cid = results[0]['pages'][0]['citation_id']
+            return iter([NS(choices=[NS(delta=NS(content=f'已有足够原文。[[来源:{cid}]]', tool_calls=None), finish_reason='stop')])])
+        name, args = ('cite', {'page': 1, 'quote': quote}) if results else ('read_pages', {'start': 1, 'end': 1})
+        call = NS(index=0, id=f'call-{len(requests)}', function=NS(name=name, arguments=json.dumps(args)))
+        return iter([NS(choices=[NS(delta=NS(content=None, tool_calls=[call]), finish_reason='tool_calls')])])
+
+    monkeypatch.setenv('LLM_API_KEY', 'fixture')
+    monkeypatch.setattr(ArxivClient, 'download_pdf', download)
+    monkeypatch.setattr(Completions, 'create', complete)
+    with TestClient(create_app(config_path)) as client:
+        sid = new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages', json={'text': '解释', 'request_id': 'repeat-cite'})
+        answer = wait_answer(client, sid)['messages'][-1]
+        assert answer['status'] == 'completed'
+        assert len(requests) <= 4, 'Repeated citation attempts must not consume all ten tool rounds'
+        assert len(answer['citations']) == 1
+        assert '引用未核实' not in answer['html']
 
 
 def test_reading_page_settings_and_entry_points(config_path):
@@ -402,7 +443,7 @@ def test_budget_tool_scope_and_unverified_links(config_path, monkeypatch):
             call = NS(index=0, id='scope', function=NS(name='read_pages', arguments='{"start":1,"end":1,"path":"another.pdf"}'))
             return iter([NS(choices=[NS(delta=NS(content=None, tool_calls=[call]), finish_reason='tool_calls')])])
         assert any('越界' in m.get('content', '') for m in kwargs['messages'] if m['role'] == 'tool')
-        return iter([NS(choices=[NS(delta=NS(content='证据不足。[[来源:invented]] [原文](https://arxiv.org/pdf/fake#page=99)', tool_calls=None), finish_reason='stop')])])
+        return iter([NS(choices=[NS(delta=NS(content='证据不足。[[来源:invented]] [[来源:2401.12345v1]] [原文](https://arxiv.org/pdf/fake#page=99)', tool_calls=None), finish_reason='stop')])])
     monkeypatch.setattr(Completions, 'create', complete)
     with TestClient(create_app(config_path)) as client:
         assert client.put('/api/reading/settings', json={'max_tools': 1}).status_code == 200
@@ -412,6 +453,8 @@ def test_budget_tool_scope_and_unverified_links(config_path, monkeypatch):
         assert answer['limited'] is True
         assert answer['citations'] == []
         assert '引用未核实' in answer['html']
+        assert '[[来源:' not in answer['html']
+        assert '[[来源:' not in answer['text']
         assert 'href=' not in answer['html']
         assert len(seen) == 2
         assert client.get('/artifacts/.reading/' + sid + '.json').status_code == 404

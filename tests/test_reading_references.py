@@ -92,10 +92,13 @@ def test_tools_route_only_to_selected_papers_and_distinguish_citations(config_pa
     assert 'Alpha' in alpha['pages'][0]['text']
     with pytest.raises(ValueError):
         sources.execute('cite',{'paper_id':'2402.12345v1','page':1,'quote':'Beta reports accuracy of eighty percent.'})
-    sources.execute('read_pages',{'paper_id':'2402.12345v1','start':1,'end':1})
+    beta = sources.execute('read_pages',{'paper_id':'2402.12345v1','start':1,'end':1})
     one = sources.execute('cite',{'paper_id':'2401.12345v1','page':1,'quote':'Alpha reports accuracy of ninety percent.'})
     two = sources.execute('cite',{'paper_id':'2402.12345v1','page':1,'quote':'Beta reports accuracy of eighty percent.'})
     assert one['paper_id'] != two['paper_id']
+    assert one['citation_id'] == alpha['pages'][0]['citation_id']
+    assert two['citation_id'] == beta['pages'][0]['citation_id']
+    assert one['citation_id'] != two['citation_id']
     assert one['paper_title'] == 'Paper 2401.12345'
     assert len(sources.citations) == 2
 

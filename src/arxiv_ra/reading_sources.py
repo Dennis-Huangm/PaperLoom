@@ -21,10 +21,10 @@ STRING = {'type': 'string'}
 TOOLS = [
     tool('metadata', '当前论文题录和材料范围', {}),
     tool('read_report', '读取本轮用户明确带入的报告段落；不是原文证据', {'offset': {'type': 'integer', 'minimum': 0}}),
-    tool('search', '在当前 PDF 搜索文字，返回页码和片段', {'query': STRING}, ['query']),
-    tool('read_pages', '按物理页读取当前 PDF，每次最多五页', {'start': INTEGER, 'end': INTEGER}, ['start', 'end']),
+    tool('search', '在当前 PDF 搜索文字，返回带 citation_id 的原文短片段，可直接引用，无需 cite', {'query': STRING}, ['query']),
+    tool('read_pages', '按物理页读取当前 PDF，每次最多五页；返回带 citation_id 的连续短片段，可直接引用', {'start': INTEGER, 'end': INTEGER}, ['start', 'end']),
     tool('page_image', '读取当前 PDF 单页图像；用于图表和扫描页', {'page': INTEGER}, ['page']),
-    tool('cite', '验证已读取页的短原文摘录，取得可用于回答的 [[来源:ID]]',
+    tool('cite', '仅在已有片段不适用时核实额外的短原文摘录；已有 citation_id 不需再次核实',
          {'page': INTEGER, 'quote': STRING}, ['page', 'quote']),
 ]
 
@@ -74,6 +74,33 @@ class ReadingSources:
             'status': 'partial', 'total_pages': count, 'read_pages': [], 'source_note': self.source_note})
         return target
 
+    def _citation(self, page, quote):
+        """Register text taken from this source; callers establish its provenance."""
+        quote = ' '.join(quote.split())
+        cid = hashlib.sha256(f'{self.paper.arxiv_id}v{self.paper.version}:{self.source_id}:{page}:{quote}'.encode()).hexdigest()[:16]
+        citation = {'id': cid, 'page': page, 'quote': quote, 'source_id': self.source_id,
+                    'source_note': self.source_note,
+                    'url': f'/api/reading/sources/{self.source_id}#page={page}'}
+        if not any(c['id'] == cid for c in self.citations):
+            self.citations.append(citation)
+        return citation
+
+    def _excerpts(self, page, text):
+        """Return the delivered text once, as bounded, directly citable excerpts."""
+        pieces = []
+        while text:
+            end = min(800, len(text))
+            if end < len(text):
+                boundary = max(text.rfind('\n', 400, end), text.rfind(' ', 400, end))
+                if boundary >= 0:
+                    end = boundary + 1
+            part, text = text[:end], text[end:]
+            if not part.strip():
+                continue
+            citation = self._citation(page, part)
+            pieces.append({'page': page, 'text': part, 'citation_id': citation['id']})
+        return pieces
+
     def execute(self, name, args):
         definition = next((t['function'] for t in TOOLS if t['function']['name'] == name), None)
         if not definition or not isinstance(args, dict):
@@ -105,11 +132,12 @@ class ReadingSources:
                     text = doc[index].get_text()
                     position = text.casefold().find(query)
                     if position >= 0:
-                        found.append({'page': index + 1, 'text': text[max(0, position - 300):position + 1200]})
+                        found.append((index + 1, text[max(0, position - 300):position + 1200]))
                         self.read.add(index + 1)
                         if len(found) == 12:
                             break
-                result = {'matches': found, 'searched_through_page': index + 1 if limit else 0,
+                result = {'matches': [piece for page, text in found for piece in self._excerpts(page, text)],
+                          'matched_pages': len(found), 'searched_through_page': index + 1 if limit else 0,
                           'total_pages': len(doc), 'limited': limit < len(doc) or len(found) == 12}
             else:
                 start, end = (args['start'], args['end']) if name == 'read_pages' else (args['page'], args['page'])
@@ -122,14 +150,9 @@ class ReadingSources:
                     text = ' '.join(doc[start - 1].get_text().split())
                     if len(quote) < 16 or text.count(quote) != 1:
                         raise ValueError('摘录无法在指定物理页唯一核实，不能生成引用')
-                    cid = hashlib.sha256(f'{self.paper.arxiv_id}v{self.paper.version}:{self.source_id}:{start}:{quote}'.encode()).hexdigest()[:16]
-                    citation = {'id': cid, 'page': start, 'quote': quote, 'source_id': self.source_id,
-                                'source_note': self.source_note,
-                                'url': f'/api/reading/sources/{self.source_id}#page={start}'}
-                    if not any(c['id'] == cid for c in self.citations):
-                        self.citations.append(citation)
+                    citation = self._citation(start, quote)
                     self.update(citations=self.citations)
-                    return {'citation_id': cid, **citation}
+                    return {'citation_id': citation['id'], **citation}
                 self.read.update(range(start, end + 1))
                 if name == 'page_image':
                     data = doc[start - 1].get_pixmap(matrix=fitz.Matrix(1.3, 1.3)).tobytes('png')
@@ -143,8 +166,12 @@ class ReadingSources:
                     result = {'page': start, 'citation_id': cid, 'source_note': self.source_note,
                               '_image': 'data:image/png;base64,' + base64.b64encode(data).decode()}
                 else:
-                    result = {'pages': [{'page': p, 'text': doc[p - 1].get_text()[:18000]} for p in range(start, end + 1)],
+                    result = {'pages': [piece for p in range(start, end + 1)
+                                        for piece in self._excerpts(p, doc[p - 1].get_text()[:18000])],
+                              'read_pages': list(range(start, end + 1)),
                               'note': '页面文字可能截断；不可辨认的图表可读取页面图像'}
+            if name in {'search', 'read_pages'}:
+                self.update(citations=self.citations)
             self.update(material={'status': 'partial', 'total_pages': len(doc),
                                   'read_pages': sorted(self.read), 'source_note': self.source_note})
             return result

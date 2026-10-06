@@ -20,6 +20,9 @@ from .reading_references import ReadingReferences
 from .reading_model import run_reading, create_completion, failure_message
 
 
+SOURCE_MARKER = re.compile(r'\[\[来源:([^\]\r\n]*)\]\]')
+
+
 def timestamp():
     return datetime.now(timezone.utc).isoformat()
 
@@ -140,7 +143,7 @@ class ReadingService:
                 item['available'] = exists
                 label = f"{item.get('paper_id', '')} 原文第 {item['page']} 页".strip()
                 return f"[{label}]({item['url']})" if exists else f"（{label}，文件已缺失）"
-            text = re.sub(r'\[\[来源:([a-zA-Z0-9_-]+)\]\]', citation, text)
+            text = SOURCE_MARKER.sub(citation, text)
             for item in citations.values():
                 item['available'] = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
             message['html'] = markdown_with_math(text)[0]
@@ -412,10 +415,14 @@ class ReadingService:
                 answer, limited = run_reading(client, model, messages, sources, update, checkpoint,
                     max_tools=settings['max_tools'], max_tokens=output_budget,
                     reasoning_effort=settings['reasoning_effort'])
-                used = set(re.findall(r'\[\[来源:([a-zA-Z0-9_-]+)\]\]', answer))
+                known = {c['id'] for c in sources.citations}
+                # A paper ID or invented marker cannot be repaired by guessing which
+                # excerpt supports a claim. Keep the limitation visible in saved text.
+                answer = SOURCE_MARKER.sub(lambda m: m[0] if m[1] in known else '（引用未核实）', answer)
+                used = set(SOURCE_MARKER.findall(answer))
                 update(text=answer, status='completed', limited=limited,
                        citations=[c for c in sources.citations if c['id'] in used],
-                       detail='本轮已达上限，可发送“继续”' if limited else '回答完成')
+                       detail='本轮查阅或输出已停止，可发送“继续”' if limited else '回答完成')
         except TaskCancelled:
             try:
                 update(status='stopped', detail='回答已停止，保留部分内容')
