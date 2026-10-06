@@ -289,7 +289,8 @@ class JobManager:
         try:
             if cancel_event.is_set():
                 self._update(
-                    job_id, status="cancelled", detail="任务已取消", progress=None
+                    job_id, status="interrupted" if self.closed else "cancelled",
+                    detail="应用关闭，任务尚未开始；可在重启后继续" if self.closed else "任务已取消", progress=None
                 )
                 return
             self._update(job_id, status="running", detail="正在启动任务…", progress=0)
@@ -326,13 +327,15 @@ class JobManager:
                 )
         except TaskCancelled:
             self._update(
-                job_id, status="cancelled", detail="任务已取消", progress=None,
+                job_id, status="interrupted" if self.closed else "cancelled",
+                detail="应用关闭，任务已在安全检查点停止；可在重启后继续" if self.closed else "任务已取消", progress=None,
                 result_url=None,
             )
         except Exception as exc:
             if cancel_event.is_set():
                 self._update(
-                    job_id, status="cancelled", detail="任务已取消", progress=None,
+                    job_id, status="interrupted" if self.closed else "cancelled",
+                    detail="应用关闭，任务已停止；可在重启后继续" if self.closed else "任务已取消", progress=None,
                     result_url=None,
                 )
             else:
@@ -527,6 +530,11 @@ class JobManager:
         """Release executor threads when the FastAPI application shuts down."""
         with self.lock:
             self.closed = True
+            for job_id, job in self.jobs.items():
+                if job.status in {"queued", "running", "cancelling"}:
+                    self.cancel_events[job_id].set()
+                    self._update(job_id, status="cancelling",
+                                 detail="应用关闭，等待当前步骤到达安全检查点…", progress=None)
             for job_id, _ in self.pending:
                 self._update(job_id, status="interrupted" if self.requests[job_id] else "failed",
                              detail="应用关闭，任务尚未开始；可在重启后重新执行")

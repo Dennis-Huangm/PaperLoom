@@ -564,3 +564,36 @@ def test_history_excludes_empty_sessions_until_first_message(config_path, monkey
         assert [row['id'] for row in client.get('/api/reading/sessions').json()] == [sid]
         assert [row['id'] for row in client.get('/api/reading/sessions',
                 params={'arxiv_id': '2401.12345', 'q': 'Explain'}).json()] == [sid]
+
+
+def test_reading_events_close_promptly_when_gui_requests_shutdown(config_path):
+    import socket
+    import threading
+    import httpx
+    import uvicorn
+    app = create_app(config_path)
+    app.state.shutdown_requested = threading.Event()
+    sock = socket.socket()
+    sock.bind(('127.0.0.1', 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
+    thread.start()
+    try:
+        for _ in range(200):
+            if server.started:
+                break
+            time.sleep(.01)
+        with httpx.Client(base_url=f'http://127.0.0.1:{port}', timeout=2) as client:
+            sid = new_chat(client)['id']
+            with client.stream('GET', f'/api/reading/sessions/{sid}/events') as response:
+                lines = response.iter_lines()
+                for line in lines:
+                    if line.startswith('data: '):
+                        break
+                app.state.shutdown_requested.set()
+                assert not any(line.startswith('data: ') for line in lines)
+    finally:
+        server.should_exit = True
+        thread.join(5)
+        sock.close()

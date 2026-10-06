@@ -62,6 +62,7 @@ def serve(config, port, directory, lock, state):
             request = directory / f'{nonce}.stop'
             finished = threading.Event()
             watcher = None
+            app = None
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 # Reserve the actual port before initializing application jobs.
@@ -73,19 +74,29 @@ def serve(config, port, directory, lock, state):
                 import uvicorn
 
                 _load_dotenv(config.parent / '.env')
-                server = uvicorn.Server(uvicorn.Config(create_app(config), host='127.0.0.1', port=port,
+                app = create_app(config)
+                app.state.shutdown_requested = threading.Event()
+                server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port,
                                                        log_level='info', timeout_graceful_shutdown=30))
 
                 def monitor():
                     published = False
+                    def publish(stopping=False):
+                        temporary = state.with_suffix('.tmp')
+                        temporary.write_text(json.dumps({'pid': os.getpid(), 'nonce': nonce,
+                                                         'config': str(config), 'port': port,
+                                                         'stopping': stopping}), encoding='utf-8')
+                        temporary.replace(state)
                     while not finished.wait(0.1):
                         if server.started and not published:
-                            temporary = state.with_suffix('.tmp')
-                            temporary.write_text(json.dumps({'pid': os.getpid(), 'nonce': nonce,
-                                                             'config': str(config), 'port': port}), encoding='utf-8')
-                            temporary.replace(state)
+                            publish()
                             published = True
-                        if request.exists():
+                        if request.exists() and not server.should_exit:
+                            publish(stopping=True)
+                            app.state.shutdown_requested.set()
+                            jobs = getattr(app.state, 'jobs', None)
+                            if jobs is not None and not getattr(jobs, 'closed', False):
+                                jobs.close()
                             server.should_exit = True
 
                 watcher = threading.Thread(target=monitor, daemon=True)
@@ -101,6 +112,13 @@ def serve(config, port, directory, lock, state):
                 if watcher is not None:
                     watcher.join(timeout=2)
                 sock.close()
+                # ThreadPoolExecutor threads outlive ASGI shutdown. Keep the
+                # identity and lock until they have reached cancellation points;
+                # otherwise stop reports success while Task Scheduler still runs.
+                jobs = getattr(app.state, 'jobs', None) if app is not None else None
+                if jobs is not None:
+                    jobs.close()
+                    jobs.executor.shutdown(wait=True)
                 if state_at(state).get('nonce') == nonce:
                     state.unlink(missing_ok=True)
                 request.unlink(missing_ok=True)
@@ -129,6 +147,9 @@ def stop(config, directory, lock, state, timeout):
 def start(config, port, directory, lock, state, launcher, timeout):
     if busy(lock):
         current = state_at(state)
+        if current.get('stopping'):
+            print('GUI shutdown is still in progress; background work is reaching a safe checkpoint.')
+            return 1
         if current.get('config') == str(config):
             print(f'PaperLoom already runs at http://127.0.0.1:{port}')
             return 0
@@ -147,7 +168,7 @@ def start(config, port, directory, lock, state, launcher, timeout):
         current = state_at(state)
         # Windows venv pythonw may use a redirector process, so Popen's PID
         # need not be the server's PID. Confirm a newly published instance.
-        if current.get('nonce') and current['nonce'] != previous_nonce and current.get('config') == str(config) and busy(lock):
+        if current.get('nonce') and current['nonce'] != previous_nonce and not current.get('stopping') and current.get('config') == str(config) and busy(lock):
             print(f'PaperLoom started at http://127.0.0.1:{port}')
             return 0
         if child.poll() is not None:
@@ -180,6 +201,7 @@ def main(argv=None):
     if args.action == 'status':
         current = state_at(state)
         print(json.dumps({'running': busy(lock), 'instance': current,
+                          'stopping': bool(current.get('stopping')),
                           'log': str(directory / f'gui-{args.port}.log')}, ensure_ascii=False))
         return 0
     if args.action in {'stop', 'restart'}:

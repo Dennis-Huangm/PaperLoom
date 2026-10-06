@@ -129,6 +129,9 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
 
         async def stream():
             loop = asyncio.get_running_loop()
+            shutdown = getattr(app.state, 'shutdown_requested', None)
+            def stopping():
+                return shutdown is not None and shutdown.is_set()
             changed: asyncio.Queue[bool] = asyncio.Queue(maxsize=1)
             def enqueue():
                 if changed.empty():
@@ -140,7 +143,7 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
             try:
                 await run_in_threadpool(service.subscribe, sid, notify)
                 subscribed = True
-                while True:
+                while not stopping():
                     try:
                         value = await run_in_threadpool(service.present, sid)
                     except LookupError:
@@ -156,12 +159,15 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
                         payload['messages'] = [m for m in value['messages'] if m != old.get(m['id'])]
                     yield f'event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n'
                     previous = value
-                    while True:
+                    heartbeat = loop.time()
+                    while not stopping():
                         try:
-                            await asyncio.wait_for(changed.get(), timeout=15)
+                            await asyncio.wait_for(changed.get(), timeout=1)
                             break
                         except asyncio.TimeoutError:
-                            yield ': keepalive\n\n'
+                            if loop.time() - heartbeat >= 15:
+                                yield ': keepalive\n\n'
+                                heartbeat = loop.time()
             except LookupError:
                 yield 'event: deleted\ndata: {}\n\n'
             finally:

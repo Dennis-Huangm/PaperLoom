@@ -21,18 +21,19 @@ if ($taskMatches -and $Action -in @('start', 'restart')) {
         & $python -m arxiv_ra.desktop_gui stop --config $ConfigPath --port $Port
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         # Let the windowless parent exit before asking IgnoreNew to start it.
-        $deadline = (Get-Date).AddSeconds(5)
+        $deadline = (Get-Date).AddSeconds(15)
         while ((Get-ScheduledTask -TaskName $task.TaskName).State -eq 'Running') {
-            if ((Get-Date) -gt $deadline) { throw 'Previous task is still exiting; retry shortly.' }
+            if ((Get-Date) -gt $deadline) { throw 'The GUI listener has stopped, but its scheduled launcher is still exiting. No new instance was started. Inspect run\.desktop-gui\gui-8000.log before retrying.' }
             Start-Sleep -Milliseconds 100
         }
     }
     $current = & $python -m arxiv_ra.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
+    if ($current.stopping) { throw 'GUI shutdown is still in progress; waiting for background work to reach a safe checkpoint. No new instance was started.' }
     if (-not $current.running) { Start-ScheduledTask -TaskName $task.TaskName }
     $deadline = (Get-Date).AddSeconds(45)
     do {
         $current = & $python -m arxiv_ra.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
-        if ($current.running -and $current.instance.config -eq $ConfigPath -and $current.instance.nonce) {
+        if ($current.running -and -not $current.stopping -and $current.instance.config -eq $ConfigPath -and $current.instance.nonce) {
             Write-Output "PaperLoom runs at http://127.0.0.1:$Port (user logon task)."
             exit 0
         }

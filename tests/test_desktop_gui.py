@@ -87,3 +87,37 @@ def test_stop_with_a_different_config_cannot_stop_the_running_gui(desktop):
     result = invoke('stop', alternate)
     assert result.returncode == 1
     assert json.loads(invoke('status').stdout)['running']
+
+
+def test_stop_waits_for_background_workers_before_releasing_instance(desktop, tmp_path):
+    project, port, invoke = desktop
+    # Exercise the real CLI/process boundary with a worker still unwinding after
+    # ASGI shutdown, the same gap that leaves the scheduled parent Running.
+    stub = tmp_path / 'stub/arxiv_ra/web.py'
+    stub.write_text('''from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+import threading, time
+
+def create_app(config):
+    pool = ThreadPoolExecutor(1)
+    release = threading.Event()
+    def work():
+        release.wait()
+        time.sleep(1.2)
+        config.with_suffix('.drained').write_text('done')
+    pool.submit(work)
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        release.set()
+        pool.shutdown(wait=False)
+    app = FastAPI(lifespan=lifespan)
+    app.state.jobs = SimpleNamespace(executor=pool, close=release.set)
+    return app
+''', encoding='utf-8')
+    assert invoke('start').returncode == 0
+    result = invoke('stop')
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (project / 'config.drained').is_file(), 'stop returned before background workers exited'

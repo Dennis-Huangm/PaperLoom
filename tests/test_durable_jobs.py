@@ -455,3 +455,28 @@ def test_pinned_recovery_does_not_coalesce_with_new_active_latest_request(tmp_pa
     finally:
         release.set()
         stop(manager)
+
+
+def test_shutdown_stops_active_work_at_checkpoint_and_preserves_recovery(tmp_path):
+    from arxiv_ra.task_runtime import task_checkpoint
+    manager = JobManager(tmp_path, 1)
+    started, proceed = threading.Event(), threading.Event()
+    def work():
+        task_checkpoint_data('paper', {'arxiv_id': '2407.05600', 'version': 2})
+        started.set()
+        proceed.wait(3)
+        task_checkpoint()
+        (tmp_path / 'should-not-publish').write_text('wrong')
+    job = manager.submit('report', 'work', work,
+        request=request(tmp_path, arxiv_id='2407.05600', snapshot=None), profile_id='alpha')
+    assert started.wait(3)
+    manager.close()
+    proceed.set()
+    manager.executor.shutdown(wait=True)
+    assert not (tmp_path / 'should-not-publish').exists()
+    assert manager.get(job.id).status == 'interrupted'
+    restored = JobManager(tmp_path)
+    try:
+        assert restored.get(job.id).recoverable
+    finally:
+        stop(restored)
