@@ -14,7 +14,7 @@ from .reading_state import _locked
 from .render import render_report
 from .task_runtime import TaskCancelled, task_checkpoint, task_progress, task_subtask, task_warning
 from .utils import read_json, write_json
-from .version_scope import in_scope, material_status, update_options, validate_scope
+from .version_scope import can_supplement, in_scope, update_options, validate_scope
 from .version_sync import BASE_ARXIV_ID_RE, PaperVersionSync, STATUS_LABELS, STEP_LABELS
 
 
@@ -61,10 +61,7 @@ class VersionSyncBatch:
         if supplement:
             if scope not in {"all", "zotero"} or origin != "manual":
                 raise ValueError("补充附件只适用于 Zotero 待核实论文")
-            eligible = [item for item in candidates if "Zotero" in item.get("sources", [])
-                        and material_status(item, "zotero") == "unknown" and item.get("latest_version")
-                        and not item.get("zotero_stale") and not item.get("check_error")
-                        and len(item.get("zotero_keys", [])) == 1]
+            eligible = [item for item in candidates if can_supplement(item, scope)]
         available = {item["arxiv_id"]: item for item in eligible}
         if any(not BASE_ARXIV_ID_RE.fullmatch(aid) or aid not in available for aid in selected):
             raise ValueError("所选论文不在当前更新清单中，请刷新页面或先检查新版本")

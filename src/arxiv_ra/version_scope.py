@@ -62,8 +62,15 @@ def update_options(item: dict, scope: str = "all") -> dict[str, bool]:
             "obsidian": False}
 
 
+def can_supplement(item: dict, scope: str = "all") -> bool:
+    return (scope in {"all", "zotero"} and material_status(item, "zotero") == "unknown"
+            and bool(item.get("latest_version")) and not item.get("zotero_stale")
+            and not item.get("check_error") and len(item.get("zotero_keys", [])) == 1
+            and bool(item.get("zotero_library")))
+
+
 def describe(item: dict, scope: str = "all") -> dict:
     statuses = {target: material_status(item, target) for target in MATERIALS}
     relevant = [statuses[target] for target in scoped_targets(item, scope)]
-    return {**item, "material_status": statuses,
+    return {**item, "material_status": statuses, "supplementable": can_supplement(item, scope),
             "outdated": "outdated" in relevant, "unknown": "unknown" in relevant}

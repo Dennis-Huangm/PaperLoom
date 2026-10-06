@@ -42,7 +42,7 @@ class VersionTracker:
         sources = local_sources(self.output_root, self.config.profile_id)
         previous = (read_json(self.state_path, {}) or {}).get("items", {})
         dismissed = FeedbackStore(self.output_root, self.config.profile_id).all()
-        self.source_status = {"status": "disabled", "detail": "Zotero 未启用，保留上次确认的来源"}
+        self.source_status = {"status": "disabled", "detail": "Zotero 追踪来源未启用，保留上次确认的来源；可在配置页启用"}
         zotero_items = []
         if self.config.version_tracking.include_zotero and self.config.zotero.enabled:
             try:

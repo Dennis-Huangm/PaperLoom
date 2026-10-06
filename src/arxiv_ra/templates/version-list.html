@@ -30,9 +30,8 @@
     <label class="batch-select-all"><input id="batch-select-all" type="checkbox">选择当前列表可操作论文（每批最多 {{ max_batch_size }} 篇）</label>
     <div class="tracking-paper-list">
     {% for item in rows %}
-      {% set supplementable = scope != 'reports' and item.material_status.zotero == 'unknown' and not item.zotero_stale and item.latest_version and not item.check_error and item.zotero_keys|default([])|length == 1 %}
       <article class="tracking-paper-row">
-        <input type="checkbox" name="arxiv_ids" value="{{ item.arxiv_id }}" aria-label="选择 {{ item.title }}" {% if (view == 'unknown' and not supplementable) or (view != 'unknown' and not item.outdated) %}disabled{% endif %}>
+        <input type="checkbox" name="arxiv_ids" value="{{ item.arxiv_id }}" aria-label="选择 {{ item.title }}" {% if (view == 'unknown' and not item.supplementable) or (view != 'unknown' and not item.outdated) %}disabled{% endif %}>
         <div class="tracking-paper-body"><strong>{{ item.title }}</strong><p class="tracking-paper-meta">arXiv:{{ item.arxiv_id }} · 最近检查 {{ item.checked_at[:16]|replace('T',' ') or '尚未检查' }}</p>
           <div class="tracking-source-badges">{% for source in item.sources %}<span>{{ source }}</span>{% endfor %}</div>
           <div class="tracking-materials">

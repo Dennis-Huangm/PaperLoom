@@ -93,7 +93,7 @@ def test_page_filters_statistics_and_preview_by_source(tmp_path):
     profiles.activate("test")
     root = tmp_path / "run"
     report(root)
-    write_json(root / "version-state-test.json", {"items": {
+    write_json(root / "version-state-test.json", {"coverage": {"ids": ["2501.00001"], "checked_ids": ["2501.00001"]}, "items": {
         "2501.00001": {"latest_version": 3},
         "2501.00002": {"arxiv_id": "2501.00002", "title": "Zotero only", "sources": ["Zotero"],
                        "latest_version": 3, "zotero_version": 3}}})
@@ -107,6 +107,8 @@ def test_page_filters_statistics_and_preview_by_source(tmp_path):
         assert preview.json()["items"][0]["options"]["report"] is True
         assert client.post("/api/version-batches/preview", data={"arxiv_ids": "2501.00001", "scope": "zotero"}).status_code == 400
         assert client.get("/versions?scope=invalid").status_code == 400
+        assert "当前范围 1/2 篇" in client.get("/versions?scope=all").text
+        assert "其余 1 篇" in client.get("/versions?scope=zotero").text
 
 
 @pytest.mark.parametrize("attachment, expected", [

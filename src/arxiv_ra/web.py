@@ -861,9 +861,8 @@ def create_app(config_path: Path | str) -> FastAPI:
         tracking["events"] = [event for event in tracking["events"] if event["arxiv_id"] in visible_ids]
         coverage = tracking["coverage"]
         if "ids" in coverage:
-            covered = set(coverage["ids"]) & visible_ids
-            checked = set(coverage.get("checked_ids", [])) & covered
-            tracking["coverage"] = {"total": len(covered), "checked": len(checked), "pending": len(covered - checked)}
+            checked = set(coverage.get("checked_ids", [])) & visible_ids
+            tracking["coverage"] = {"total": len(visible_ids), "checked": len(checked), "pending": len(visible_ids - checked)}
         else:
             tracking["coverage"] = {}
         rows = [item for item in tracking["items"] if view == "all" or item[view]]

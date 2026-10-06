@@ -90,6 +90,8 @@ const jobWarningCounts = new Map();
 const renderJob = (job) => {
   const list = document.querySelector('#job-list');
   if (!list) return;
+  const trackingJobs = list.closest('details#tracking-jobs');
+  if (trackingJobs && activeJobStatuses.includes(job.status)) trackingJobs.open = true;
   list.querySelector('.queue-empty')?.remove();
   let node = list.querySelector(`[data-job-id="${job.id}"]`);
   if (!node) {
