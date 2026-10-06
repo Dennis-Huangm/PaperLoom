@@ -304,6 +304,10 @@ def test_agent_reads_pdf_and_persists_verified_evidence(config_path, monkeypatch
         assert len(requests) == 2, 'Read once, then answer with the returned evidence'
         assert [step['name'] for step in answer['steps']] == ['read_pages']
         assert answer['citations'][0]['page'] == 1
+        assert '>第1页</a>' in answer['html']
+        assert '原文第 1 页' not in answer['html']
+        assert answer['elapsed_seconds'] >= 0
+        assert answer['finished_at'] >= answer['started_at']
         assert 'shared embedding' in answer['citations'][0]['quote']
         assert '共同空间' in answer['text']
         assert client.get(answer['citations'][0]['url'].split('#')[0]).status_code == 200

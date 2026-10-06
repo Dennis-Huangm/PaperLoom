@@ -53,6 +53,17 @@
   let session = null, selection = '', pictures = [], requestToken = null, busy = false, generation = 0, lastRender = '';
   let currentAid = host.dataset.arxivId || '', currentReport = host.dataset.reportId || '';
   let profile = '';
+  function updateElapsed() {
+    for (const node of messages.querySelectorAll('[data-elapsed]')) {
+      const seconds = Math.floor(Number(node.dataset.elapsed) + (node.dataset.running === 'true' ? (Date.now() - Number(node.dataset.received)) / 1000 : 0));
+      const minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60);
+      const duration = hours ? `${hours}小时${minutes % 60}分${seconds % 60}秒` : minutes ? `${minutes}分${seconds % 60}秒` : `${seconds}秒`;
+      node.textContent = ` · ${node.dataset.running === 'true' ? '已执行' : '用时'} ${duration}`;
+    }
+  }
+  let elapsedTimer = setInterval(updateElapsed, 1000);
+  window.addEventListener('pagehide', () => clearInterval(elapsedTimer));
+  window.addEventListener('pageshow', event => {if(event.persisted)elapsedTimer=setInterval(updateElapsed, 1000);});
   const historyController=createConversationHistory({host,view,reportHistory,api,
     getContext:()=>({session,currentAid}),
     async onOpen(row) {
@@ -281,8 +292,9 @@ ${f.text}`));row.append(pieces);}
       }
       if(message.role === 'assistant' && ['failed','stopped','interrupted'].includes(message.status))box.append(textNode('div',message.detail || labels[message.status],'reading-failure'));
       if(message.role === 'assistant' && !message.text && ['running','queued'].includes(message.status))box.append(textNode('div','正在查阅并整理回答…','reading-thinking'));
-      if(message.role === 'assistant' && (message.text || !['queued','running'].includes(message.status))) {
+      if(message.role === 'assistant') {
         const actions=textNode('div','','reading-answer-actions'); const copy=iconButton('复制回答','copy');
+        actions.style.flexWrap='wrap';
         copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.title='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
         const back=iconButton('回退到本轮提问之前','undo');back.disabled=active || !!value.archived;
         back.onclick=async()=>{
@@ -292,7 +304,18 @@ ${f.text}`));row.append(pieces);}
             generation++;lastRender='';render(result.session);input.value=result.draft.text;selection=result.draft.selection || '';pictures=result.draft.images || [];currentReport=result.draft.report?.id || '';requestToken=null;showSelection();showPictures();saveDraft();input.focus();if(!history.hidden)await historyController.refresh();
           }catch(e){error(e);}
         };
-        actions.append(copy,back,textNode('span',message.model || '')); box.append(actions);
+        copy.disabled = !message.text;
+        actions.append(copy,back,textNode('span',message.model || ''));
+        if(Number.isFinite(message.elapsed_seconds)) {
+          const elapsed=textNode('span','','reading-elapsed');
+          elapsed.style.whiteSpace='nowrap';
+          elapsed.dataset.elapsed=message.elapsed_seconds;
+          elapsed.dataset.received=Date.now();
+          elapsed.dataset.running=String(message.status === 'running');
+          elapsed.title='从开始执行到结束的时间（不含排队）';
+          actions.append(elapsed);
+        }
+        box.append(actions);
       }
       for (const data of message.images || []) {const img = document.createElement('img'); img.src = data; img.alt = '本条问题图片'; box.append(img);}
       if (window.katex) box.querySelectorAll('.math-inline,.math-block').forEach(node => {
@@ -304,6 +327,7 @@ ${f.text}`));row.append(pieces);}
         old.dataset.stamp=stamp;old.replaceChildren(...box.childNodes);
       }else messages.append(box);
     }
+    updateElapsed();
     if (nearEnd) messages.scrollTop = messages.scrollHeight;
   }
   // Keep existing paragraphs and text nodes while appending streamed text.

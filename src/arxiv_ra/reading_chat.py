@@ -78,7 +78,8 @@ class ReadingService:
             changed = False
             for message in value.get('messages', []):
                 if message.get('status') in {'queued', 'running'}:
-                    message.update(status='interrupted', detail='服务重启，回答已中断；可重试')
+                    message.update(status='interrupted', detail='服务重启，回答已中断；可重试',
+                                   finished_at=message.get('progress_at', value.get('updated_at')))
                     changed = True
             if changed:
                 self.save(value)
@@ -99,7 +100,20 @@ class ReadingService:
 
     def save(self, value):
         with self.lock:
-            value['updated_at'] = timestamp()
+            now = timestamp()
+            for message in value.get('messages', []):
+                if message.get('role') != 'assistant':
+                    continue
+                if message.get('status') == 'running':
+                    message.setdefault('started_at', now)
+                    message['progress_at'] = now
+                if message.get('started_at'):
+                    if message.get('status') not in {'queued', 'running'}:
+                        message.setdefault('finished_at', now)
+                    end = message.get('finished_at') or now
+                    message['elapsed_seconds'] = max(0, (datetime.fromisoformat(end) -
+                        datetime.fromisoformat(message['started_at'])).total_seconds())
+            value['updated_at'] = now
             write_json(self.path(value['id']), value)
             for notify in tuple(self.listeners.get(value['id'], ())):
                 notify()
@@ -130,6 +144,9 @@ class ReadingService:
                 report.pop('text', None)
             if message['role'] != 'assistant':
                 continue
+            if message.get('status') == 'running' and message.get('started_at'):
+                message['elapsed_seconds'] = max(0, (datetime.now(timezone.utc) -
+                    datetime.fromisoformat(message['started_at'])).total_seconds())
             citations = {c['id']: c for c in message.get('citations', [])}
             text = message['text']
             # Do not render provider-generated URLs as trustworthy source links.
@@ -141,8 +158,9 @@ class ReadingService:
                     return '（引用未核实）'
                 exists = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
                 item['available'] = exists
-                label = f"{item.get('paper_id', '')} 原文第 {item['page']} 页".strip()
-                return f"[{label}]({item['url']})" if exists else f"（{label}，文件已缺失）"
+                label = f"第{item['page']}页"
+                title = (item.get('paper_title') or item.get('paper_id') or '原文').replace('"', '&quot;').replace('\n', ' ')
+                return f'[{label}]({item["url"]} "{title}")' if exists else f"（{label}，文件已缺失）"
             text = SOURCE_MARKER.sub(citation, text)
             for item in citations.values():
                 item['available'] = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
