@@ -11,7 +11,7 @@ from pathlib import Path
 from .config import AppConfig
 from .model_budget import model_request_budget
 from .reading_state import _locked
-from .render import render_report
+from .task_result import render_task_result
 from .task_runtime import TaskCancelled, task_checkpoint, task_progress, task_subtask, task_warning
 from .utils import read_json, write_json
 from .version_scope import can_supplement, in_scope, update_options, validate_scope
@@ -238,5 +238,5 @@ class VersionSyncBatch:
             if item.get("result"):
                 lines += ["", f"[查看论文同步记录](../../../{item['result']})", ""]
         destination = self._path(state["id"]).with_name("index.html")
-        render_report("\n".join(lines), destination, "批量版本同步")
+        render_task_result("\n".join(lines), destination, "批量版本同步", 'batch')
         return destination

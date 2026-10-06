@@ -19,7 +19,7 @@ from .model_budget import current_model_budget
 from .obsidian import ObsidianExporter
 from .paper_data import PaperResolver, matches, versioned, with_sources
 from .reading_state import _locked
-from .render import render_report
+from .task_result import render_task_result
 from .research_clients import ResearchClients
 from .task_runtime import TaskCancelled, task_checkpoint, task_progress, task_warning
 from .utils import read_json, write_json
@@ -311,5 +311,5 @@ class PaperVersionSync:
                 from os.path import relpath
                 lines += ["", f"[打开报告]({Path(relpath(report.with_suffix('.html'), self.root)).as_posix()})"]
         destination = self.root / "index.html"
-        render_report("\n".join(lines), destination, "论文版本同步")
+        render_task_result("\n".join(lines), destination, "论文版本同步", 'sync')
         return destination

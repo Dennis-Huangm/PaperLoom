@@ -12,7 +12,7 @@ from .config import AppConfig
 from .feedback import FeedbackStore
 from .reading_state import _locked
 from .research_clients import ResearchClients
-from .render import render_report
+from .task_result import render_task_result
 from .utils import read_json, write_json
 from .zotero import ZoteroClient
 from .task_runtime import task_progress, task_warning, task_subtask
@@ -170,7 +170,8 @@ class VersionTracker:
             with task_subtask("自动版本同步", 91, 99):
                 self.auto_sync_result = AutomaticVersionSync(self.config, self.project_root).run(
                     {aid: item for aid, item in state.items() if aid in selected}, clients=self.clients)
-        return self._render_overview(state, new_events, now)
+        return self._render_overview({aid: state[aid] for aid in selected}, new_events, now,
+                                     scope=scope, checked=len(batch))
 
     def _version_event(self, paper, old_version: int, now: datetime) -> dict[str, Any]:
         folder = self.output_root / "versions" / (self.config.profile_id or "default") / paper.arxiv_id.replace("/", "-") / f"v{old_version}-to-v{paper.version}"
@@ -181,7 +182,7 @@ class VersionTracker:
         else:
             markdown = self._fallback_diff(paper.title, paper.arxiv_id, old_version, paper.version)
         (folder / "report.md").write_text(markdown, encoding="utf-8")
-        render_report(markdown, report_path, f"{paper.title} · v{old_version} → v{paper.version}")
+        render_task_result(markdown, report_path, f"{paper.title} · v{old_version} → v{paper.version}", 'diff')
         return {
             "detected_at": now.isoformat(),
             "from_version": old_version,
@@ -278,14 +279,17 @@ class VersionTracker:
 """
 
     def _render_overview(
-        self, state: dict[str, Any], events: list[dict[str, Any]], now: datetime
+        self, state: dict[str, Any], events: list[dict[str, Any]], now: datetime,
+        *, scope: str = 'all', checked: int = 0,
     ) -> Path:
+        from .version_scope import MATERIALS, SCOPES, STATUS_LABELS, material_status
         folder = self.output_root / "versions"
         folder.mkdir(parents=True, exist_ok=True)
         lines = [
             f"# {self.config.profile_name} · arXiv 版本追踪",
             "",
             f"最近检查：{now:%Y-%m-%d %H:%M}；追踪 {sum(bool(item.get("tracked")) for item in state.values())} 篇论文。",
+            f"检查范围：{SCOPES[scope]} · 本轮查询 {checked}/{len(state)} 篇。",
             "",
             "## 本次发现",
             "",
@@ -312,12 +316,17 @@ class VersionTracker:
         for item in sorted(state.values(), key=lambda value: value.get("title", "").casefold()):
             if not item.get("tracked", True):
                 continue
-            lines.append(
-                f"- [{item.get('title', item.get('arxiv_id'))}]({item.get('abs_url', '')}) · arXiv:{item.get('arxiv_id')} · v{item.get('latest_version')} · {', '.join(item.get('sources') or [])}"
-            )
+            latest = f"v{item['latest_version']}" if item.get('latest_version') else '版本待核实'
+            materials = []
+            for target, label in MATERIALS.items():
+                if label in item.get('sources', []):
+                    version = item.get(target + '_version')
+                    materials.append(f"{label} {('v' + str(version)) if version else '版本待核实'}（{STATUS_LABELS[material_status(item, target)]}）")
+            title = str(item.get('title') or item.get('arxiv_id')).replace('[', '\\[').replace(']', '\\]').replace('\n', ' ')
+            lines.append(f"- [{title}]({item.get('abs_url') or 'https://arxiv.org/abs/' + item['arxiv_id']}) · arXiv:{item['arxiv_id']} · {latest} · {'；'.join(materials)}")
         markdown = "\n".join(lines) + "\n"
         name = f"index-{self.config.profile_id or 'default'}"
         (folder / f"{name}.md").write_text(markdown, encoding="utf-8")
         html_path = folder / f"{name}.html"
-        render_report(markdown, html_path, f"{self.config.profile_name} · arXiv 版本追踪")
+        render_task_result(markdown, html_path, f"{self.config.profile_name} · arXiv 版本追踪", 'tracking')
         return html_path
