@@ -208,13 +208,13 @@ class ZoteroClient:
             raise ZoteroError("Zotero 条目响应格式错误") from exc
         return None if data.get("deleted") else data
 
-    def list_trackable_papers(self) -> list[dict[str, str]]:
+    def list_trackable_papers(self) -> list[dict[str, Any]]:
         """Translate Zotero fields into revision-independent arXiv identities."""
         if not self.status().get("ready"):
             raise ZoteroUnavailable("Zotero 本地 API 未连接")
         identity = r"(?:[a-z-]+(?:\.[a-z]{2})?/\d{7}|\d{4}\.\d{4,5})(?:v\d+)?"
         pattern = re.compile(r"arxiv(?:\.org/(?:abs|pdf)/|[:/\s]+)(" + identity + r")", re.I)
-        papers = {}
+        papers: dict[str, dict[str, Any]] = {}
         for wrapper in self._get_items("/users/0/items/top", {"format": "json"}):
             data = wrapper.get("data", wrapper)
             archive_id = str(data.get("archiveID") or "").strip()
@@ -222,7 +222,32 @@ class ZoteroClient:
             aid = match.group(1) if match else archive_id if re.fullmatch(identity, archive_id, re.I) else ""
             if aid:
                 aid = re.sub(r"v\d+$", "", aid, flags=re.I)
-                papers[aid] = {"arxiv_id": aid, "title": str(data.get("title") or "")}
+                key = str(data.get("key") or wrapper.get("key") or "")
+                item = papers.setdefault(aid, {"arxiv_id": aid, "title": str(data.get("title") or ""),
+                    "zotero_keys": [], "zotero_version": None, "zotero_reason": "缺少原文 PDF 附件",
+                    "zotero_library": self.library_identity(), "zotero_stale": False})
+                if key:
+                    item["zotero_keys"].append(key)
+                    children = self._get_items(f"/users/0/items/{key}/children", {"format": "json"})
+                    versions = []
+                    for child in children:
+                        attachment = child.get("data", child)
+                        if attachment.get("contentType") != "application/pdf" or attachment.get("deleted"):
+                            continue
+                        item["zotero_reason"] = "原文附件版本无法可靠识别"
+                        # Parent metadata and Zotero's own object revision are not PDF versions.
+                        text = " ".join(str(attachment.get(field) or "") for field in ("url", "filename", "path"))
+                        matches = re.findall(re.escape(aid) + r"v([1-9]\d*)(?!\d)", text, re.I)
+                        managed = re.fullmatch(r"论文 PDF · v([1-9]\d*)", str(attachment.get("title") or ""))
+                        if managed:
+                            matches.append(managed.group(1))
+                        if len(set(matches)) == 1:
+                            versions.append(int(matches[0]))
+                    if versions:
+                        item["zotero_version"] = max(versions)
+                        item["zotero_reason"] = ""
+                if len(item["zotero_keys"]) != 1:
+                    item.update(zotero_version=None, zotero_reason="存在多个 Zotero 条目，请先核实关联")
         return list(papers.values())
 
     def list_collections(self) -> list[dict[str, str]]:

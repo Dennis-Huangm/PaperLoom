@@ -215,8 +215,16 @@ def test_wrong_revision_is_rejected_before_download(setup, monkeypatch):
     assert not arxiv.downloads
 
 
+def tracked_report(root, aid="2501.00001", profile="test"):
+    folder = root / "2026-09-01/reports" / (aid + "-" + profile)
+    write_json(folder / "metadata.json", {"profile_id": profile, "paper": paper(1, aid).to_dict()})
+    (folder / "report.html").write_text("report", encoding="utf-8")
+
+
 def test_sync_metadata_and_status_are_profile_scoped(setup):
     sync, arxiv, _ = setup
+    tracked_report(sync.output_root)
+    tracked_report(sync.output_root, profile="other")
     sync.sync(paper().arxiv_id)
     other = deepcopy(sync.config)
     other.profile_id = "other"
@@ -227,9 +235,11 @@ def test_sync_metadata_and_status_are_profile_scoped(setup):
     assert version_tracking_data(sync.output_root, "other")["items"][0]["local_version"] == 4
 
 
-def test_tracking_uses_saved_papers_excludes_dismissed_and_rotates(setup):
+def test_tracking_uses_reports_excludes_dismissed_and_rotates(setup):
     sync, arxiv, library = setup
+    tracked_report(sync.output_root)
     for aid in ["2501.00002", "2501.00003", "2501.00004"]:
+        tracked_report(sync.output_root, aid)
         library.add({"paper": paper(1, aid).to_dict()}, "Test")
     FeedbackStore(sync.output_root, "test").set(paper(1, "2501.00004").to_dict(), "not_relevant")
     # Even a historical report must not re-add a dismissed paper.
@@ -241,12 +251,15 @@ def test_tracking_uses_saved_papers_excludes_dismissed_and_rotates(setup):
     for _ in range(3):
         tracker.check(now)
     assert arxiv.queries == ["2501.00001", "2501.00002", "2501.00003"]
-    assert read_json(tracker.state_path, {})["coverage"] == {"total": 3, "checked": 1, "pending": 2}
+    coverage = read_json(tracker.state_path, {})["coverage"]
+    assert (coverage["total"], coverage["checked"], coverage["pending"]) == (3, 1, 2)
 
 
 def test_tracking_batch_error_falls_back_per_paper(setup, monkeypatch):
     sync, _, library = setup
     library.add({"paper": paper(1, "2501.00002").to_dict()}, "Test")
+    tracked_report(sync.output_root)
+    tracked_report(sync.output_root, "2501.00002")
 
     def get_many(ids):
         if len(ids) > 1 or ids == ["2501.00001"]:
@@ -263,6 +276,7 @@ def test_tracking_batch_error_falls_back_per_paper(setup, monkeypatch):
 
 def test_failed_diff_keeps_detection_and_retries_without_duplicate(setup, monkeypatch):
     sync, arxiv, _ = setup
+    tracked_report(sync.output_root)
     tracker = VersionTracker(sync.config, sync.project_root, clients=sync.clients)
     arxiv.latest = 1
     tracker.check()
@@ -316,6 +330,7 @@ def test_versions_page_shows_saved_and_local_versions_and_retry(setup, tmp_path)
     from arxiv_ra.profiles import ProfileManager
 
     sync, arxiv, _ = setup
+    tracked_report(sync.output_root)
     arxiv.fail_download = True
     sync.sync(paper().arxiv_id)
     config_path = tmp_path / "config.yaml"
@@ -326,8 +341,8 @@ def test_versions_page_shows_saved_and_local_versions_and_retry(setup, tmp_path)
     with TestClient(create_app(config_path)) as client:
         response = client.get("/versions")
         assert response.status_code == 200
-        assert "继续 v3 未完成步骤" in response.text
-        assert "本地 PDF" in response.text
+        assert "查看同步记录与文件" in response.text
+        assert "本地报告" in response.text
         assert "v1" in response.text and "v3" in response.text
         assert 'id="job-list"' in response.text
         assert "/api/jobs/version-sync" in response.text
@@ -367,6 +382,7 @@ def test_version_sync_api_validates_input_and_captures_options(tmp_path, monkeyp
 
 def test_removed_artifacts_are_not_displayed_as_available(setup):
     sync, _, library = setup
+    tracked_report(sync.output_root)
     sync.sync(paper().arxiv_id)
     tracker = VersionTracker(sync.config, sync.project_root, clients=sync.clients)
     tracker.check()

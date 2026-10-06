@@ -1,44 +1,7 @@
 {% extends "base.html" %}
 {% block title %}版本追踪 · PaperLoom{% endblock %}
 {% block content %}
-  <header class="page-heading research-heading">
-    <div><p class="section-kicker">ARXIV VERSION WATCH</p><h1>版本追踪与同步</h1><p>跟进收藏、本地报告与 Zotero 论文；不相关论文不参与追踪。同步保留旧版和历史推荐。</p></div>
-    <form class="job-form" action="/api/jobs/versions" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button primary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>检查新版本</button></form>
-  </header>
-  <section class="research-overview" aria-label="追踪概览">
-    <dl class="research-stats tracking-stats">
-      <div><dt>追踪论文</dt><dd>{{ tracking['items']|length }}<small>篇</small></dd></div>
-      <div><dt>待同步</dt><dd class="stat-accent">{{ updates|length }}<small>篇</small></dd></div>
-      <div><dt>发现新版</dt><dd>{{ tracking['events']|length }}<small>条</small></dd></div>
-      <div><dt>自动同步</dt><dd class="stat-text">{{ '已启用' if config.version_sync.enabled else '未启用' }}</dd></div>
-    </dl>
-    {% if tracking.coverage %}<p class="research-footnote">上轮检查 {{ tracking.coverage.checked }}/{{ tracking.coverage.total }} 篇；其余 {{ tracking.coverage.pending }} 篇将在后续检查中轮询。</p>{% endif %}
-  </section>
-  <nav class="research-subnav" aria-label="追踪页面导航"><a href="#pending-updates">待同步清单</a><a href="#sync-tools">同步工具</a><a href="#tracking-jobs">后台任务</a><a href="#tracked-papers">论文版本状态</a></nav>
-  <section class="version-direct batch-updates" id="pending-updates">
-    <h2>待同步清单 <span class="batch-count">{{ updates|length }} 篇</span></h2>
-    <p>根据最近检查结果，列出缺少新版 PDF 或收藏版本落后的论文。先检查新版本，再勾选预览；执行和重试均固定到预览中的版本。</p>
-    {% if updates %}
-    <form id="version-batch-form" action="/api/version-batches/preview" method="post" data-limit="{{ max_batch_size }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
-      <label class="batch-select-all"><input id="batch-select-all" type="checkbox">选择前 {{ [updates|length, max_batch_size]|min }} 篇</label>
-      <div class="batch-update-list">
-      {% for item in updates %}
-        <label class="batch-update-row"><input type="checkbox" name="arxiv_ids" value="{{ item.arxiv_id }}">
-          <span><strong>{{ item.title }}</strong><small>arXiv:{{ item.arxiv_id }} · 最近检查 {{ item.checked_at[:16]|replace('T',' ') or '未知' }}</small></span>
-          <span class="batch-revision">{% if item.local_version %}PDF v{{ item.local_version }}{% else %}未下载{% endif %} → v{{ item.latest_version }}<small>收藏 {% if item.saved_version %}v{{ item.saved_version }}{% else %}未收藏{% endif %}</small></span>
-        </label>
-      {% endfor %}
-      </div>
-      <div class="version-sync-form batch-options">
-        <label><input type="checkbox" name="report" value="true">生成新版报告</label>
-        <label><input type="checkbox" name="zotero" value="true" {% if not config.zotero.enabled or not config.zotero.attach_pdf %}disabled{% endif %}>Zotero</label>
-        <label><input type="checkbox" name="obsidian" value="true" {% if not config.obsidian.enabled %}disabled{% endif %}>Obsidian</label>
-        <span id="batch-selection-summary" role="status">已选 0 篇</span>
-        <button class="button primary" type="submit" disabled>预览批量同步</button>
-      </div>
-    </form>
-    {% else %}<p>当前没有已知待更新论文。若尚未检查，点击上方“检查新版本”；已有失败批次可在下方继续。</p>{% endif %}
-  </section>
+  {% include "version-list.html" %}
   <dialog id="batch-preview-dialog" class="batch-preview-dialog" aria-labelledby="batch-preview-title">
     <h2 id="batch-preview-title">批量同步预览</h2>
     <p id="batch-preview-summary"></p><p id="batch-preview-scope"></p>
@@ -49,7 +12,7 @@
   </dialog>
   <details class="version-direct version-policy" {% if policy_saved %}open{% endif %}><summary><span><i class="fas fa-sliders-h" aria-hidden="true"></i>自动同步策略</span><span class="policy-state">{{ '已启用' if config.version_sync.enabled else '未启用' }} · {{ config.profile_name }}</span></summary><div class="version-policy-body">
     <h2>自动同步 · {{ config.profile_name }}</h2>
-    <p>仅作用于当前研究方向。保存后，下次手动检查、CLI 检查或每日任务检查结束时执行；保存设置本身不会启动同步。</p>
+    <p>仅作用于当前研究方向。每日任务和 CLI 检查结束后按策略更新已有材料；页面手动检查只刷新状态。保存设置本身不会启动同步。</p>
     {% if policy_saved %}<p role="status">自动同步策略已保存。</p>{% endif %}
     <form action="/versions/policy" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
       <div class="config-grid four">
@@ -61,19 +24,19 @@
       <div class="version-sync-form batch-options">
         <label><input type="checkbox" name="report" value="true" {% if config.version_sync.report %}checked{% endif %}>生成新版阅读报告</label>
         <label><input type="checkbox" name="zotero" value="true" {% if config.version_sync.zotero %}checked{% endif %}>同步 Zotero</label>
-        <label><input type="checkbox" name="obsidian" value="true" {% if config.version_sync.obsidian %}checked{% endif %}>同步 Obsidian</label>
+
         <button class="button primary" type="submit">保存当前方向策略</button>
       </div>
     </form>
-    <p>默认只下载元数据与 PDF、更新已有收藏，保留旧版本。启用报告或 Obsidian 时，本轮总篇数取两个篇数上限的较小值，余下论文留待后续检查。模型请求上限包含图像解读和兼容重试，达到后停止发出模型请求，未完成步骤可手动继续；不限制 token 或费用。版本差异分析由配置页单独控制，不计入此同步上限。</p>
+    <p>仅更新已存在且确认落后的材料，跳过待核实项；未勾选目标时不执行材料更新。报告生成受模型篇数上限约束，余下论文留待后续检查。Obsidian 请使用单篇同步工具。模型请求上限包含图像解读和兼容重试，达到后停止发出模型请求，未完成步骤可手动继续；不限制 token 或费用。版本差异分析由配置页单独控制，不计入此同步上限。</p>
     <p>失败、中断或未启动的自动批次需在下方手动继续，不会反复自动重试。修改策略只影响后续新批次；已提交的任务沿用原设置。</p>
-    {% if not config.version_tracking.enabled %}<p class="version-error">版本追踪未启用，请先到配置页启用。</p>{% elif not config.version_tracking.auto_check %}<p>每日任务自动检查已关闭；当前策略仅在手动或 CLI 检查后执行。</p>{% endif %}
+    {% if not config.version_tracking.enabled %}<p class="version-error">版本追踪未启用，请先到配置页启用。</p>{% elif not config.version_tracking.auto_check %}<p>每日任务自动检查已关闭；当前策略仅在 CLI 检查后执行。</p>{% endif %}
     {% if automatic %}<p role="status">最近自动同步轮次：{{ batch_labels.get(automatic.status, '本轮无新增任务' if automatic.status == 'idle' else automatic.status) }} · 选择 {{ automatic.selected }} 篇 · 因上限推迟 {{ automatic.deferred }} 篇 · 已有自动尝试记录 {{ automatic.held }} 篇。</p>
       {% if automatic.error %}<p class="version-error">{{ automatic.error }}</p>{% endif %}
       {% if automatic.batch_id %}<a href="#batch-{{ automatic.batch_id }}">查看本轮批次</a>{% endif %}
     {% endif %}
   </div></details>
-  <section class="version-direct" id="sync-tools">
+  <details class="version-direct" id="sync-tools"><summary>单篇同步工具 · 新增材料与外部收录</summary>
     <h2>同步单篇论文</h2>
     <form class="job-form version-sync-form" action="/api/jobs/version-sync" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
       <label>arXiv ID<input name="arxiv_id" placeholder="例如 2407.05600" required></label>
@@ -83,9 +46,9 @@
       <button class="button primary" type="submit">同步最新版</button>
     </form>
     <p>默认下载元数据与 PDF，并更新已有收藏。报告生成使用当前模型；外部同步需先在配置页启用。</p>
-  </section>
-  <section class="queue-section version-queue research-queue" id="tracking-jobs">
-    <header><h2>后台任务</h2><a class="button secondary" href="/versions">刷新版本状态</a></header>
+  </details>
+  <details class="queue-section version-queue research-queue" id="tracking-jobs" {% if jobs|selectattr("status", "in", ["queued", "running"])|list %}open{% endif %}><summary>后台任务与运行进度</summary>
+    <header><h2>后台任务</h2><a class="button secondary" href="/versions?scope={{ scope }}&view={{ view }}">刷新版本状态</a></header>
     <div id="job-list" class="job-list" aria-live="polite">
       {% for job in jobs if job.kind in ['versions', 'version-sync', 'version-batch'] and job.profile_id == config.profile_id %}
       <article class="job job-{{ job.status }}" data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
@@ -95,19 +58,20 @@
       </article>
       {% else %}<div class="queue-empty"><p>同步进度和结果会显示在这里。</p></div>{% endfor %}
     </div>
-  </section>
+  </details>
   {% if batches %}
-  <section class="batch-history" aria-label="批量同步记录">
+  <details class="batch-history" aria-label="批量同步记录"><summary>批量同步记录</summary>
     <h2>批量同步记录</h2><p>记录在重启后保留。处理中断后可继续；重试沿用预览时的方向、版本、模型及同步目标。</p>
     {% for batch in batches %}
     <details class="version-card" id="batch-{{ batch.id }}"><summary>{{ batch.created_label }} · {{ '自动' if batch.origin == 'automatic' else '手动' }}批次 {{ batch.id[:6] }} · {{ batch_labels[batch.status] }} · 已完成 {{ batch.summary.succeeded }}/{{ batch.summary.total }} 篇</summary>
       <p>报告：{{ '启用' if batch.options.report else '不生成' }} · Zotero：{{ '启用' if batch.options.zotero else '不导出' }} · Obsidian：{{ '启用' if batch.options.obsidian else '不导出' }}</p>
       {% if batch.options.report or batch.options.obsidian %}<p>模型：{{ batch.config.llm.model }}{% if batch.options.obsidian %}（笔记摘要也可能调用模型）{% endif %}</p>{% endif %}
       {% if batch.origin == 'automatic' %}<p>模型请求：本次执行 {{ batch.model_requests_this_run or 0 }}/{{ batch.config.version_sync.max_model_calls }} 次 · 累计 {{ batch.model_requests_total or 0 }} 次；每次手动继续重新分配同等请求额度。</p>{% endif %}
-      {% if batch.options.zotero %}<p>Zotero 分类：{{ batch.config.zotero.collection_name }}</p>{% endif %}
+      {% if batch.options.zotero %}<p>Zotero：{{ "已有条目（保留所属分类）" if batch.scope else batch.config.zotero.collection_name }}</p>{% endif %}
       {% if batch.options.obsidian %}<p>Obsidian：{{ batch.config.obsidian.vault_path }}</p>{% endif %}
       <ul class="batch-result-list">
       {% for item in batch['items'] %}<li><strong>{{ item.title }} · v{{ item.target_version }}</strong><span>{{ batch_labels[item.status] }}{% if item.current_stage %} · {{ item.current_stage }}{% endif %}</span>
+        {% if item.options %}<p>目标：{{ "本地报告 " if item.options.report else "" }}{{ "Zotero 原文" if item.options.zotero else "" }}</p>{% endif %}
         {% if item.error %}<p class="version-error">{{ item.error }}</p>{% endif %}
         {% for name, step in item.steps.items() %}{% if step.status in ['failed', 'degraded', 'interrupted'] %}<p class="version-error">{{ step_labels[name] }}：{{ step.error or batch_labels[step.status] }}</p>{% endif %}{% endfor %}
       </li>{% endfor %}
@@ -116,40 +80,11 @@
       {% if batch.status != 'preview' %}<a class="button secondary" href="{{ batch.result_url }}">查看批次结果</a>{% endif %}</footer>
     </details>
     {% endfor %}
-  </section>
+  </details>
   {% endif %}
   {% if tracking['events'] %}
   <section class="tracking-section"><header><p class="section-kicker">UPDATES</p><h2>发现的新版本</h2></header><div class="tracking-events">
     {% for event in tracking['events'] %}<article><span>v{{ event.from_version }} → v{{ event.to_version }}</span><div><strong>{{ event.title }}</strong><p>arXiv:{{ event.arxiv_id }} · {{ event.detected_at[:16]|replace('T',' ') }}</p>{% if event.error %}<p>差异分析失败；新版已记录。{{ event.error }}</p>{% endif %}</div>{% if event.report_url %}<a class="button secondary" href="{{ event.report_url }}">查看差异</a>{% endif %}</article>{% endfor %}
   </div></section>
   {% endif %}
-  <div class="research-section-heading archive-heading" id="tracked-papers"><div><h2>论文版本状态 <span class="research-count">{{ tracking['items']|length }}</span></h2><p>对照本地文件、阅读报告与 arXiv 最新版本。</p></div></div>
-  <section class="version-cards" aria-label="论文版本状态">
-    {% for item in tracking['items'] %}
-    <article class="version-card">
-      <header><div><strong>{{ item.title }}</strong><p>arXiv:{{ item.arxiv_id }} · {{ item.sources|join(' · ') }}</p></div><span>{% if item.sync_target %}v{{ item.sync_target }} · {% endif %}{{ item.sync_status or '尚未同步' }}</span></header>
-      <dl class="version-metrics">
-        <div><dt>本地 PDF</dt><dd>{% if item.local_version %}v{{ item.local_version }}{% else %}未下载{% endif %}</dd></div>
-        <div><dt>arXiv 最新</dt><dd>{% if item.latest_version %}v{{ item.latest_version }}{% else %}待检查{% endif %}</dd></div>
-        <div><dt>阅读报告</dt><dd>{% if item.report_version %}v{{ item.report_version }}{% else %}未生成{% endif %}</dd></div>
-        <div><dt>收藏版本</dt><dd>{% if item.saved_version %}v{{ item.saved_version }}{% else %}—{% endif %}</dd></div>
-      </dl>
-      {% if item.check_error %}<p class="version-error">版本查询失败：{{ item.check_error }}</p>{% endif %}
-      {% if item.sync_error %}<p class="version-error">同步查询失败：{{ item.sync_error }}</p>{% endif %}
-      {% if item.sync_steps %}<ul class="version-steps">{% for step in item.sync_steps %}<li>{{ step.label }}：{{ step.status }}{% if step.error %}<span> · {{ step.error }}</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
-      <form class="job-form version-sync-form" action="/api/jobs/version-sync" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
-        <input type="hidden" name="arxiv_id" value="{{ item.arxiv_id }}">
-        <label><input type="checkbox" name="report" value="true">生成新版报告</label>
-        <label><input type="checkbox" name="zotero" value="true" {% if not config.zotero.enabled %}disabled{% endif %}>Zotero</label>
-        <label><input type="checkbox" name="obsidian" value="true" {% if not config.obsidian.enabled %}disabled{% endif %}>Obsidian</label>
-        <button class="button primary" type="submit">同步最新版</button>
-      </form>
-      <footer>
-        {% if item.retry_available %}<form class="job-form" action="/api/jobs/version-sync" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ item.arxiv_id }}"><input type="hidden" name="target_version" value="{{ item.sync_target }}"><input type="hidden" name="retry" value="true"><button class="button secondary" type="submit">继续 v{{ item.sync_target }} 未完成步骤</button></form>{% endif %}
-        {% if item.sync_url %}<a class="button secondary" href="{{ item.sync_url }}">查看同步记录与文件</a>{% endif %}
-        <small>最近检查：{{ item.checked_at[:16]|replace('T',' ') or '尚未检查' }}</small>
-      </footer>
-    </article>
-    {% else %}<div class="empty-state"><h2>尚无追踪论文</h2><p>收藏论文后检查新版本，或在上方输入 arXiv ID 直接同步。</p></div>{% endfor %}
-  </section>
 {% endblock %}

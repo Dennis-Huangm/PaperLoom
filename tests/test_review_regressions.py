@@ -174,7 +174,7 @@ def test_zotero_trackable_papers_are_parsed_in_adapter(monkeypatch):
     from arxiv_ra.zotero import ZoteroClient
     from arxiv_ra.config import ZoteroConfig
     adapter = ZoteroClient(ZoteroConfig(), client=SimpleNamespace())
-    monkeypatch.setattr(adapter, 'status', lambda: {'ready': True})
+    monkeypatch.setattr(adapter, 'status', lambda: {'ready': True, 'server_id': 'TEST-LIBRARY'})
     monkeypatch.setattr(adapter, '_get_items', lambda *a: [
         {'data': {'url': 'https://arxiv.org/abs/2407.05600v3', 'title': 'A'}},
         {'data': {'archiveID': '2407.05600v2', 'title': 'A'}},

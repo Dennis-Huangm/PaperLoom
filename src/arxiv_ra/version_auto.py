@@ -9,10 +9,12 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .config import AppConfig
 from .task_runtime import TaskCancelled, task_checkpoint, task_warning
 from .utils import read_json, write_json
+from .version_scope import update_options
 from .version_batch import VersionSyncBatch, update_candidates
 from .version_sync import BASE_ARXIV_ID_RE
 from .web_catalog import version_tracking_data
@@ -39,7 +41,7 @@ class AutomaticVersionSync:
         if not self.config.version_tracking.enabled or not policy.enabled:
             return None
         task_checkpoint()
-        result = {"checked_at": datetime.now(timezone.utc).isoformat(), "status": "running",
+        result: dict[str, Any] = {"checked_at": datetime.now(timezone.utc).isoformat(), "status": "running",
                   "policy": asdict(policy), "selected": 0, "deferred": 0, "held": 0}
         try:
             policy.validate()
@@ -52,19 +54,26 @@ class AutomaticVersionSync:
                 if (BASE_ARXIV_ID_RE.fullmatch(aid) and source.get("tracked")
                         and not source.get("check_error") and source.get("latest_version")):
                     candidates.append({**item, "latest_version": source["latest_version"]})
-            attempted = {(item["arxiv_id"], item["target_version"])
+            attempted = {(item["arxiv_id"], item["target_version"], target)
                          for batch in self.batches.recent(limit=None) if batch.get("origin") == "automatic"
-                         for item in batch["items"]}
+                         for item in batch["items"]
+                         for target, enabled in item.get("options", batch["options"]).items() if enabled}
             eligible = []
-            for item in update_candidates(candidates):
-                if (item["arxiv_id"], item["latest_version"]) in attempted:
+            for item in update_candidates(candidates, "all"):
+                options = update_options(item)
+                if not (options["report"] and policy.report or options["zotero"] and policy.zotero):
+                    continue
+                item["attempted_targets"] = [target for target in ("report", "zotero")
+                    if (item["arxiv_id"], item["latest_version"], target) in attempted]
+                if not any(enabled and getattr(policy, target) and target not in item["attempted_targets"]
+                           for target, enabled in options.items()):
                     result["held"] += 1
                 else:
                     eligible.append(item)
             # Oldest known update first, stable across page sorting and restarts.
             eligible.sort(key=lambda item: (item.get("updated") or "", item["arxiv_id"]))
             limit = policy.max_papers
-            if policy.report or policy.obsidian:
+            if policy.report:
                 limit = min(limit, policy.max_model_papers)
             selected = eligible[:limit]
             result.update(selected=len(selected), deferred=len(eligible) - len(selected))
@@ -73,7 +82,7 @@ class AutomaticVersionSync:
             else:
                 batch = self.batches.preview([item["arxiv_id"] for item in selected], selected,
                                              report=policy.report, zotero=policy.zotero,
-                                             obsidian=policy.obsidian, origin="automatic")
+                                             origin="automatic", scope="all")
                 result["batch_id"] = batch["id"]
                 write_json(self.state_path, result)
                 self.batches.run(batch["id"], clients=clients)

@@ -1,0 +1,55 @@
+<header class="page-heading research-heading">
+  <div><p class="section-kicker">ARXIV VERSION WATCH</p><h1>版本追踪与同步</h1><p>跟进已有本地报告与 Zotero 原文材料，分别核实版本、更新所需内容。</p></div>
+  <form class="job-form" action="/api/jobs/versions" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="scope" value="{{ scope }}"><button class="button primary" type="submit"><i class="fas fa-sync-alt" aria-hidden="true"></i>检查{{ scopes[scope] }}论文</button></form>
+</header>
+<nav class="tracking-scope-tabs" aria-label="追踪来源">
+  {% for key, label in scopes.items() %}<a href="/versions?scope={{ key }}" {% if key == scope %}aria-current="page"{% endif %}>{{ label }}<span>{{ source_counts[key] }}</span></a>{% endfor %}
+</nav>
+<p class="tracking-source-note">本地报告：{{ config.profile_name }}；Zotero：当前连接的个人库（含自行导入的 arXiv 论文）。已排除当前方向标为不相关的论文。</p>
+<p class="tracking-source-note" role="status">{{ tracking.source_status.detail or 'Zotero 来源尚未刷新，检查新版本时核实收录关系。' }}{% if tracking.checked_at %} · 上次检查 {{ tracking.checked_at[:16]|replace('T',' ') }}{% endif %}</p>
+<section class="research-overview" aria-label="{{ scopes[scope] }}追踪概览">
+  <dl class="research-stats tracking-stats">
+    <div><dt>追踪论文 · {{ scopes[scope] }}</dt><dd>{{ tracking['items']|length }}<small>篇</small></dd></div>
+    <div><dt>待更新</dt><dd class="stat-accent">{{ updates|length }}<small>篇</small></dd></div>
+    <div><dt>待核实</dt><dd>{{ unknown_count }}<small>篇</small></dd></div>
+    <div><dt>自动同步 · 当前方向</dt><dd class="stat-text">{{ '已启用' if config.version_sync.enabled else '未启用' }}</dd></div>
+  </dl>
+  {% if tracking.coverage %}<p class="research-footnote">上轮检查覆盖当前范围 {{ tracking.coverage.checked }}/{{ tracking.coverage.total }} 篇；其余 {{ tracking.coverage.pending }} 篇将在后续检查中轮询。</p>{% endif %}
+  <p class="research-footnote">检查只刷新状态；更新需勾选并预览。定时任务按当前方向策略执行。<a href="#tracking-jobs">查看后台任务</a></p>
+</section>
+<section class="version-direct tracking-main" id="pending-updates">
+  <header class="tracking-list-heading"><h2>论文版本状态 <span class="batch-count">{{ rows|length }} 篇</span></h2>
+    <nav class="tracking-status-tabs" aria-label="版本状态">
+      {% for key, label in [('outdated', '待更新'), ('unknown', '待核实'), ('all', '全部状态')] %}<a href="/versions?scope={{ scope }}&view={{ key }}" {% if view == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+    </nav>
+  </header>
+  <p>{{ '版本未知不等于落后。可重新检查；仍无法确认的 Zotero 原文，可显式预览并补充最新附件，保留已有附件。' if view == 'unknown' else '按当前范围更新已有且落后的材料。预览逐篇列出目标；旧版和个人批注保留。' }}</p>
+  <form id="version-batch-form" action="/api/version-batches/preview" method="post" data-limit="{{ max_batch_size }}">
+    <input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="scope" value="{{ scope }}">
+    {% if view == 'unknown' %}<input type="hidden" name="supplement" value="true">{% endif %}
+    <label class="batch-select-all"><input id="batch-select-all" type="checkbox">选择当前列表可操作论文（每批最多 {{ max_batch_size }} 篇）</label>
+    <div class="tracking-paper-list">
+    {% for item in rows %}
+      {% set supplementable = scope != 'reports' and item.material_status.zotero == 'unknown' and not item.zotero_stale and item.latest_version and not item.check_error and item.zotero_keys|default([])|length == 1 %}
+      <article class="tracking-paper-row">
+        <input type="checkbox" name="arxiv_ids" value="{{ item.arxiv_id }}" aria-label="选择 {{ item.title }}" {% if (view == 'unknown' and not supplementable) or (view != 'unknown' and not item.outdated) %}disabled{% endif %}>
+        <div class="tracking-paper-body"><strong>{{ item.title }}</strong><p class="tracking-paper-meta">arXiv:{{ item.arxiv_id }} · 最近检查 {{ item.checked_at[:16]|replace('T',' ') or '尚未检查' }}</p>
+          <div class="tracking-source-badges">{% for source in item.sources %}<span>{{ source }}</span>{% endfor %}</div>
+          <div class="tracking-materials">
+            {% for target, label in [('report', '本地报告'), ('zotero', 'Zotero 原文')] %}{% if item.material_status[target] != 'absent' %}
+            <div class="tracking-material {{ item.material_status[target] }}"><span>{{ label }}</span><strong>{% if item[target + '_version'] %}v{{ item[target + '_version'] }}{% else %}版本未知{% endif %}</strong><span>{{ material_labels[item.material_status[target]] }}</span></div>
+            {% endif %}{% endfor %}
+          </div>
+          {% if item.material_status.zotero == 'unknown' %}<p class="tracking-paper-meta">{{ 'Zotero 来源未刷新，请重新检查' if item.zotero_stale else item.zotero_reason or 'Zotero 版本尚未核实' }}</p>{% endif %}
+          {% if item.check_error %}<p class="version-error">版本检查失败：{{ item.check_error }}</p>{% endif %}
+          {% if item.sync_error %}<p class="version-error">{{ item.sync_error }}</p>{% endif %}
+          {% if item.sync_url %}<a href="{{ item.sync_url }}">查看同步记录与文件</a>{% endif %}
+        </div>
+        <div class="tracking-latest"><small>arXiv 最新</small><strong>{{ 'v' ~ item.latest_version if item.latest_version else '待检查' }}</strong></div>
+      </article>
+    {% else %}<div class="empty-state"><h3>{{ '暂无符合条件的追踪论文' if not tracking['items'] else '当前筛选下没有论文' }}</h3><p>生成本地报告或在 Zotero 收录 arXiv 论文后检查版本；也可切换来源和状态查看。</p></div>{% endfor %}
+    </div>
+    <div class="tracking-selection"><span id="batch-selection-summary" role="status">已选 0 篇</span><button class="button primary" type="submit" disabled>{{ '预览补充最新附件' if view == 'unknown' else '预览更新' }}</button></div>
+  </form>
+  {% if view == 'unknown' %}<form class="job-form" action="/api/jobs/versions" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="scope" value="{{ scope }}"><button class="button secondary" type="submit">重新核实当前来源与版本</button></form>{% endif %}
+</section>

@@ -472,16 +472,16 @@ const batchForm = document.querySelector('#version-batch-form');
 const batchDialog = document.querySelector('#batch-preview-dialog');
 let pendingVersionBatch = null;
 if (batchForm && batchDialog) {
-  const selectors = Array.from(batchForm.querySelectorAll('input[name="arxiv_ids"]'));
+  const selectors = Array.from(batchForm.querySelectorAll('input[name="arxiv_ids"]:not(:disabled)'));
   const limit = Number(batchForm.dataset.limit);
   const selectAll = document.querySelector('#batch-select-all');
   const previewButton = batchForm.querySelector('button[type="submit"]');
   const startButton = document.querySelector('#batch-preview-start');
+  const previewLabel = previewButton.textContent;
   const updateSelection = () => {
     const count = selectors.filter(input => input.checked).length;
-    const reports = batchForm.querySelector('input[name="report"]').checked;
     document.querySelector('#batch-selection-summary').textContent =
-      `已选 ${count} 篇 · ${reports ? `至多生成 ${count} 份报告` : '不生成报告'}${count > limit ? `（每批最多 ${limit} 篇）` : ''}`;
+      `已选 ${count} 篇 · 预览逐篇确认更新目标${count > limit ? `（每批最多 ${limit} 篇）` : ''}`;
     previewButton.disabled = count === 0 || count > limit;
     selectAll.checked = count > 0 && selectors.slice(0, limit).every(input => input.checked);
     selectAll.indeterminate = count > 0 && !selectAll.checked;
@@ -511,7 +511,8 @@ if (batchForm && batchDialog) {
       list.replaceChildren();
       plan.items.forEach(item => {
         const row = document.createElement('li');
-        row.textContent = `${item.title} · arXiv:${item.arxiv_id} · ${item.local_version ? `PDF v${item.local_version}` : '未下载'} → v${item.target_version}`;
+        const targets = [item.options?.report ? '生成新版报告' : '', item.options?.zotero ? '更新 Zotero 原文附件' : ''].filter(Boolean);
+        row.textContent = `${item.title} · arXiv:${item.arxiv_id} · 目标 v${item.target_version} · ${targets.join('、') || '元数据与 PDF'}`;
         list.append(row);
       });
       document.querySelector('#batch-preview-error').textContent = '';
@@ -519,7 +520,7 @@ if (batchForm && batchDialog) {
     } catch (error) {
       toast(error.message);
     } finally {
-      previewButton.textContent = '预览批量同步';
+      previewButton.textContent = previewLabel;
       updateSelection();
     }
   });

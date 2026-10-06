@@ -47,6 +47,7 @@ from .scheduler import ProfileScheduler, WEEKDAYS, STATUS_LABELS as SCHEDULE_STA
 from .search import SearchIndex, KINDS as SEARCH_KINDS, QUALITIES as SEARCH_QUALITIES
 from .comparison import ComparisonService, available_papers, comparison_library
 from .version_tracker import VersionTracker
+from .version_scope import SCOPES, STATUS_LABELS as MATERIAL_LABELS, describe, in_scope, validate_scope
 from .version_sync import PaperVersionSync, STEP_LABELS
 from .version_batch import VersionSyncBatch, update_candidates, BATCH_LABELS, MAX_BATCH_SIZE
 from .version_auto import AutomaticVersionSync
@@ -844,9 +845,28 @@ def create_app(config_path: Path | str) -> FastAPI:
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.get("/versions", response_class=HTMLResponse)
-    def versions_page(request: Request, saved: str = "") -> HTMLResponse:
+    def versions_page(request: Request, saved: str = "", scope: str = "", view: str = "outdated") -> HTMLResponse:
         current = current_config()
         tracking = version_tracking_data(output_root, current.profile_id)
+        scope = scope or request.cookies.get("version_scope_" + (current.profile_id or "default"), "all")
+        try:
+            validate_scope(scope)
+            if view not in {"outdated", "unknown", "all"}:
+                raise ValueError("无效的状态筛选")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        counts = {key: sum(in_scope(item, key) for item in tracking["items"]) for key in SCOPES}
+        tracking["items"] = [describe(item, scope) for item in tracking["items"] if in_scope(item, scope)]
+        visible_ids = {item["arxiv_id"] for item in tracking["items"]}
+        tracking["events"] = [event for event in tracking["events"] if event["arxiv_id"] in visible_ids]
+        coverage = tracking["coverage"]
+        if "ids" in coverage:
+            covered = set(coverage["ids"]) & visible_ids
+            checked = set(coverage.get("checked_ids", [])) & covered
+            tracking["coverage"] = {"total": len(covered), "checked": len(checked), "pending": len(covered - checked)}
+        else:
+            tracking["coverage"] = {}
+        rows = [item for item in tracking["items"] if view == "all" or item[view]]
         batches = VersionSyncBatch(current, project_root)
         batch_history = []
         for batch in batches.recent():
@@ -855,14 +875,20 @@ def create_app(config_path: Path | str) -> FastAPI:
             batch["created_label"] = datetime.fromisoformat(batch["created_at"]).astimezone(
                 ZoneInfo(current.timezone)).strftime("%Y-%m-%d %H:%M")
             batch_history.append(batch)
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request,
             "versions.html",
-            context(request, "versions", tracking=tracking, updates=update_candidates(tracking["items"]),
+            context(request, "versions", tracking=tracking, updates=update_candidates(tracking["items"], scope),
+                    rows=rows, scope=scope, scopes=SCOPES, source_counts=counts, view=view,
+                    unknown_count=sum(item["unknown"] for item in tracking["items"]), material_labels=MATERIAL_LABELS,
                     batches=batch_history, batch_labels=BATCH_LABELS, step_labels=STEP_LABELS,
                     max_batch_size=MAX_BATCH_SIZE, policy_saved=saved == "policy",
                     automatic=AutomaticVersionSync(current, project_root).latest()),
         )
+
+        response.set_cookie("version_scope_" + (current.profile_id or "default"), scope,
+                            max_age=31536000, httponly=True, samesite="lax")
+        return response
 
     @app.post("/versions/policy")
     def save_version_policy(profile_id: str = Form(""), enabled: bool = Form(False),
@@ -1347,31 +1373,41 @@ def create_app(config_path: Path | str) -> FastAPI:
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/versions", response_class=JSONResponse)
-    def create_versions_job() -> JSONResponse:
+    def create_versions_job(scope: str = Form("all"), profile_id: str = Form("")) -> JSONResponse:
         task = JobContext.capture(current_config(), project_root)
         current = task.config
+        if profile_id and profile_id != current.profile_id:
+            raise HTTPException(status_code=409, detail="研究方向已切换，请刷新页面")
+        try:
+            validate_scope(scope)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         def run_versions() -> Path:
             with VersionTracker(current, project_root) as tracker:
-                return tracker.check()
+                return tracker.check(scope=scope, auto_sync=False)
 
         job = jobs.submit("versions", current.profile_name, run_versions,
-                          identity=task.identity("versions"), profile_id=current.profile_id)
+                          identity=task.identity("versions", scope=scope, auto_sync=False), profile_id=current.profile_id)
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/version-batches/preview", response_class=JSONResponse)
     def preview_version_batch(arxiv_ids: list[str] = Form(...), report: bool = Form(False),
-                              zotero: bool = Form(False), obsidian: bool = Form(False)) -> JSONResponse:
+                              zotero: bool = Form(False), obsidian: bool = Form(False),
+                              scope: str = Form("all"), supplement: bool = Form(False),
+                              profile_id: str = Form("")) -> JSONResponse:
         current = current_config()
+        if profile_id and profile_id != current.profile_id:
+            raise HTTPException(status_code=409, detail="研究方向已切换，请刷新页面")
         service = VersionSyncBatch(current, project_root)
         try:
             state = service.preview(arxiv_ids, version_tracking_data(service.output_root, current.profile_id)["items"],
-                                    report=report, zotero=zotero, obsidian=obsidian)
+                                    scope=scope, supplement=supplement)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return JSONResponse({"id": state["id"], "profile_name": state["profile_name"], "items": state["items"],
                              "options": state["options"], "summary": service.summary(state),
-                             "model": current.llm.model if report or obsidian else "",
-                             "zotero_collection": current.zotero.collection_name if zotero else "",
+                             "model": current.llm.model if state["options"]["report"] or state["options"]["obsidian"] else "",
+                             "zotero_collection": "已有条目（保留所属分类）" if state["options"]["zotero"] else "",
                              "obsidian_vault": current.obsidian.vault_path if obsidian else ""})
 
     @app.post("/api/jobs/version-batch/{batch_id}", response_class=JSONResponse)

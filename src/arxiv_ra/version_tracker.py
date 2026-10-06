@@ -10,9 +10,7 @@ import pymupdf as fitz
 
 from .config import AppConfig
 from .feedback import FeedbackStore
-from .library import PaperLibraryStore
 from .reading_state import _locked
-from .report_store import profile_matches
 from .research_clients import ResearchClients
 from .render import render_report
 from .utils import read_json, write_json
@@ -24,7 +22,7 @@ class VersionTracker:
     def __init__(self, config: AppConfig, project_root: Path, *, clients: ResearchClients | None = None) -> None:
         self.config = config
         self.project_root = project_root
-        self.auto_sync_result = None
+        self.auto_sync_result: dict | None = None
         output = Path(config.output_dir)
         self.output_root = output if output.is_absolute() else project_root / output
         suffix = config.profile_id or "default"
@@ -40,83 +38,71 @@ class VersionTracker:
             self.clients.close()
 
     def tracked_sources(self) -> dict[str, dict[str, Any]]:
-        sources: dict[str, dict[str, Any]] = {}
-
+        from .version_scope import local_sources
+        sources = local_sources(self.output_root, self.config.profile_id)
+        previous = (read_json(self.state_path, {}) or {}).get("items", {})
         dismissed = FeedbackStore(self.output_root, self.config.profile_id).all()
-
-        def add(arxiv_id: str, title: str, source: str, **versions) -> None:
-            arxiv_id = re.sub(r"v\d+$", "", arxiv_id.strip(), flags=re.I)
-            if not arxiv_id or arxiv_id in dismissed:
-                return
-            item = sources.setdefault(arxiv_id, {"arxiv_id": arxiv_id, "title": title, "sources": []})
-            if title and not item.get("title"):
-                item["title"] = title
-            if source not in item["sources"]:
-                item["sources"].append(source)
-            for key, version in versions.items():
-                if version:
-                    item[key] = max(int(item.get(key) or 0), int(version))
-
-        if self.config.version_tracking.include_library:
-            for arxiv_id, entry in PaperLibraryStore(self.output_root, self.config.profile_id).all().items():
-                paper = entry.get("paper") or {}
-                add(arxiv_id, str(paper.get("title") or ""), "文献库",
-                    saved_version=paper.get("version"))
-
-        if self.config.version_tracking.include_reports:
-            for path in self.output_root.glob("????-??-??/reports/*/metadata.json"):
-                payload = read_json(path, {}) or {}
-                if not profile_matches(payload, self.config.profile_id):
-                    continue
-                paper = payload.get("paper") or {}
-                add(str(paper.get("arxiv_id") or ""), str(paper.get("title") or ""), "本地报告",
-                    report_version=paper.get("version") if path.with_name("report.html").exists() else None,
-                    local_version=paper.get("version") if path.with_name("paper.pdf").exists() else None)
-        for path in (self.output_root / "papers" / (self.config.profile_id or "default")).glob("*/v*/metadata.json"):
-            paper = (read_json(path, {}) or {}).get("paper") or {}
-            if path.with_name("paper.pdf").is_file():
-                add(str(paper.get("arxiv_id") or ""), str(paper.get("title") or ""), "已同步文件",
-                    local_version=paper.get("version"))
+        self.source_status = {"status": "disabled", "detail": "Zotero 未启用，保留上次确认的来源"}
+        zotero_items = []
         if self.config.version_tracking.include_zotero and self.config.zotero.enabled:
             try:
                 zotero = ZoteroClient(self.config.zotero, timeout=3.0)
                 try:
-                    for paper in zotero.list_trackable_papers():
-                        add(paper["arxiv_id"], paper["title"], "Zotero")
+                    zotero_items = zotero.list_trackable_papers()
                 finally:
                     zotero.client.close()
+                self.source_status = {"status": "ready", "detail": "Zotero 来源已刷新"}
+                for item in zotero_items:
+                    item["zotero_checked_at"] = datetime.now(ZoneInfo(self.config.timezone)).isoformat()
             except Exception as exc:
-                task_warning(
-                    "Zotero 版本来源",
-                    f"无法读取 Zotero 条目，本次仅追踪本地来源：{type(exc).__name__}: {exc}",
-                )
+                self.source_status = {"status": "stale", "detail": f"Zotero 来源未刷新：{type(exc).__name__}: {exc}"}
+                task_warning("Zotero 版本来源", self.source_status["detail"])
+        if self.source_status["status"] != "ready":
+            zotero_items = [{**item, "zotero_stale": True} for item in previous.values()
+                            if "Zotero" in item.get("sources", [])]
+        for paper in zotero_items:
+            aid = re.sub(r"v\d+$", "", paper["arxiv_id"], flags=re.I)
+            if aid in dismissed:
+                continue
+            item = sources.setdefault(aid, {"arxiv_id": aid, "title": paper.get("title") or aid, "sources": []})
+            item["sources"].append("Zotero")
+            item.update({key: value for key, value in paper.items() if key.startswith("zotero_")})
+            item.setdefault("zotero_version", None)
+            item.setdefault("zotero_keys", [])
+            item.setdefault("zotero_library", "")
+            item.setdefault("zotero_stale", False)
         return sources
 
-    def check(self, now: datetime | None = None) -> Path:
+    def check(self, now: datetime | None = None, *, scope: str = "all", auto_sync: bool = True) -> Path:
         with _locked(self.state_path.with_suffix(".lock")):
-            return self._check(now)
+            return self._check(now, scope=scope, auto_sync=auto_sync)
 
-    def _check(self, now: datetime | None = None) -> Path:
+    def _check(self, now: datetime | None = None, *, scope: str = "all", auto_sync: bool = True) -> Path:
         task_progress("正在汇总需要追踪的论文…", 8)
         now = now or datetime.now(ZoneInfo(self.config.timezone))
+        from .version_scope import in_scope, validate_scope
+        validate_scope(scope)
         sources = self.tracked_sources()
         payload = read_json(self.state_path, {}) or {}
         state = payload.get("items", {}) if isinstance(payload.get("items", {}), dict) else {}
         sequence = int(payload.get("check_number") or 0) + 1
         for aid, item in state.items():
             item["tracked"] = aid in sources
+            item["sources"] = sources.get(aid, {}).get("sources", [])
         for aid, source in sources.items():
             state[aid] = {**state.get(aid, {}), **source, "tracked": True}
-        batch = sorted(sources, key=lambda aid: (int(state[aid].get("attempt_number") or 0), aid))[
+        selected = {aid: item for aid, item in sources.items() if in_scope(item, scope)}
+        batch = sorted(selected, key=lambda aid: (int(state[aid].get("attempt_number") or 0), aid))[
             :max(1, self.config.version_tracking.max_tracked)]
 
         def persist():
             write_json(self.state_path, {"version": 1, "checked_at": now.isoformat(),
-                       "check_number": sequence, "coverage": {"total": len(sources), "checked": len(batch),
-                       "pending": len(sources) - len(batch)}, "items": state})
+                       "check_number": sequence, "source_status": self.source_status,
+                       "coverage": {"scope": scope, "ids": list(selected), "checked_ids": batch,
+                                    "total": len(selected), "checked": len(batch), "pending": len(selected) - len(batch)}, "items": state})
 
         persist()
-        task_progress(f"正在查询本轮 {len(batch)}/{len(sources)} 篇论文的最新版本…", 24)
+        task_progress(f"正在查询本轮 {len(batch)}/{len(selected)} 篇论文的最新版本…", 24)
         failures = {}
         try:
             current = {paper.arxiv_id: paper for paper in self.clients.arxiv.get_many(batch)} if batch else {}
@@ -179,8 +165,11 @@ class VersionTracker:
         # Keep the tracker lock until the automatic plan is persisted/executed,
         # so concurrent CLI, daily and web checks cannot duplicate a round.
         from .version_auto import AutomaticVersionSync
-        with task_subtask("自动版本同步", 91, 99):
-            self.auto_sync_result = AutomaticVersionSync(self.config, self.project_root).run(state, clients=self.clients)
+        self.auto_sync_result = None
+        if auto_sync:
+            with task_subtask("自动版本同步", 91, 99):
+                self.auto_sync_result = AutomaticVersionSync(self.config, self.project_root).run(
+                    {aid: item for aid, item in state.items() if aid in selected}, clients=self.clients)
         return self._render_overview(state, new_events, now)
 
     def _version_event(self, paper, old_version: int, now: datetime) -> dict[str, Any]:
@@ -296,7 +285,7 @@ class VersionTracker:
         lines = [
             f"# {self.config.profile_name} · arXiv 版本追踪",
             "",
-            f"最近检查：{now:%Y-%m-%d %H:%M}；追踪 {len(state)} 篇论文。",
+            f"最近检查：{now:%Y-%m-%d %H:%M}；追踪 {sum(bool(item.get("tracked")) for item in state.values())} 篇论文。",
             "",
             "## 本次发现",
             "",

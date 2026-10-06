@@ -14,6 +14,7 @@ from .reading_state import _locked
 from .render import render_report
 from .task_runtime import TaskCancelled, task_checkpoint, task_progress, task_subtask, task_warning
 from .utils import read_json, write_json
+from .version_scope import in_scope, material_status, update_options, validate_scope
 from .version_sync import BASE_ARXIV_ID_RE, PaperVersionSync, STATUS_LABELS, STEP_LABELS
 
 
@@ -21,8 +22,10 @@ BATCH_LABELS = {**STATUS_LABELS, "preview": "待执行", "pending": "待处理"}
 MAX_BATCH_SIZE = 200
 
 
-def update_candidates(items: list[dict]) -> list[dict]:
+def update_candidates(items: list[dict], scope: str | None = None) -> list[dict]:
     """No network on page reads; unknown remote revisions require a check first."""
+    if scope is not None:
+        return [item for item in items if in_scope(item, scope) and any(update_options(item, scope).values())]
     return [item for item in items if int(item.get("latest_version") or 0) > 0
             and (int(item.get("local_version") or 0) < int(item["latest_version"])
                  or (item.get("saved_version") and int(item["saved_version"]) < int(item["latest_version"])))]
@@ -48,13 +51,40 @@ class VersionSyncBatch:
         return state
 
     def preview(self, selected: list[str], candidates: list[dict], *, report=False, zotero=False, obsidian=False,
-                origin="manual") -> dict:
+                origin="manual", scope: str | None = None, supplement: bool = False) -> dict:
         selected = list(dict.fromkeys(selected))
         if not selected or len(selected) > MAX_BATCH_SIZE:
             raise ValueError(f"请选择 1–{MAX_BATCH_SIZE} 篇论文")
-        available = {item["arxiv_id"]: item for item in update_candidates(candidates)}
+        if scope is not None:
+            validate_scope(scope)
+        eligible = update_candidates(candidates, scope)
+        if supplement:
+            if scope not in {"all", "zotero"} or origin != "manual":
+                raise ValueError("补充附件只适用于 Zotero 待核实论文")
+            eligible = [item for item in candidates if "Zotero" in item.get("sources", [])
+                        and material_status(item, "zotero") == "unknown" and item.get("latest_version")
+                        and not item.get("zotero_stale") and not item.get("check_error")
+                        and len(item.get("zotero_keys", [])) == 1]
+        available = {item["arxiv_id"]: item for item in eligible}
         if any(not BASE_ARXIV_ID_RE.fullmatch(aid) or aid not in available for aid in selected):
             raise ValueError("所选论文不在当前更新清单中，请刷新页面或先检查新版本")
+        per_item = {}
+        if scope is not None:
+            for aid in selected:
+                options = update_options(available[aid], scope)
+                if supplement:
+                    options = {"report": False, "zotero": True, "obsidian": False}
+                if origin == "automatic":
+                    options = {"report": options["report"] and report,
+                               "zotero": options["zotero"] and zotero, "obsidian": False}
+                    options = {name: enabled and name not in available[aid].get("attempted_targets", [])
+                               for name, enabled in options.items()}
+                if not any(options.values()):
+                    raise ValueError("所选论文没有可更新的材料")
+                per_item[aid] = options
+            report = any(value["report"] for value in per_item.values())
+            zotero = any(value["zotero"] for value in per_item.values())
+            obsidian = False
         if zotero and (not self.config.zotero.enabled or not self.config.zotero.attach_pdf):
             raise ValueError("请先启用 Zotero 和 PDF 附件同步")
         if obsidian and (not self.config.obsidian.enabled or not self.config.obsidian.vault_path):
@@ -66,13 +96,19 @@ class VersionSyncBatch:
                  "profile_name": self.config.profile_name, "created_at": now, "updated_at": now,
                  "status": "preview", "origin": origin,
                  "options": {"report": bool(report), "zotero": bool(zotero), "obsidian": bool(obsidian)},
-                 "config": asdict(self.config), "items": []}
+                 "config": asdict(self.config), "items": [], "scope": scope, "supplement": supplement}
         for aid in selected:
             item = available[aid]
             state["items"].append({"arxiv_id": aid, "title": item.get("title") or aid,
                                    "local_version": item.get("local_version"), "saved_version": item.get("saved_version"),
                                    "target_version": int(item["latest_version"]), "checked_at": item.get("checked_at") or "",
-                                   "status": "pending", "steps": {}})
+                                   "status": "pending", "steps": {},
+                                   **({"options": per_item[aid],
+                                       "report_version": item.get("report_version"),
+                                       "zotero_version": item.get("zotero_version"),
+                                       "existing_zotero": {"keys": item.get("zotero_keys", []),
+                                                           "library": item.get("zotero_library", "")}}
+                                      if scope is not None else {})})
         self._save(state)
         return state
 
@@ -100,7 +136,8 @@ class VersionSyncBatch:
                 "remaining": len(items) - succeeded,
                 "downloads": len(items),
                 "missing_pdf": sum(int(item.get("local_version") or 0) < item["target_version"] for item in items),
-                "reports": len(items) if state["options"]["report"] else 0,
+                "reports": sum(bool(item.get("options", state["options"])["report"]) for item in items),
+                "zotero": sum(bool(item.get("options", state["options"])["zotero"]) for item in items),
                 "note_summaries": len(items) if state["options"]["obsidian"] else 0}
 
     def _snapshot_config(self, state: dict) -> AppConfig:
@@ -156,8 +193,9 @@ class VersionSyncBatch:
                         try:
                             with task_subtask(label, index * 100 / total, (index + 1) * 100 / total, progress):
                                 result = sync.sync(item["arxiv_id"], target_version=item["target_version"],
-                                                   exact_options=True, **state["options"])
-                            active = {"download", "library"} | {name for name, enabled in state["options"].items() if enabled}
+                                                   exact_options=True, **item.get("options", state["options"]),
+                                                   **({"existing_zotero": item["existing_zotero"]} if "existing_zotero" in item else {}))
+                            active = {"download", "library"} | {name for name, enabled in item.get("options", state["options"]).items() if enabled}
                             item.update(status=sync.operation["status"], result=result.relative_to(self.output_root).as_posix(),
                                         steps={name: copy.deepcopy(step) for name, step in sync.operation["steps"].items() if name in active},
                                         progress=100, current_stage="本篇处理结束")

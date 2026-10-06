@@ -30,6 +30,7 @@ def _tracker(tmp_path: Path) -> VersionTracker:
         report_dir / "metadata.json",
         {"paper": {"arxiv_id": "2407.05600", "title": "GenArtist"}},
     )
+    (report_dir / "report.html").write_text("report", encoding="utf-8")
     config = AppConfig(
         output_dir=str(output),
         profile_id="agentict2i",

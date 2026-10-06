@@ -212,37 +212,28 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
     payload = _safe_json(output_root / f"version-state-{suffix}.json", {}) or {}
     if not isinstance(payload, dict):
         payload = {}
-    by_id = {aid: dict(item) for aid, item in (payload.get("items") or {}).items()
-             if item.get("tracked", True)}
-    for item in by_id.values():
-        # These describe files and current reading state, not the last check.
-        for field in ("saved_version", "report_version", "local_version"):
-            item.pop(field, None)
+    from .version_scope import local_sources
+    by_id = local_sources(output_root, profile_id)
+    for aid, previous in (payload.get("items") or {}).items():
+        if "Zotero" in previous.get("sources", []):
+            item = by_id.setdefault(aid, {"arxiv_id": aid, "title": previous.get("title") or aid, "sources": []})
+            item["sources"].append("Zotero")
+        if aid in by_id:
+            current = by_id[aid]
+            by_id[aid] = {**{k: v for k, v in previous.items() if k not in
+                            {"sources", "report_version", "local_version", "saved_version"}}, **current}
 
     def entry(aid, title=""):
-        item = by_id.setdefault(aid, {"arxiv_id": aid, "title": title or aid, "sources": []})
+        item = by_id[aid]
         item.setdefault("checked_at", "")
-        item.setdefault("sources", [])
         return item
 
     for aid, saved in PaperLibraryStore(output_root, profile_id).all().items():
-        paper = saved.get("paper") or {}
-        item = entry(aid, paper.get("title", ""))
-        item["saved_version"] = paper.get("version")
-        if "文献库" not in item["sources"]:
-            item["sources"].append("文献库")
-    for report in report_library(output_root):
-        if not profile_matches(report, profile_id):
-            continue
-        item = entry(report["arxiv_id"], report["title"])
-        if "本地报告" not in item["sources"]:
-            item["sources"].append("本地报告")
-        item["report_version"] = max(int(item.get("report_version") or 0), int(report.get("version") or 0)) or None
-        if report["pdf_path"].is_file():
-            item["local_version"] = max(int(item.get("local_version") or 0), int(report.get("version") or 0)) or None
+        if aid in by_id:
+            by_id[aid]["saved_version"] = (saved.get("paper") or {}).get("version")
     for state_path in (output_root / "papers" / suffix).glob("*/sync.json"):
         sync = _safe_json(state_path, {}) or {}
-        if not sync.get("arxiv_id"):
+        if sync.get("arxiv_id") not in by_id:
             continue
         item = entry(sync["arxiv_id"], sync.get("title", ""))
         item["latest_version"] = max(int(item.get("latest_version") or 0), int(sync.get("latest_version") or 0)) or None
@@ -257,12 +248,24 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
         item["sync_steps"] = [{"label": STEP_LABELS.get(name, name),
                                "status": STATUS_LABELS.get(step.get("status"), "待处理"), "error": step.get("error", "")}
                               for name, step in operation.get("steps", {}).items() if name in active_steps]
+        for completed in (sync.get("operations") or {}).values():
+            step = (completed.get("steps") or {}).get("zotero") or {}
+            if (step.get("status") == "succeeded" and step.get("version")
+                    and step.get("item_key") in item.get("zotero_keys", [])
+                    and step.get("library") == item.get("zotero_library") and not item.get("zotero_stale")):
+                try:
+                    newer = (datetime.fromisoformat(step["verified_at"]) >
+                             datetime.fromisoformat(item.get("zotero_checked_at") or payload.get("checked_at") or "1970-01-01T00:00:00+00:00"))
+                except (ValueError, KeyError, TypeError):
+                    newer = False
+                if newer:
+                    item["zotero_version"] = step["version"]
+                    item["zotero_checked_at"] = step["verified_at"]
+                    item["zotero_reason"] = ""
         for path in state_path.parent.glob("v*/metadata.json"):
             paper = (_safe_json(path, {}) or {}).get("paper") or {}
             if path.with_name("paper.pdf").is_file():
                 item["local_version"] = max(int(item.get("local_version") or 0), int(paper.get("version") or 0)) or None
-                if "已同步文件" not in item["sources"]:
-                    item["sources"].append("已同步文件")
     dismissed = FeedbackStore(output_root, profile_id).all()
     items = [entry(aid) for aid in list(by_id) if aid not in dismissed]
     events: list[dict[str, Any]] = []
@@ -285,7 +288,7 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
     events.sort(key=lambda item: item.get("detected_at", ""), reverse=True)
     items.sort(key=lambda item: item.get("title", "").casefold())
     return {"checked_at": payload.get("checked_at", ""), "items": items, "events": events,
-            "coverage": payload.get("coverage") or {}}
+            "coverage": payload.get("coverage") or {}, "source_status": payload.get("source_status") or {}}
 
 
 def citation_library(output_root: Path, profile_id: str | None = None) -> list[dict[str, Any]]:

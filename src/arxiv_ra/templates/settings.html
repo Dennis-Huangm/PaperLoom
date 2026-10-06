@@ -230,9 +230,9 @@
         <label>每轮检查篇数<input type="number" name="version_tracking_max_tracked" min="1" max="500" value="{{ config.version_tracking.max_tracked }}"></label>
         <label class="toggle-field"><span>启用版本追踪</span><input type="checkbox" name="version_tracking_enabled" value="true" {% if config.version_tracking.enabled %}checked{% endif %}></label>
         <label class="toggle-field"><span>每日任务自动检查</span><input type="checkbox" name="version_tracking_auto_check" value="true" {% if config.version_tracking.auto_check %}checked{% endif %}></label>
-        <label class="toggle-field"><span>追踪本地报告</span><input type="checkbox" name="version_tracking_include_reports" value="true" {% if config.version_tracking.include_reports %}checked{% endif %}></label>
-        <label class="toggle-field"><span>追踪收藏论文</span><input type="checkbox" name="version_tracking_include_library" value="true" {% if config.version_tracking.include_library %}checked{% endif %}></label>
-        <label class="toggle-field"><span>追踪 Zotero 文献</span><input type="checkbox" name="version_tracking_include_zotero" value="true" {% if config.version_tracking.include_zotero %}checked{% endif %}></label>
+        <p>版本追踪仅包含已有本地报告与已启用 Zotero 中的 arXiv 论文；收藏与下载本身不构成追踪来源。请在追踪页切换查看范围。</p>
+        <input type="hidden" name="version_tracking_include_reports" value="true">
+        <input type="hidden" name="version_tracking_include_zotero" value="true">
         <label class="toggle-field"><span>生成 PDF 差异报告</span><input type="checkbox" name="version_tracking_analyze_pdf_diff" value="true" {% if config.version_tracking.analyze_pdf_diff %}checked{% endif %}></label>
       </div>
       <h3>Semantic Scholar 相关工作地图</h3>

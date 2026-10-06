@@ -10,7 +10,7 @@ from arxiv_ra.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 from arxiv_ra.utils import read_json, write_json
 from arxiv_ra.version_batch import VersionSyncBatch, update_candidates
 from arxiv_ra.version_sync import PaperVersionSync
-from test_version_sync import Arxiv, paper
+from test_version_sync import Arxiv, paper, tracked_report
 
 
 @pytest.fixture
@@ -232,6 +232,7 @@ def test_batch_web_preview_and_duplicate_execution_are_safe(tmp_path, monkeypatc
     profiles.activate("test")
     library = PaperLibraryStore(tmp_path / "run", "test")
     library.add({"paper": paper(1).to_dict()}, "Test")
+    tracked_report(tmp_path / "run")
     write_json(tmp_path / "run/version-state-test.json", {"items": {"2501.00001":
                {"arxiv_id": "2501.00001", "title": "Test Paper", "latest_version": 3}}})
     entered, release = threading.Event(), threading.Event()
@@ -243,13 +244,13 @@ def test_batch_web_preview_and_duplicate_execution_are_safe(tmp_path, monkeypatc
 
     monkeypatch.setattr(VersionSyncBatch, "run", run)
     with TestClient(create_app(config_path)) as client:
-        assert "待同步清单" in client.get("/versions").text
+        assert "论文版本状态" in client.get("/versions").text
         invalid = client.post("/api/version-batches/preview", data={"arxiv_ids": "2501.99999"})
         assert invalid.status_code == 400
         response = client.post("/api/version-batches/preview", data={"arxiv_ids": "2501.00001"})
         assert response.status_code == 200
         preview = response.json()
-        assert preview["summary"]["reports"] == 0
+        assert preview["summary"]["reports"] == 1
         assert "config" not in preview
         url = f"/api/jobs/version-batch/{preview['id']}"
         try:

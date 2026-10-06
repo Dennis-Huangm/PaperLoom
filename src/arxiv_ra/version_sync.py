@@ -51,7 +51,7 @@ class PaperVersionSync:
 
     def sync(self, arxiv_id: str, *, target_version: int | None = None, retry: bool = False,
              report: bool = False, zotero: bool = False, obsidian: bool = False,
-             exact_options: bool = False) -> Path:
+             exact_options: bool = False, existing_zotero: dict | None = None) -> Path:
         if not BASE_ARXIV_ID_RE.fullmatch(arxiv_id):
             raise ValueError("同步需要不带版本后缀的 arXiv ID")
         if target_version is not None and target_version < 1:
@@ -98,6 +98,7 @@ class PaperVersionSync:
                 raise ValueError("没有该版本的同步记录")
             self.operation = self.state["operations"].setdefault(key, {"steps": {}, "options": {}})
             if not retry:
+                self.operation["existing_zotero"] = existing_zotero
                 if exact_options:
                     self.operation["options"] = {}
                 for name, enabled in (("report", report), ("zotero", zotero), ("obsidian", obsidian)):
@@ -264,6 +265,26 @@ class PaperVersionSync:
     def _zotero(self, paper, folder, report_path, signature):
         if not self.config.zotero.attach_pdf:
             raise ValueError("请先在 Zotero 设置中启用 PDF 附件同步")
+        existing = self.operation.get("existing_zotero")
+        if existing is not None:
+            keys = existing.get("keys", [])
+            if len(keys) != 1 or not existing.get("library"):
+                raise ValueError("Zotero 关联未明确，请重新检查来源后预览")
+            client = ZoteroClient(self.config.zotero)
+            try:
+                if client.library_identity() != existing["library"]:
+                    raise ValueError("Zotero 文献库已切换，请重新预览")
+                wrapper = client.get_item(keys[0])
+                if not wrapper or paper.arxiv_id not in client._arxiv_ids(wrapper.get("data", wrapper)):
+                    raise ValueError("Zotero 原条目已移除或关联改变，请重新核实")
+                receipt = self.operation.setdefault("zotero_receipt", {})
+                result = client.save_paper(paper.to_dict(), {}, self.config.profile_name,
+                    pdf_path=folder / "paper.pdf", collection_key="__root__", selected_key=keys[0],
+                    receipt=receipt, checkpoint=self._save)
+                return {**result.to_dict(), "signature": signature, "version": paper.version,
+                        "library": existing["library"], "verified_at": self._now()}
+            finally:
+                client.client.close()
         return self._collect(paper, folder, report_path, signature, 'zotero')
 
     def _obsidian(self, paper, folder, report_path, signature):

@@ -20,18 +20,38 @@ from arxiv_ra.version_batch import VersionSyncBatch
 from arxiv_ra.version_sync import PaperVersionSync
 from arxiv_ra.version_tracker import VersionTracker
 from arxiv_ra.web import create_app
-from test_version_sync import Arxiv, paper
+from test_version_sync import Arxiv, paper, tracked_report
 
 
 @pytest.fixture
-def automatic(tmp_path):
+def automatic(tmp_path, monkeypatch):
     config = AppConfig(output_dir=str(tmp_path / "run"), profile_id="test")
-    config.version_tracking.include_zotero = False
+    config.version_tracking.include_zotero = True
+    config.version_sync.zotero = True
     config.version_tracking.analyze_pdf_diff = False
     clients = SimpleNamespace(arxiv=Arxiv(), alphaxiv=None)
     library = PaperLibraryStore(tmp_path / "run", "test")
     for index in range(1, 4):
         library.add({"paper": paper(1, f"2501.0000{index}").to_dict()}, "Test")
+        tracked_report(tmp_path / "run", f"2501.0000{index}")
+    from arxiv_ra.zotero import ZoteroClient
+    versions = {f"2501.0000{index}": 1 for index in range(1, 4)}
+    class Zotero:
+        def __init__(self, *args, **kwargs):
+            self.client = SimpleNamespace(close=lambda: None)
+        def list_trackable_papers(self):
+            return [{"arxiv_id": aid, "title": aid, "zotero_version": version,
+                     "zotero_keys": [aid], "zotero_library": "test-library"} for aid, version in versions.items()]
+        def library_identity(self):
+            return "test-library"
+        def get_item(self, key):
+            return {"archiveID": key}
+        _arxiv_ids = staticmethod(ZoteroClient._arxiv_ids)
+        def save_paper(self, value, *args, **kwargs):
+            versions[value["arxiv_id"]] = value["version"]
+            return SimpleNamespace(to_dict=lambda: {"item_key": value["arxiv_id"]})
+    monkeypatch.setattr("arxiv_ra.version_tracker.ZoteroClient", Zotero)
+    monkeypatch.setattr("arxiv_ra.version_sync.ZoteroClient", Zotero)
     tracker = VersionTracker(config, tmp_path, clients=clients)
     return config, clients, tracker, VersionSyncBatch(config, tmp_path)
 
@@ -54,7 +74,7 @@ def test_automatic_rounds_cap_downloads_keep_history_and_do_not_repeat(automatic
     assert "查看本轮自动同步结果" in first.read_text(encoding="utf-8")
     state = batches.recent()[0]
     assert state["origin"] == "automatic" and state["status"] == "succeeded"
-    assert state["options"] == {"report": False, "zotero": False, "obsidian": False}
+    assert state["options"] == {"report": False, "zotero": True, "obsidian": False}
     assert all(item["target_version"] == 3 for item in state["items"])
     tracker.check()
     tracker.check()
@@ -281,3 +301,17 @@ def test_auto_sync_does_not_touch_another_direction(automatic):
     tracker.check()
     assert other_library.all()["2501.00001"]["paper"]["version"] == 1
     assert not (batches.output_root / "papers/other").exists()
+
+
+def test_pending_report_attempt_does_not_block_new_zotero_target(automatic):
+    config, clients, tracker, batches = automatic
+    tracker.check(auto_sync=False)
+    from arxiv_ra.web_catalog import version_tracking_data
+    items = version_tracking_data(batches.output_root, "test")["items"]
+    batches.preview(["2501.00001"], items, scope="reports", report=True, origin="automatic")
+    config.version_sync.enabled = True
+    tracker.check()
+    automatic_plans = [batch for batch in batches.recent() if batch["options"]["zotero"]]
+    assert len(automatic_plans) == 1
+    assert {item["arxiv_id"] for item in automatic_plans[0]["items"]} == {
+        "2501.00001", "2501.00002", "2501.00003"}
