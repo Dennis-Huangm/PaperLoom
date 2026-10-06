@@ -128,13 +128,12 @@ version_tracking:
   enabled: true
   auto_check: false
   max_tracked: 50
-  include_reports: true
-  include_library: true
+  # 已有本地报告始终作为来源；仅收藏或下载 PDF 不构成追踪来源。
   include_zotero: true
   analyze_pdf_diff: true
 
 # 自动同步策略：有研究方向时保存在 profiles/<id>.yaml，追踪页可独立编辑。
-# 保存设置不触发任务；在每日任务、GUI 或 CLI 的版本检查后运行。
+# 保存设置不触发任务；在每日任务或 CLI 检查后更新已有材料，页面手动检查只刷新状态。
 version_sync:
   enabled: false
   max_papers: 10
