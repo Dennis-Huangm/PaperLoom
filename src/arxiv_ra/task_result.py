@@ -62,7 +62,7 @@ def _tracking_cards(tree):
         badges = ''.join(f'<span class="source-chip">{label}</span>' for label in sources)
         # New snapshots include independent material versions after the source label.
         details = tail.split('·', 2)[-1].strip() if tail.count('·') >= 2 else ''
-        if '（' not in details:
+        if details and all(label.strip() in sources for label in details.split(',')):
             details = ''
         url = str(link.get('href') or ('https://arxiv.org/abs/' + aid[1]))
         cards.append(f'<article class="result-paper" data-sources="{source_names}" data-search="{html.escape(title + " " + aid[1], quote=True)}">'

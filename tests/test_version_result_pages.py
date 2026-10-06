@@ -97,3 +97,16 @@ def test_legacy_html_receipts_and_diff_keep_content_and_http_assets(tmp_path):
                 assert client.get(url).status_code == 200
             assert client.head('/artifacts/' + relative).content == b''
             assert response.headers['cache-control'] == 'no-cache'
+
+
+def test_legacy_membership_labels_remain_visible(tmp_path):
+    folder = tmp_path / 'versions'
+    folder.mkdir()
+    (folder / 'index-old.html').write_text('old', encoding='utf-8')
+    (folder / 'index-old.md').write_text('# Old\n\n## 正在追踪\n\n'
+        '- [Paper](https://arxiv.org/abs/2501.00001) · arXiv:2501.00001 · v1 · 文献库, 已同步文件\n', encoding='utf-8')
+    app = FastAPI()
+    app.mount('/artifacts', ReportStaticFiles(directory=tmp_path))
+    with TestClient(app) as client:
+        response = client.get('/artifacts/versions/index-old.html')
+    assert '文献库, 已同步文件' in response.text
