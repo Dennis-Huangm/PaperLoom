@@ -702,7 +702,8 @@ ${f.text}`));row.append(pieces);}
         const button=textNode('button','','reading-history-open');button.type='button';
         button.append(textNode('strong',row.title===row.paper.title ? '论文对话' : row.title));
         const refs=row.references || (row.paper?.arxiv_id ? [{paper:row.paper}] : []);
-        const subtitle=isReport ? row.paper.title || row.paper.arxiv_id : `${refs.length} 篇 · `+refs.map(r=>r.paper.title).join('、');
+        const paperTitles=refs.map(r=>r.paper.title || r.paper.arxiv_id).join('、');
+        const subtitle=isReport ? row.paper.title || row.paper.arxiv_id : refs.length===1 ? paperTitles : refs.length ? `引用 ${refs.length} 篇论文 · ${paperTitles}` : '未引用论文';
         button.append(textNode('span',subtitle,'reading-history-paper-title'));
         const date=isReport ? new Date(row.updated_at).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : new Date(row.updated_at).toLocaleString([],{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
         button.append(textNode('span',`${isReport ? 'v'+row.paper.version+' · ' : ''}${date}${isReport && Number.isInteger(row.message_count) ? ` · ${row.message_count} 条消息` : ''}`,'reading-history-meta'));
