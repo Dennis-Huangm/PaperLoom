@@ -88,3 +88,35 @@ def test_report_generation_uses_organized_tables_without_semantic_rule_import(mo
     assert '模型表现' in result and '分数越高越好。' in result and '| A | 91.2 |' in result
     assert llm.chat.call_count == 3
     legacy.assert_not_called()
+
+
+def test_organization_api_failure_is_a_single_outbound_attempt():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from arxiv_ra.config import LLMConfig
+    from arxiv_ra.llm import LLMClient
+    from arxiv_ra.report import ReportGenerator
+    client = Mock()
+    client.with_options.return_value = client
+    client.chat.completions.create.side_effect = RuntimeError('offline')
+    llm = LLMClient.__new__(LLMClient)
+    llm.config, llm.client = LLMConfig(), client
+    generator = ReportGenerator(llm, llm.config)
+    note = '### Table 1\n| A | B |\n|---|---|\n| x | 2 |'
+    output = organize_tables([note], [], None, generator._chat).render('[[表格:table-1]]')
+    assert '| x | 2 |' in output
+    assert client.chat.completions.create.call_count == 1
+    client.with_options.assert_called_with(max_retries=0)
+
+
+def test_source_marker_in_header_never_leaks_internal_mask():
+    note = '### Table 1\n| Model | Score [[证据ID:S1-test]] |\n|---|---|\n| A | 91.2 |'
+    def chat(key, system, prompt):
+        assert 'XXX' not in prompt
+        return json.dumps({'tables': [{'number': 1, 'caption': '结果', 'variants': [
+            {'schema': 'e1', 'condition': '', 'note': '', 'rows': [['e1-r1']]}]}]})
+    result = organize_tables([note], [], None, chat)
+    assert result.organization
+    output = result.render('[[表格:table-1]]')
+    assert 'XXX' not in output
+    assert 'Score [[证据ID:S1-test]]' in output

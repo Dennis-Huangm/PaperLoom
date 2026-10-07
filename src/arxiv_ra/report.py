@@ -273,7 +273,10 @@ class ReportGenerator:
         if cached is not None:
             return cached
         task_checkpoint()
-        result = self.llm.chat(system, user)
+        if key == 'table-organization-v1':
+            result = self.llm.chat(system, user, retry_on_error=False)
+        else:
+            result = self.llm.chat(system, user)
         if checkpoint:
             checkpoint.put(key, inputs, result)
         return result

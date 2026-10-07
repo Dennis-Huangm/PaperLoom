@@ -14,11 +14,12 @@ from .utils import env, extract_json_object
 
 
 class LLMClient:
-    def _completion(self, **kwargs):
+    def _completion(self, *, single_attempt=False, **kwargs):
         budget = current_model_budget()
         client = self.client
         if budget is not None:
             budget.reserve()
+        if budget is not None or single_attempt:
             # Count every outbound attempt; the SDK must not retry invisibly.
             client = client.with_options(max_retries=0)
         return client.chat.completions.create(**kwargs)
@@ -30,7 +31,7 @@ class LLMClient:
         self.enabled = bool(api_key or base_url)
         self.client = OpenAI(api_key=api_key or "ollama", base_url=base_url) if self.enabled else None
 
-    def chat(self, system: str, user: str, json_mode: bool = False) -> str:
+    def chat(self, system: str, user: str, json_mode: bool = False, *, retry_on_error: bool = True) -> str:
         if not self.client:
             raise RuntimeError(
                 f"LLM 未配置：请设置 {self.config.api_key_env}，或同时配置本地 OpenAI-compatible base URL。"
@@ -43,10 +44,12 @@ class LLMClient:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         try:
-            response = self._completion(**kwargs)
+            response = self._completion(single_attempt=not retry_on_error, **kwargs)
         except ModelBudgetExceeded:
             raise
         except Exception:
+            if not retry_on_error:
+                raise
             retry_kwargs = dict(kwargs)
             retry_kwargs.pop("temperature", None)
             if json_mode:
