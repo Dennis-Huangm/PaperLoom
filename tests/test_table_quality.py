@@ -1,5 +1,5 @@
-"""Binding guards and automatic publication, using actual source/report shapes."""
-from arxiv_ra.evidence import attach_evidence
+"""Legacy numeric-policy utilities used by historical recovery, not publication."""
+from arxiv_ra.evidence import attach_evidence as attach_links, TOKEN
 from arxiv_ra.models import ParsedPaper
 from arxiv_ra.quality import apply_numeric_policy
 from arxiv_ra.render import markdown_with_math
@@ -8,13 +8,33 @@ from bs4 import BeautifulSoup
 import pytest
 
 
+def legacy_policy_result(report, parsed, *, pdf_available, full_report):
+    from arxiv_ra.quality import audit_report_numbers, preserve_unverified_content, normalized_excerpt
+    spans = source_spans(parsed)
+    def resolve(match):
+        if match[2] is not None:
+            return spans.get(match[2].strip())
+        quote = match[1]
+        hits = [i + 1 for i, page in enumerate(parsed.page_texts)
+                if normalized_excerpt(quote) in normalized_excerpt(page)]
+        return {'quote': quote, 'page': hits[0]} if len(hits) == 1 else None
+    audit = audit_report_numbers(report, TOKEN, lambda quote: any(
+        normalized_excerpt(quote) in normalized_excerpt(page) for page in parsed.page_texts),
+        resolve_quote=lambda m: (resolve(m) or {}).get('quote'),
+        resolve_source=resolve, pages=parsed.page_texts)
+    preserve_unverified_content(audit, TOKEN, quiet_tables=True, quiet_prose=True)
+    output, evidence = attach_links(apply_numeric_policy(report, audit), parsed,
+                                    pdf_available=pdf_available, full_report=full_report)
+    return output, {**evidence, 'numeric_audit': audit}
+
+
 def review(source, headers, rows):
     parsed = ParsedPaper(source, [source])
     key = next(iter(source_spans(parsed)))
     text = "# Test\n\n## 关键结果\n\n| " + " | ".join(headers) + " | 原文依据 |\n"
     text += "|" + "---|" * (len(headers) + 1) + "\n"
     text += "\n".join("| " + " | ".join(row) + f" | [[证据ID:{key}]] |" for row in rows)
-    output, evidence = attach_evidence(text, parsed, pdf_available=True, full_report=True)
+    output, evidence = legacy_policy_result(text, parsed, pdf_available=True, full_report=True)
     tree = BeautifulSoup(markdown_with_math(output)[0], "html.parser")
     rendered_rows = [[c.get_text(strip=True) for c in row.select("td")] for row in tree.select("tbody tr")]
     return output, evidence["numeric_audit"], rendered_rows
@@ -27,7 +47,7 @@ def test_short_model_table_separator_is_repaired_before_numeric_audit():
     from arxiv_ra.report import finalize_report_structure
     source = "No source table is available to confirm these extracted values."
     report = "## 关键结果\n\n| Model | Score | 原文依据 |\n| :--- | :--- |\n| **Models** | |\n| Alpha | 99.9 | 缺少依据 |\n| Beta | 88.8 | 缺少依据 |"
-    output, evidence = attach_evidence(finalize_report_structure(report, []),
+    output, evidence = legacy_policy_result(finalize_report_structure(report, []),
                                       ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     tree = BeautifulSoup(markdown_with_math(output)[0], "html.parser")
     assert len(tree.select('tbody tr')) == 3
@@ -131,6 +151,36 @@ def test_missing_row_condition_and_damaged_numbers_are_not_guessed():
     assert audit['table_diagnostics'] and not audit['issues']
 
 
+@pytest.mark.parametrize('scores', [['14.55', '75.93'], ['14.55']])
+def test_pdf_medal_and_mixed_type_cells_cannot_establish_a_conflict(scores):
+    # EdiVal Table 3: a medal glyph becomes "5", then a checkbox/date
+    # interrupts the parser before it reaches any actual metric cells.
+    source = 'Table 3: Results\nModel\nLatency\nScore\n∗Seedream 4.0 5\n✗\n25.09.10\n14.55\n75.93\n'
+    output, audit, rows = review(source, ['Model', 'Latency', 'Score'][:len(scores) + 1],
+                                [['∗Seedream 4.0', *scores]])
+    assert '引用冲突' not in output
+    assert audit['table_checks'][0]['status'] == 'unassessed'
+    assert rows[0][1:len(scores) + 1] == scores
+
+
+def test_partial_numeric_source_row_is_not_evidence_of_wrong_values():
+    source = 'Table 3: Results\nAlpha\n5\nunsupported categorical cell\n14.55\n75.93\n'
+    output, audit, _ = review(source, ['Model', 'Latency', 'Score'], [['Alpha', '14.55', '75.93']])
+    assert '引用冲突' not in output
+    assert audit['table_checks'][0]['status'] == 'unassessed'
+
+
+def test_plain_numeric_prefix_cannot_bind_mixed_categorical_columns():
+    source = 'Table 3: Results\nModel\nRank\nIn-Context\nScore\nAlpha 5\nYes\n75.93\n'
+    output, audit, _ = review(source, ['Model', 'In-Context', 'Score'], [['Alpha', 'Yes', '75.93']])
+    assert '引用冲突' not in output
+    assert audit['table_checks'][0]['reason'] == 'unsupported_mixed_type_row'
+    # Explicit matrices still prove a real numeric conflict in this layout.
+    source = '| Model | In-Context | Score |\n|---|---|---|\n| Alpha | Yes | 75.93 |'
+    _, audit, rows = review(source, ['Model', 'In-Context', 'Score'], [['Alpha', 'Yes', '99.9']])
+    assert rows[0][2] == '99.9（引用冲突）'
+
+
 def test_bad_cell_does_not_remove_correct_siblings_or_break_escaped_pipes():
     source = "The Alpha model achieved 91.2% accuracy on the test set."
     _, audit, rows = review(source, ["Model", "Accuracy", "Unknown", "Note"], [["Alpha", "91.2%", "99.9%", r"a\|b"]])
@@ -142,7 +192,7 @@ def test_bad_cell_does_not_remove_correct_siblings_or_break_escaped_pipes():
 def test_optional_outer_pipes_preserve_table_and_good_cells():
     source = "The Alpha model achieved 91.2% accuracy on the test set."
     report = f"## 关键结果\n\nModel | Score | Other | 依据\n---|---|---|---\nAlpha | 91.2% | 99.9% | [[证据:{source}]]"
-    output, evidence = attach_evidence(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
+    output, evidence = legacy_policy_result(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     tree = BeautifulSoup(markdown_with_math(output)[0], "html.parser")
     assert [c.get_text(strip=True) for c in tree.select("tbody td")][:3] == ["Alpha", "91.2%", "99.9%"]
     assert evidence["numeric_audit"]["publication"]["flagged_cells"] == 0
@@ -152,7 +202,7 @@ def test_optional_outer_pipes_preserve_table_and_good_cells():
 def test_unverified_prose_keeps_content_and_separate_diagnostics():
     source = "The experimental outcome needs additional study before conclusions."
     report = "# Test\n\n## 关键结果\n\n### A\n- Alpha: 91.2%\n- Beta: 99.9%\n\n原有定性描述。\n\n### B\n可靠文字。"
-    output, evidence = attach_evidence(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
+    output, evidence = legacy_policy_result(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     assert "91.2" in output and "99.9" in output
     assert output.count("**[待核对]**") == 0
     assert "原有定性描述。" in output and "### B\n可靠文字。" in output
@@ -165,7 +215,7 @@ def test_unverified_prose_keeps_content_and_separate_diagnostics():
 def test_fenced_examples_are_not_publication_targets():
     source = "The source contains no quantitative results in this example."
     report = "## 关键结果\n\n```md\n## 实验设置\n| Model | Score |\n|---|---|\n| A | 99.9 |\n```\n\n定性说明。"
-    output, evidence = attach_evidence(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
+    output, evidence = legacy_policy_result(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     assert not evidence["numeric_audit"]["issues"] and "99.9" in output
 
 
@@ -173,7 +223,7 @@ def test_display_math_with_minus_lines_is_not_treated_as_a_numeric_list():
     source = "This source explains the symbolic loss definition for the task."
     formula = "\\[\nx = y\n- 1 + z\n\\]"
     report = "## 关键结果\n\n" + formula + "\n\n数值结论 99.9%。"
-    output, evidence = attach_evidence(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
+    output, evidence = legacy_policy_result(report, ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     assert formula in output and "数值结论 99.9%" in output
     assert '**[待核对]**' not in output
     assert len(evidence["numeric_audit"]["prose_diagnostics"]) == 1
@@ -185,6 +235,6 @@ def test_same_page_unrelated_quote_cannot_validate_a_different_row():
     report = f"## 关键结果\n\n| Model | Accuracy (%) |\n|---|---|\n| Alpha | 91.2 | [[证据ID:{key}]] |"
     # Keep the source column present, so the Markdown itself remains valid.
     report = report.replace("| Model | Accuracy (%) |", "| Model | Accuracy (%) | 依据 |").replace("|---|---|", "|---|---|---|")
-    _, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
+    _, evidence = legacy_policy_result(report, parsed, pdf_available=True, full_report=True)
     assert evidence["numeric_audit"]["table_checks"][0]["status"] == "unassessed"
     assert evidence["numeric_audit"]["table_diagnostics"][0]["numbers"] == ["91.2"]

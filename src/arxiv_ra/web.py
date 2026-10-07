@@ -625,19 +625,20 @@ def create_app(config_path: Path | str) -> FastAPI:
         )
 
     @app.post("/reports/delete")
-    def delete_report(arxiv_id: str = Form(...), report_id: str = Form(...),
+    def delete_report(arxiv_id: str = Form(""), report_id: str = Form(...),
                       q: str = Form(""), direction: str = Form("")) -> RedirectResponse:
-        if not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id:
+        if arxiv_id and (not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id):
             raise HTTPException(status_code=400, detail="无效的 arXiv ID")
         current = next((item for item in grouped_report_library(report_library(output_root))
-                        if item["arxiv_id"] == arxiv_id), None)
+                        if item["arxiv_id"] == arxiv_id
+                        and (arxiv_id or item["report_id"] == report_id)), None)
         if current is None:
             raise HTTPException(status_code=404, detail="本地报告不存在")
         if current["report_id"] != report_id:
             raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")
-        if jobs.active_report_for(arxiv_id):
+        if arxiv_id and jobs.active_report_for(arxiv_id):
             raise HTTPException(status_code=409, detail="这篇论文正在生成报告，请等待任务结束后再删除")
-        removed = delete_report_attempts(output_root, arxiv_id)
+        removed = delete_report_attempts(output_root, arxiv_id, report_id=report_id)
         if not removed:
             raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")
         jobs.forget_result_urls({artifact_url(output_root / item, output_root) for item in removed})
@@ -656,13 +657,13 @@ def create_app(config_path: Path | str) -> FastAPI:
             if item is None:
                 raise HTTPException(status_code=409, detail="所选报告已更新或不存在，请刷新页面后再删除")
             arxiv_id = item["arxiv_id"]
-            if not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id:
+            if arxiv_id and (not ARXIV_ID_RE.fullmatch(arxiv_id) or base_id(arxiv_id) != arxiv_id):
                 raise HTTPException(status_code=400, detail="无效的 arXiv ID")
-            if jobs.active_report_for(arxiv_id):
+            if arxiv_id and jobs.active_report_for(arxiv_id):
                 raise HTTPException(status_code=409, detail=f"论文 {arxiv_id} 正在生成报告，请等待任务结束后再删除")
-            selected.append(arxiv_id)
-        for arxiv_id in selected:
-            removed = delete_report_attempts(output_root, arxiv_id)
+            selected.append((arxiv_id, report_id))
+        for arxiv_id, report_id in selected:
+            removed = delete_report_attempts(output_root, arxiv_id, report_id=report_id)
             jobs.forget_result_urls({artifact_url(output_root / item, output_root) for item in removed})
             if not removed:
                 raise HTTPException(status_code=409, detail="报告已更新，请刷新页面后再删除")

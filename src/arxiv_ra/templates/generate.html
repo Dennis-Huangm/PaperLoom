@@ -63,7 +63,7 @@
       <article class="job job-{{ job.status }}" data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
         <span class="job-indicator"><i class="{% if job.status == 'succeeded' %}fas fa-check{% elif job.status in ['succeeded_with_warnings', 'interrupted'] %}fas fa-exclamation-triangle{% elif job.status in ['failed', 'cancelled'] %}fas fa-times{% else %}fas fa-circle-notch{% endif %}" aria-hidden="true"></i></span>
         <div><strong>{{ job.label }}</strong><p>{% if job.progress is not none %}{{ job.progress }}% · {% endif %}{{ job.detail }}</p>{% if job.report_progress %}<p>全文进度：解析{{ "已保存" if job.report_progress.parsed else "未完成" }} · 分片 {{ job.report_progress.chunks_done }}/{{ job.report_progress.chunks_total or "待确定" }} · 整合{{ "已保存" if job.report_progress.report_ready else "未完成" }}；恢复时校验兼容性</p>{% endif %}{% if job.submitted_detail %}<p>提交内容：{{ job.submitted_detail }}{% if job.retry_of %} · 恢复自 {{ job.retry_of }}{% endif %}</p>{% endif %}{% if job.warnings %}<ul class="job-warnings">{% for warning in job.warnings %}<li><strong>{{ warning.component }}：</strong>{{ warning.message }}</li>{% endfor %}</ul>{% endif %}</div>
-        <time>{{ job.updated_at[:16]|replace('T', ' ') }}</time>
+        <time class="job-elapsed" data-created-at="{{ job.created_at }}" data-updated-at="{{ job.updated_at }}" data-status="{{ job.status }}" title="从提交起计算，含排队时间">已用时计算中…</time>
         <span class="job-actions">
           {% if job.status in ['interrupted', 'failed', 'cancelled'] or (job.status == 'succeeded_with_warnings' and job.report_progress.resumable) %}
             {% if job.retry_job_id %}<span>已创建恢复任务</span>

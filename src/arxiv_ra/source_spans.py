@@ -16,10 +16,9 @@ QUOTE_TOKEN = re.compile(r"\[\[证据:(.*?)\]\]", re.S)
 EXACT_ID = re.compile(r"Q1-([a-f0-9]{24})-(\d{1,6})-(\d{1,10})-(\d{1,10})")
 SYNTHESIS_ID_GUIDANCE = """最终整合引用规则：引用下方程序取回的原文清单时，只输出 [[证据ID:实际ID]]，
 不要把片段 ID 改成自由抄写的 [[证据:...]]，也不要重排表格后将其当作逐字原文。
-每个数值行在本行保留支持它的 ID；同一行必要时可引用表头和数据行各自的 ID。
-一行跨越两个片段时必须保留两者，逐项检查开头和末尾的数值都被覆盖。复现参数用分号或独立列表分开，每个子句紧跟覆盖其全部参数的 ID。
-ID 的存在只证明文本来源，仍须核对模型、任务、难度、指标、单位和表头对应关系。
-没有清单中的有效 ID 时，写“当前材料缺少可定位原文依据”，不得从近似内容猜测 ID。
+重要段落和数值行有合适出处时保留对应 ID；可同时引用表头和数据行的 ID。
+引用数量不作为写作完成条件。ID 提供原文查阅入口，不代表事实核查已经完成。
+没有清单中的有效 ID 时省略该引用并正常写作，不添加引用缺失提示，不得从近似内容猜测 ID。
 分片笔记中的不可用引用不能被升级成有效引用。"""
 
 
@@ -99,8 +98,7 @@ def ground_note_quotes(notes: list[str], parsed: ParsedPaper, spans: dict[str, d
 
     No fuzzy matching, punctuation repair, ellipsis removal, table reordering or
     cross-page joining. Source offsets retain the original PDF extraction text.
-    Invalid quotations stay explicit unknowns rather than being carried forward
-    as if they were source material for synthesis.
+    Unresolved quotation markers are omitted without modifying their claims.
     """
     digest = _page_digest(parsed.page_texts)
     index = []
@@ -142,7 +140,7 @@ def ground_note_quotes(notes: list[str], parsed: ParsedPaper, spans: dict[str, d
             bank[span['source_id']] = span
             return f'[[证据ID:{span["source_id"]}]]'
         stats['quotes_unresolved'] += 1
-        return '（分片摘录未能唯一定位，缺少可定位原文依据）'
+        return ''
 
     cleaned = [QUOTE_TOKEN.sub(replace, note) for note in notes]
     # Fixed and precise spans share one bounded, document-ordered source bank.
@@ -205,6 +203,6 @@ def cited_span_material(notes: list[str], spans: dict[str, dict]) -> tuple[list[
             page_groups.setdefault(spans[key]["page"], []).append(key)
     allocate(page_groups.values(), 32000)
     def keep(match):
-        return match[0] if match[1].strip() in selected else "（片段引用不可用，缺少可定位原文依据）"
+        return match[0] if match[1].strip() in selected else ''
     # Present source material in document order regardless of selection order.
     return [ID_TOKEN.sub(keep, note) for note in notes], span_material([spans[k] for k in spans if k in selected])

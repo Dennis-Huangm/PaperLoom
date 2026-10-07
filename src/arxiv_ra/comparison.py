@@ -143,7 +143,7 @@ class ComparisonService:
                     source["report_numeric_issues"] = len(audit.get("issues", [])) + len(audit.get("prose_diagnostics", []))
                     source["evidence"].append({"id": f"{tag}:R", "kind": "report", "text": report_excerpt(report)})
                     data = safe_json(path.with_name("evidence.json"), {}) or {}
-                    citations = data.get("citations") if data.get("status") == "checked" and source["quality"] == "full" else []
+                    citations = data.get("citations") if data.get("status") in {"checked", "located"} and source["quality"] == "full" else []
                     for number, citation in enumerate(select_citations(citations or []), 1):
                         if type(citation.get("page")) is not int or citation["page"] < 1 or not isinstance(citation.get("quote"), str):
                             continue

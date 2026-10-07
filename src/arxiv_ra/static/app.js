@@ -87,6 +87,25 @@ const activeJobStatuses = ['queued', 'running', 'cancelling'];
 const jobPollTimers = new Map();
 const jobWarningCounts = new Map();
 
+const updateJobElapsed = (time) => {
+  const start = Date.parse(time.dataset.createdAt);
+  const end = activeJobStatuses.includes(time.dataset.status)
+    ? Date.now() : Date.parse(time.dataset.updatedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    time.textContent = '已用时未知';
+    return;
+  }
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor(seconds % 3600 / 60);
+  time.textContent = `已用时 ${hours ? `${hours}小时` : ''}${hours || minutes ? `${minutes}分` : ''}${seconds % 60}秒`;
+  time.dateTime = `PT${seconds}S`;
+};
+
+const refreshJobElapsed = () => document.querySelectorAll('time.job-elapsed').forEach(updateJobElapsed);
+refreshJobElapsed();
+if (document.querySelector('#job-list')) window.setInterval(refreshJobElapsed, 1000);
+
 const renderJob = (job) => {
   const list = document.querySelector('#job-list');
   if (!list) return;
@@ -141,7 +160,12 @@ const renderJob = (job) => {
   }
 
   const time = document.createElement('time');
-  time.textContent = job.updated_at.slice(0, 16).replace('T', ' ');
+  time.className = 'job-elapsed';
+  time.dataset.createdAt = job.created_at;
+  time.dataset.updatedAt = job.updated_at;
+  time.dataset.status = job.status;
+  time.title = '从提交起计算，含排队时间';
+  updateJobElapsed(time);
   node.append(indicator, copy, time);
   const actions = document.createElement('span');
   actions.className = 'job-actions';

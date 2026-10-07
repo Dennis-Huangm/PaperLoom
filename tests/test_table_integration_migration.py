@@ -32,7 +32,7 @@ def test_migration_updates_markdown_html_audit_and_keeps_backup(tmp_path):
     assert '原文表格摘录' not in html and '<td>B</td>' in html
     evidence = read_json(directory / 'evidence.json')
     assert evidence == read_json(directory / 'metadata.json')['evidence']
-    assert evidence['numeric_audit']['table_diagnostics']
+    assert 'numeric_audit' not in evidence
     backup = next((tmp_path / '.jobs' / 'table-integration-backups').rglob('report.md')).parent
     assert (backup / 'report.md').read_text(encoding='utf-8') == original
     assert (backup / 'report.html').read_text(encoding='utf-8') == 'Old HTML'

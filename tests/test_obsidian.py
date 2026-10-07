@@ -48,7 +48,7 @@ def _exporter(tmp_path: Path, **overrides) -> ObsidianExporter:
 
 
 @pytest.mark.parametrize('has_evidence', [True, False])
-def test_report_audit_is_compact_and_details_link_survives_export(tmp_path, has_evidence):
+def test_report_audit_is_removed_from_export(tmp_path, has_evidence):
     exporter = _exporter(tmp_path, copy_pdf=False)
     report = tmp_path / 'report.md'
     report.write_text('# Test\n\n## 关键结果\n**有效内容**\n\n## 原文依据与覆盖\n'
@@ -59,12 +59,9 @@ def test_report_audit_is_compact_and_details_link_survives_export(tmp_path, has_
     text = note.read_text(encoding='utf-8')
     assert '**有效内容**' in text and 'Repeated source' not in text
     assert '](evidence.json)' not in text
-    if has_evidence:
-        attachments = list((tmp_path / 'vault').rglob('evidence.json'))
-        assert len(attachments) == 1 and read_json(attachments[0]) == read_json(tmp_path / 'evidence.json')
-        assert 'evidence.json|' in text
-    else:
-        assert '原报告未保存详情文件' in text
+    assert not list((tmp_path / 'vault').rglob('evidence.json'))
+    assert '原报告未保存详情文件' not in text
+    assert '引用与核对' not in text
 
 
 def test_sync_builds_daily_paper_concept_and_indexes(tmp_path: Path) -> None:

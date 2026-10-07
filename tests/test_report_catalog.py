@@ -162,3 +162,24 @@ def test_batch_delete_rejects_stale_or_unknown_selection_before_deleting(tmp_pat
         assert response.status_code == 409
         assert old.exists() and current.exists()
         assert client.post("/reports/delete-batch", data={}).status_code == 422
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_delete_report_without_paper_identity(tmp_path, batch):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\ndiscovery:\n  interest_description: fixture\n", encoding="utf-8")
+    root = tmp_path / "run"
+    orphan = add_report(root, "2026-10-01", "draft-orphan")
+    write_json(orphan / "metadata.json", {"evidence": {}})
+    other_orphan = add_report(root, "2026-10-01", "other-orphan")
+    write_json(other_orphan / "metadata.json", {})
+    valid = add_report(root, "2026-10-01", "valid")
+    report_id = (orphan / "report.html").relative_to(root).as_posix()
+    with TestClient(create_app(config)) as client:
+        if batch:
+            response = client.post("/reports/delete-batch", data={"report_ids": [report_id]}, follow_redirects=False)
+        else:
+            response = client.post("/reports/delete", data={"arxiv_id": "", "report_id": report_id}, follow_redirects=False)
+        assert response.status_code == 303, response.text
+        assert not orphan.exists()
+        assert other_orphan.exists() and valid.exists()

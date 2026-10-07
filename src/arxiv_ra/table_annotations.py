@@ -71,6 +71,7 @@ def annotation_units(table):
             text = re.sub(r'^[（(]\d+[）)]\s*', '', text)
         return text
     title = own_caption(_clean(table.caption))
+    title_key = re.sub(r'\s+', ' ', TOKEN.sub('', title)).strip().rstrip('。.，,；;')
     units = [{'id': 'title' if i == 0 else f'caption-{i}', 'scope': 'table', 'text': text}
              for i, text in enumerate(_clauses(title) or [''])]
     for vi, variant in enumerate(table.variants):
@@ -85,6 +86,11 @@ def annotation_units(table):
                 if re.fullmatch(r'[（(]?表格数据依据正文\s+Appendix\s+[A-Z]\s+与\s+Table\s+\d+\s+原文陈述\s*[）)]?', text, re.I):
                     continue
                 text = own_caption(text)
+                # A caption with and without its locator is the same title.
+                # Keep independently cited/qualified notes, without requiring
+                # a model to decide an exact textual duplicate.
+                if not TOKEN.search(text) and re.sub(r'\s+', ' ', text).strip().rstrip('。.，,；;') == title_key:
+                    continue
                 for si, clause in enumerate(_clauses(text)):
                     units.append({'id': f'v{vi}-p{pi}-l{li}-s{si}', 'scope': f'v{vi}', 'text': clause})
     # Short opaque IDs reduce transcription mistakes in the selector response;

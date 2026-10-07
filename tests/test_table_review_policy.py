@@ -10,19 +10,17 @@ def test_missing_table_citation_is_diagnostic_not_cell_warning():
                                       pdf_available=True, full_report=True)
     assert '| Claude Sonnet 5 | 15.0 |' in output
     assert '待核对' not in output
-    assert not evidence['numeric_audit']['issues']
-    assert evidence['numeric_audit']['table_diagnostics'][0]['reason'] == 'no_located_quote'
-    assert evidence['publication_gate']['status'] == 'automatic_checks_passed'
+    assert 'numeric_audit' not in evidence
 
 
-def test_uncited_table_does_not_suppress_prose_review():
+def test_uncited_table_and_prose_are_published_without_review():
     report = ('## 关键结果\n\n准确率为 99.9%。\n\n'
               '| Model | Score |\n|---|---|\n| Alpha 5 | 91.2 |')
     output, evidence = attach_evidence(report, ParsedPaper('', ['Source text.']),
                                       pdf_available=True, full_report=True)
     assert '| Alpha 5 | 91.2 |' in output
     assert '准确率为 99.9%' in output and '**[待核对]**' not in output
-    assert len(evidence['numeric_audit']['prose_diagnostics']) == 1
+    assert 'numeric_audit' not in evidence
 
 
 def test_pipeline_does_not_report_component_failure_for_uncited_table(tmp_path):

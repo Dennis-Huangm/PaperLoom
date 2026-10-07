@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import hashlib
 import os
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -121,6 +122,40 @@ def _reader_asset_url(asset_base: str, filename: str) -> str:
     return html.escape(f"{asset_base.rstrip('/')}/{filename}?v={version}", quote=True)
 
 
+def _readable_draft(source):
+    """Contain a layout failure to individual blocks, retaining their text."""
+    source = re.sub(r'<!-- paperloom-(?:table:|source-page:)[^>]*-->', '', source)
+    blocks = []
+    for block in re.split(r'\n[ \t]*\n', source):
+        if not block.strip():
+            continue
+        try:
+            # Isolate raw containers; they must not swallow later text/tables.
+            if re.search(r'<(?:script|style|pre)\b', block, re.I):
+                raise ValueError('raw container')
+            body, _ = markdown_with_math(block)
+            if body.strip():
+                blocks.append(body)
+                continue
+        except Exception:
+            pass
+        escaped = html.escape(block)
+        escaped = re.sub(r'\[([^\]\n]+)\]\((paper\.pdf#page=\d+)(?: &quot;[^\n]*?&quot;)?\)',
+                         r'<a href="\2">\1</a>', escaped)
+        blocks.append('<pre class="report-layout-fallback" style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                      + escaped + '</pre>')
+    tree = BeautifulSoup('\n'.join(blocks), 'html.parser')
+    entries, used = [], set()
+    for index, heading in enumerate(tree.find_all(['h2', 'h3']), 1):
+        anchor = heading.get('id') or f'draft-section-{index}'
+        while anchor in used:
+            anchor += '-1'
+        used.add(anchor)
+        heading['id'] = anchor
+        entries.append(f'<li><a href="#{html.escape(anchor, quote=True)}">{html.escape(heading.get_text())}</a></li>')
+    return str(tree), '<ul>' + ''.join(entries) + '</ul>'
+
+
 def report_document(
     markdown_text: str,
     title: str,
@@ -128,12 +163,18 @@ def report_document(
     *, profile_id: str = "", report_id: str = "", asset_base: str = "/static",
     catalog_arxiv_id: str = "",
 ) -> str:
-    markdown_text = compact_report(markdown_text)
-    body, toc = markdown_with_math(markdown_text)
+    try:
+        markdown_text = compact_report(markdown_text)
+        body, toc = markdown_with_math(markdown_text)
+        tree = BeautifulSoup(body, 'html.parser')
+        _check_managed_table_html(markdown_text, tree)
+    except Exception:
+        # Keep valid paragraphs and tables rendered; expose only malformed
+        # blocks as escaped draft text. Saving errors remain real errors.
+        body, toc = _readable_draft(markdown_text)
+        tree = BeautifulSoup(body, 'html.parser')
     # Front matter uses a fixed full-width layout, independent of the longest
     # author list. Experimental matrices retain their horizontal scrolling.
-    tree = BeautifulSoup(body, 'html.parser')
-    _check_managed_table_html(markdown_text, tree)
     front_table = tree.find('table')
     if (front_table is not None and not front_table.find_previous('h2')
             and [th.get_text(strip=True) for th in front_table.select('thead th')] == ['字段', '内容']):

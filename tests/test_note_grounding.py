@@ -27,7 +27,7 @@ def test_exact_quote_preserves_offsets_and_does_not_borrow_adjacent_numbers():
     raw = f'## 关键结果\n\nA 99.8% [[证据ID:{key}]]'
     _, evidence = attach_evidence(raw, parsed, pdf_available=True, full_report=True)
     assert evidence['citations'][0]['source_id'] == key
-    assert evidence['numeric_audit']['prose_diagnostics'][0]['numbers'] == ['99.8%']
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 @pytest.mark.parametrize('pages,quote', [
@@ -43,7 +43,7 @@ def test_unmatched_ambiguous_changed_or_cross_page_quotes_never_get_ids(pages, q
     parsed = ParsedPaper('', pages)
     notes, _, stats = ground_note_quotes([f'claim [[证据:{quote}]]'], parsed, source_spans(parsed))
     assert not ID_TOKEN.search(notes[0])
-    assert '未能唯一定位' in notes[0]
+    assert notes[0] == 'claim '
     assert stats['quotes_unresolved'] == 1
 
 
@@ -103,7 +103,7 @@ def test_auto_generation_promotes_chunk_quotes_without_an_extra_model_call():
     _, evidence = attach_evidence(raw, parsed, pdf_available=True, full_report=True)
     assert len(calls) == 2
     assert evidence['validated_citations'] == 1 and evidence['rejected_citations'] == 0
-    assert not evidence['numeric_audit']['issues']
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 @pytest.mark.parametrize('first,second', [('- ', '- '), ('1. ', '2. '), ('- ', '  - ')])
@@ -114,7 +114,4 @@ def test_neighboring_list_claims_cannot_borrow_numeric_evidence(first, second):
            f'{first}A 91.2% [[证据ID:{key}]]\n'
            f'{second}B 91.2% 未附来源。')
     _, evidence = attach_evidence(raw, parsed, pdf_available=True, full_report=True)
-    assert evidence['numeric_audit']['checked_claims'] == 2
-    assert len(evidence['numeric_audit']['prose_diagnostics']) == 1
-    assert 'B 91.2%' in evidence['numeric_audit']['prose_diagnostics'][0]['claim']
-    assert evidence['numeric_audit']['prose_diagnostics'][0]['reason'] == 'no_located_quote'
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence

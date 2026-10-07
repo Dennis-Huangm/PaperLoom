@@ -249,7 +249,7 @@ def test_neutral_table_heading_does_not_certify_completeness():
     assert normalize_table_titles(normalized) == normalized
     _, evidence = attach_evidence(normalized, ParsedPaper('Table 5: Results', ['Table 5: Results']),
                                  pdf_available=True, full_report=True)
-    assert evidence['publication_gate']['table_completeness_unassessed'] == 1
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_generator_preserves_extracted_table_when_final_model_omits_it():
@@ -270,7 +270,7 @@ def test_generator_preserves_extracted_table_when_final_model_omits_it():
     assert '| Beta | 87.1 |' in report
     published, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert '| Beta | 87.1 |' in published
-    assert not evidence['numeric_audit']['issues']
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_missing_numeric_citation_keeps_explanation_with_explicit_uncertainty():
@@ -279,19 +279,16 @@ def test_missing_numeric_citation_keeps_explanation_with_explicit_uncertainty():
     report, evidence = attach_evidence('# Test\n\n## 关键结果\n\n' + claim,
                                       ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     assert claim in report
-    assert '**[待核对]**' not in report and evidence['numeric_audit']['prose_diagnostics']
-    assert evidence['numeric_audit']['publication']['withheld_claims'] == 0
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
-def test_numeric_summary_is_reviewed_before_publication():
+def test_numeric_summary_is_published_without_review():
     source = 'The paper studies object-based evaluation of editing.'
     report, evidence = attach_evidence(
         '# Test\n\n## 一句话总结\n\n该方法达到 91.2% 的准确率。\n\n## 关键结果\n\n定性结果。',
         ParsedPaper(source, [source]), pdf_available=True, full_report=True)
     assert '该方法达到 91.2%' in report and '**[待核对]**' not in report
-    assert evidence['publication_gate']['status'] == 'review_required'
-    assert evidence['publication_gate']['unverified_claims'] == 1
-    assert evidence['numeric_audit']['prose_diagnostics'][0]['review_state'] == 'pending_verification'
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_partial_table_is_distinct_from_reproduced_and_remains_in_index():
@@ -309,9 +306,7 @@ def test_markdown_table_is_not_treated_as_proof_of_pdf_completeness():
     source = 'Table 3: Main results\nModel A 91.2'
     _, evidence = attach_evidence(report, ParsedPaper(source, [source]),
                                   pdf_available=True, full_report=True)
-    gate = evidence['publication_gate']
-    assert gate['table_completeness_unassessed'] == 1
-    assert gate['status'] == 'automatic_checks_passed'
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_missing_table_citation_keeps_cells_without_flags():
@@ -319,8 +314,7 @@ def test_missing_table_citation_keeps_cells_without_flags():
     output, evidence = attach_evidence(report, ParsedPaper('', ['Table 1: Results']),
                                       pdf_available=True, full_report=True)
     assert '| Alpha | 91.2 |' in output and '待核对' not in output
-    assert evidence['numeric_audit']['table_diagnostics']
-    assert evidence['numeric_audit']['publication']['withheld_cells'] == 0
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_legacy_recovery_is_idempotent_and_does_not_guess_duplicate_locations():

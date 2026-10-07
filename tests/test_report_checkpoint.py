@@ -260,7 +260,7 @@ def test_failed_checkpoint_write_stops_without_marking_chunk_complete(tmp_path, 
     assert checkpoint.state["chunks_done"] == 0
 
 
-def test_annotation_checkpoint_write_failure_is_not_swallowed(tmp_path, monkeypatch):
+def test_retired_annotation_stage_never_writes_a_checkpoint(tmp_path, monkeypatch):
     config, clients, checkpoint, parsed = prepared(tmp_path)
     clients.llm.chat.return_value = '### Table 1: Scores\n\n|Model|Score|\n|---|---|\n|A|91.2|'
     import arxiv_ra.report_checkpoint as module
@@ -270,8 +270,8 @@ def test_annotation_checkpoint_write_failure_is_not_swallowed(tmp_path, monkeypa
             raise OSError('disk full')
         original(path, value)
     monkeypatch.setattr(module, 'write_json', fail)
-    with pytest.raises(CheckpointWriteError):
-        generate(clients, checkpoint, parsed)
+    generate(clients, checkpoint, parsed)
+    assert not (checkpoint.root / "table-annotations.json").exists()
 
 
 @pytest.mark.parametrize('filename', ['metadata.json', 'method-figures.json'])

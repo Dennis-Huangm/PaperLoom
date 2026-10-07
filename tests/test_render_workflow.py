@@ -123,18 +123,17 @@ def test_math_and_code_pipes_do_not_split_table_cells():
     assert [s.get_text() for s in tree.select('.math-inline')] == ['P(a|b)', 'x+1']
 
 
-def test_render_gate_rejects_lost_lists_before_replacing_previous_html(tmp_path, monkeypatch):
+def test_lost_list_structure_falls_back_to_readable_draft(tmp_path, monkeypatch):
     from arxiv_ra import markdown_rendering as engine
     target = tmp_path / 'report.html'
     target.write_text('previous valid report', encoding='utf-8')
     normal = engine._parser
     monkeypatch.setattr(engine, '_parser', lambda: normal().disable('list'))
-    with pytest.raises(engine.ReportRenderError, match='列表或表格未正确解析'):
-        render_report('说明：\n- **定义**：内容。', target, 'Test')
-    assert target.read_text(encoding='utf-8') == 'previous valid report'
+    render_report('说明：\n- **定义**：内容。', target, 'Test')
+    assert '- **定义**：内容。' in BeautifulSoup(target.read_text(encoding='utf-8'), 'html.parser').get_text()
 
 
-def test_render_gate_rejects_structures_removed_during_sanitization(tmp_path, monkeypatch):
+def test_sanitizer_structure_loss_falls_back_safely(tmp_path, monkeypatch):
     import re
     import arxiv_ra.render as renderer
     from arxiv_ra.markdown_rendering import ReportRenderError
@@ -142,17 +141,15 @@ def test_render_gate_rejects_structures_removed_during_sanitization(tmp_path, mo
     monkeypatch.setattr(renderer.nh3, 'clean', lambda value, **kw:
                         re.sub(r'</?li\b[^>]*>', '', normal(value, **kw)))
     target = tmp_path / 'report.html'
-    with pytest.raises(ReportRenderError, match='li 结构丢失'):
-        render_report('说明：\n- **定义**：内容。', target, 'Test')
-    assert not target.exists()
+    render_report('说明：\n- **定义**：内容。', target, 'Test')
+    assert '- **定义**：内容。' in BeautifulSoup(target.read_text(encoding='utf-8'), 'html.parser').get_text()
 
 
 def test_render_gate_prevents_table_cell_data_loss(tmp_path):
     from arxiv_ra.markdown_rendering import ReportRenderError
     target = tmp_path / 'report.html'
-    with pytest.raises(ReportRenderError, match='列数超过表头'):
-        render_report('| A | B |\n| --- | --- |\n| 1 | 2 | 3 |', target, 'Test')
-    assert not target.exists()
+    render_report('| A | B |\n| --- | --- |\n| 1 | 2 | 3 |', target, 'Test')
+    assert '| 1 | 2 | 3 |' in BeautifulSoup(target.read_text(encoding='utf-8'), 'html.parser').get_text()
 
 
 def test_literals_images_html_safety_and_duplicate_heading_navigation():
@@ -213,14 +210,13 @@ def test_pipeline_automatically_renders_model_lists_and_stops_on_structure_loss(
     normal = engine._parser
     monkeypatch.setattr(engine, '_parser', lambda: normal().disable('list'))
     failed = tmp_path / 'run/invalid'
-    with pytest.raises(engine.ReportRenderError):
-        pipeline._process_paper(paper, failed, False, local_pdf=source)
+    pipeline._process_paper(paper, failed, False, local_pdf=source)
     assert list(failed.rglob('report.md'))  # Reusable generated content is kept.
-    assert not list(failed.rglob('report.html'))
-    assert not list(failed.rglob('metadata.json'))  # No successful artifact published.
+    assert list(failed.rglob('report.html'))
+    assert list(failed.rglob('metadata.json'))  # Readable fallback is a completed report.
 
 
-def test_historical_report_check_failure_has_a_readable_local_error(tmp_path):
+def test_historical_report_layout_failure_serves_readable_draft(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from arxiv_ra.web_artifacts import ReportStaticFiles
@@ -231,7 +227,7 @@ def test_historical_report_check_failure_has_a_readable_local_error(tmp_path):
     app.mount('/artifacts', ReportStaticFiles(directory=tmp_path))
     with TestClient(app) as client:
         result = client.get('/artifacts/report.html')
-        assert result.status_code == 422 and '报告排版检查未通过' in result.text
+        assert result.status_code == 200 and '| 1 | 2 | 3 |' in result.text
         assert 'old broken view' not in result.text
         assert client.get('/artifacts/report.md').content == (tmp_path / 'report.md').read_bytes()
 

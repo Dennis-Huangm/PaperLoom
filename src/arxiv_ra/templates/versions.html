@@ -10,7 +10,13 @@
     <p id="batch-preview-error" class="version-error" role="alert"></p>
     <footer><button class="button secondary" id="batch-preview-cancel" type="button">返回修改</button><button class="button primary" id="batch-preview-start" type="button">开始此批次</button></footer>
   </dialog>
-  <details class="version-direct version-policy" {% if policy_saved %}open{% endif %}><summary><span><i class="fas fa-sliders-h" aria-hidden="true"></i>自动同步策略</span><span class="policy-state">{{ '已启用' if config.version_sync.enabled else '未启用' }} · {{ config.profile_name }}</span></summary><div class="version-policy-body">
+  <details class="version-direct version-policy version-tool" {% if policy_saved %}open{% endif %}>
+    <summary class="version-tool-summary">
+      <span class="version-tool-icon"><i class="fas fa-sliders-h" aria-hidden="true"></i></span>
+      <span class="version-tool-copy"><span class="version-tool-title">自动同步策略</span><span class="version-tool-description">按当前方向的策略，自动更新已有材料<span class="version-tool-profile"> · {{ config.profile_name }}</span></span></span>
+      <span class="policy-state {% if config.version_sync.enabled %}is-enabled{% endif %}">{{ '已启用' if config.version_sync.enabled else '未启用' }}</span>
+      <i class="fas fa-chevron-down version-tool-chevron" aria-hidden="true"></i>
+    </summary><div class="version-policy-body version-tool-body">
     <h2>自动同步 · {{ config.profile_name }}</h2>
     <p>仅作用于当前研究方向。每日任务和 CLI 检查结束后按策略更新已有材料；页面手动检查只刷新状态。保存设置本身不会启动同步。</p>
     {% if policy_saved %}<p role="status">自动同步策略已保存。</p>{% endif %}
@@ -36,7 +42,13 @@
       {% if automatic.batch_id %}<a href="#batch-{{ automatic.batch_id }}">查看本轮批次</a>{% endif %}
     {% endif %}
   </div></details>
-  <details class="version-direct" id="sync-tools"><summary>单篇同步工具 · 新增材料与外部收录</summary>
+  <details class="version-direct version-tool" id="sync-tools">
+    <summary class="version-tool-summary">
+      <span class="version-tool-icon"><i class="fas fa-file-import" aria-hidden="true"></i></span>
+      <span class="version-tool-copy"><span class="version-tool-title">单篇同步工具</span><span class="version-tool-description">新增阅读材料，或收录到 Zotero 与 Obsidian</span></span>
+      <i class="fas fa-chevron-down version-tool-chevron" aria-hidden="true"></i>
+    </summary>
+    <div class="version-tool-body">
     <h2>同步单篇论文</h2>
     <form class="job-form version-sync-form" action="/api/jobs/version-sync" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
       <label>arXiv ID<input name="arxiv_id" placeholder="例如 2407.05600" required></label>
@@ -46,6 +58,7 @@
       <button class="button primary" type="submit">同步最新版</button>
     </form>
     <p>默认下载元数据与 PDF，并更新已有收藏。报告生成使用当前模型；外部同步需先在配置页启用。</p>
+    </div>
   </details>
   <details class="queue-section version-queue research-queue" id="tracking-jobs" {% if jobs|selectattr("status", "in", ["queued", "running"])|list %}open{% endif %}><summary>后台任务与运行进度</summary>
     <header><h2>后台任务</h2><a class="button secondary" href="/versions?scope={{ scope }}&view={{ view }}">刷新版本状态</a></header>
@@ -54,7 +67,7 @@
       <article class="job job-{{ job.status }}" data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
         <span class="job-indicator"><i class="far fa-clock" aria-hidden="true"></i></span>
         <div><strong>{{ job.label }}</strong><p>{{ job.detail }}</p>{% if job.warnings %}<ul class="job-warnings">{% for warning in job.warnings %}<li>{{ warning.component }}：{{ warning.message }}</li>{% endfor %}</ul>{% endif %}</div>
-        <time>{{ job.updated_at[11:19] }}</time><span class="job-actions">{% if job.result_url %}<a href="{{ job.result_url }}">打开结果</a>{% endif %}{% if job.status in ['queued', 'running'] %}<button class="job-cancel" type="button" data-cancel-job="{{ job.id }}">取消任务</button>{% endif %}</span>
+        <time class="job-elapsed" data-created-at="{{ job.created_at }}" data-updated-at="{{ job.updated_at }}" data-status="{{ job.status }}" title="从提交起计算，含排队时间">已用时计算中…</time><span class="job-actions">{% if job.result_url %}<a href="{{ job.result_url }}">打开结果</a>{% endif %}{% if job.status in ['queued', 'running'] %}<button class="job-cancel" type="button" data-cancel-job="{{ job.id }}">取消任务</button>{% endif %}</span>
       </article>
       {% else %}<div class="queue-empty"><p>同步进度和结果会显示在这里。</p></div>{% endfor %}
     </div>

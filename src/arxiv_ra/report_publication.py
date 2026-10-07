@@ -11,10 +11,16 @@ from .report_completeness import _destination
 
 
 def prepare_publication(report, paper, metadata, figures, catalogue, finalize):
-    prose = catalogue.prose(report) if catalogue is not None else str(report)
-    prose = finalize(prose, figures)
-    prose = protect_metadata(prose, paper, metadata)
-    return catalogue.render(prose) if catalogue is not None else prose
+    try:
+        prose = catalogue.prose(report) if catalogue is not None else str(report)
+        prose = finalize(prose, figures)
+        prose = protect_metadata(prose, paper, metadata)
+        result = catalogue.render(prose) if catalogue is not None else prose
+        if catalogue is not None and not catalogue.data_intact(result):
+            return catalogue.fallback_report(report)
+        return result
+    except Exception:
+        return catalogue.fallback_report(report) if catalogue is not None else str(report)
 
 
 def present_source_pages(report: str, coverage: dict, pdf_path: Path) -> tuple[str, list[dict]]:

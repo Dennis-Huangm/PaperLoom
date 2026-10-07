@@ -385,7 +385,10 @@ def _headings(text):
             elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
                 fence = None
         elif not fence and (match := re.match(r'^(#{2,6})\s+([^\n]+)', line)):
-            result.append((offset, offset + len(line), len(match[1]), match[2].strip()))
+            # Masking is only for structural discovery. Display text must come
+            # from the original offsets, including any source reference.
+            title = text[offset + match.start(2):offset + match.end(2)].strip()
+            result.append((offset, offset + len(line), len(match[1]), title))
         offset += len(line)
     return result
 
@@ -464,8 +467,16 @@ def _destination(report, number, title):
             report = report.rstrip() + f'\n\n## {target}\n\n'
             return report, len(report), 3
     heading = matches[0]
-    end = next((h[0] for h in headings if h[0] > heading[0] and h[2] <= heading[2]), len(report))
-    return report, end, max(4, min(heading[2] + 1, 6))
+    # Source tables are siblings even if a legacy restoration nested their
+    # Markdown headings. A table's notes must stop at the next numbered table,
+    # not at the end of the enclosing discussion.
+    def numbered_table(h):
+        return re.match(r'^(?:Table\s*\d+|表\s*\d+)[：:.\s]', h[3], re.I)
+
+    end = next((h[0] for h in headings if h[0] > heading[0]
+                and (h[2] <= heading[2] or (table_heading and numbered_table(h)))), len(report))
+    level = heading[2] if table_heading else max(4, min(heading[2] + 1, 6))
+    return report, end, level
 
 
 def _deduplicate_body_rows(report):

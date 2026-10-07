@@ -84,7 +84,7 @@ def test_report_view_compacts_only_unknown_source_cells_without_touching_scores(
     report = ('#### Table 12\n| Models | Winrate (%) | 原文依据 |\n|---|---|---|\n'
               '| A | 50.55 | 当前材料缺少可定位原文依据 |\n| B | 45.45 | [1](paper.pdf#page=16) |')
     output = compact_report(report)
-    assert '| A | 50.55 | — |' in output
+    assert '| A | 50.55 |  |' in output
     assert '45.45' in output and 'paper.pdf#page=16' in output
 
 

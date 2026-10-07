@@ -2,23 +2,8 @@ import json
 
 import pytest
 
-from arxiv_ra.citation_repair import repair_numeric_citations
 from arxiv_ra.evidence import attach_evidence
 from arxiv_ra.models import ParsedPaper
-
-
-@pytest.mark.parametrize('replacement', [
-    '- SVGAnim-SFT 含 123k 样本。',
-    '- SVGAnim-SFT 含 123k 样本；剩余 1k 样本。',
-])
-def test_citation_repair_cannot_drop_values_or_experiment_conditions(replacement):
-    page = 'SVGAnim-SFT contains 123k training samples. The remaining 1k samples form a held-out test set.'
-    report = '## 实验设置\n\n- SVGAnim-SFT 含 123k 样本；剩余 1k 样本作为测试集。'
-    def chat(_system, prompt):
-        source = json.loads(prompt.split('候选原文 JSON：\n', 1)[1])[0]
-        return json.dumps({'repairs': [{'index': 0, 'segments': [
-            {'text': replacement, 'source_ids': [source['id']], 'separator': ''}]}]})
-    assert repair_numeric_citations(report, ParsedPaper(page, [page]), chat) == report
 
 
 def test_lookup_limits_preserve_caption_and_prose_without_warning_prefixes():
@@ -31,21 +16,17 @@ def test_lookup_limits_preserve_caption_and_prose_without_warning_prefixes():
     assert report in output
     assert '**[待核对]**' not in output
     assert '实验数值待核对' not in output
-    assert evidence['numeric_audit']['prose_diagnostics']
-    assert evidence['publication_gate']['unverified_claims'] == 2
-    assert evidence['numeric_audit']['publication']['withheld_claims'] == 0
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
-def test_explicit_table_conflict_keeps_value_and_only_labels_affected_cell():
+def test_disagreeing_values_are_not_annotated_by_citation_binding():
     source = '| Model | Accuracy | Latency |\n|---|---|---|\n| Alpha | 91.2 | 10 |'
     report = ('## 关键结果\n\n| Model | Accuracy | Latency | 原文依据 |\n|---|---|---|---|\n'
               f'| Alpha | 99.9 | 10 | [[证据:{source}]] |')
     output, evidence = attach_evidence(report, ParsedPaper(source, [source]),
                                       pdf_available=True, full_report=True)
-    assert '| Alpha | 99.9（引用冲突） | 10 |' in output
-    assert evidence['numeric_audit']['publication']['withheld_cells'] == 0
-    assert evidence['numeric_audit']['publication']['flagged_cells'] == 1
-    assert evidence['publication_gate']['conflicting_claims'] == 1
+    assert '| Alpha | 99.9 | 10 |' in output and '引用冲突' not in output
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_restored_named_baselines_update_stale_availability_note_only():

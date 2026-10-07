@@ -46,7 +46,7 @@ def test_ids_are_deterministic_page_bound_and_invalidated_by_changed_text():
     assert [s for b in batches for s in b] == list(spans.values())
 
 
-def test_id_attaches_exact_source_and_numeric_audit_still_rejects_wrong_value():
+def test_id_attaches_source_without_judging_claim_values():
     parsed = ParsedPaper(SOURCE, [SOURCE])
     key = next(iter(source_spans(parsed)))
     raw = f'## 关键结果\n\n| 模型 | MSE | 依据 |\n| --- | --- | --- |\n| GPT-4o mini | 8526 | [[证据ID:{key}]] |\n| wrong | 8527 | [[证据ID:{key}]] |'
@@ -56,8 +56,7 @@ def test_id_attaches_exact_source_and_numeric_audit_still_rejects_wrong_value():
     assert citation['quote'] == ' '.join(SOURCE.split())
     assert citation['start'] == 0 and citation['end'] == len(SOURCE)
     assert evidence['source_spans']['cited'] == 1
-    assert not evidence['numeric_audit']['issues']
-    assert [x['numbers'] for x in evidence['numeric_audit']['table_diagnostics']] == [['8527']]
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
     assert '[[证据ID:' not in report and 'paper.pdf#page=1' in report
 
 
@@ -87,7 +86,7 @@ def test_numbered_subheading_is_not_a_result_but_unsupported_calculation_is():
     key = next(iter(source_spans(parsed)))
     _, evidence = attach_evidence(f'## 关键结果\n\n### 2. 结果\nMSE 8526 [[证据ID:{key}]]\n\n比例 13.9% [[证据ID:{key}]]',
                                   parsed, pdf_available=True, full_report=True)
-    assert [i['numbers'] for i in evidence['numeric_audit']['prose_diagnostics']] == [['13.9%']]
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_synthesis_restores_literal_text_and_bounds_selected_bank():
@@ -148,7 +147,7 @@ def test_production_generation_carries_ids_into_final_report_and_protects_names(
     assert 'Marek Kadlčík' in final and 'K駆lcík' not in final
     assert '机构（论文摘录，未核实） | Masaryk University' in final
     assert final.startswith('# VectorEdits')
-    assert evidence['validated_citations'] == 1 and not evidence['numeric_audit']['issues']
+    assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
 
 
 def test_structured_front_matter_handles_missing_authors_and_combined_model_row():

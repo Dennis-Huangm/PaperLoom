@@ -14,9 +14,10 @@ def test_managed_table_cannot_disappear_inside_a_text_container(tmp_path, contai
     block = catalogue.render('[[表格:table-1]]')
     destination = tmp_path/'report.html'
     destination.write_text('previous good report',encoding='utf-8')
-    with pytest.raises(ReportRenderError):
-        render_report('## Results\n\n'+container+'\n'+block,destination,'Paper')
-    assert destination.read_text(encoding='utf-8')=='previous good report'
+    render_report('## Results\n\n'+container+'\n'+block,destination,'Paper')
+    tree = BeautifulSoup(destination.read_text(encoding='utf-8'), 'html.parser')
+    assert [cell.get_text() for cell in tree.select('article td')] == ['A', '91.2']
+    assert not tree.select_one('article').find('script')
 
 
 def test_adjacent_currency_cells_are_not_a_math_expression():
@@ -211,7 +212,7 @@ def test_legacy_numeric_audit_keeps_warning_without_duplicating_markdown_claim()
     document = report_document(text, 'Paper')
     assert '原陈述' not in document and 'repeated quote' not in document
     assert '<strong>评测分析</strong>' in document and '质量排名</h3>' in document
-    assert '实验数值待核对' in document and 'href="evidence.json"' in document
+    assert '实验数值待核对' not in document and 'href="evidence.json"' not in document
 
 
 def test_markdown_math_preserves_display_latex() -> None:
@@ -273,3 +274,13 @@ def test_report_document_keeps_formula_after_citation_tooltip_decoration():
     tree = BeautifulSoup(report_document(source, 'Paper'), 'html.parser')
     assert tree.select_one('.math-block').get_text() == 'x = y + 1'
     assert tree.select_one('a[href="paper.pdf#page=3"]')['title'] == '原文第 3 页'
+
+
+def test_layout_fallback_keeps_pdf_citations_with_hover_titles_clickable():
+    from arxiv_ra.render import report_document
+    source = '''| A | B |
+|---|---|
+| 1 | 2 | [42](paper.pdf#page=9 "原文第 9 页") |'''
+    tree = BeautifulSoup(report_document(source, 'Paper'), 'html.parser')
+    assert tree.select_one('article .report-layout-fallback a')['href'] == 'paper.pdf#page=9'
+    assert '1 | 2' in tree.select_one('article').get_text()

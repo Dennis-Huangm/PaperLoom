@@ -288,7 +288,7 @@ class VersionTracker:
         lines = [
             f"# {self.config.profile_name} · arXiv 版本追踪",
             "",
-            f"最近检查：{now:%Y-%m-%d %H:%M}；追踪 {sum(bool(item.get("tracked")) for item in state.values())} 篇论文。",
+            f"最近检查：{now:%Y-%m-%d %H:%M}；追踪 {sum(bool(item.get('tracked')) for item in state.values())} 篇论文。",
             f"检查范围：{SCOPES[scope]} · 本轮查询 {checked}/{len(state)} 篇。",
             "",
             "## 本次发现",

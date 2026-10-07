@@ -46,7 +46,7 @@ def test_one_source_table_has_one_display_with_all_rows_after_duplicate_slots():
     assert 'five runs' in rendered and 'MSE ↓' in rendered
     assert catalogue.render(rendered) == rendered
     stored = catalogue.to_dict()
-    assert stored['version'] == 3 and len(stored['tables']) == 1
+    assert stored['version'] == 4 and len(stored['tables']) == 1
     assert ReportTables.from_dict(stored).render(report) == rendered
 
 
@@ -76,7 +76,7 @@ def test_catalogue_cannot_be_silently_modified_or_lose_source_references():
         ReportTables.from_dict(payload)
 
 
-def test_generator_repairs_prose_without_giving_it_mutable_table_copies(monkeypatch):
+def test_generator_keeps_owned_tables_without_a_citation_repair_call(monkeypatch):
     from types import SimpleNamespace
     from arxiv_ra.config import LLMConfig
     from arxiv_ra.models import Paper, ParsedPaper, VerifiedMetadata
@@ -94,7 +94,7 @@ def test_generator_repairs_prose_without_giving_it_mutable_table_copies(monkeypa
         assert '| A |' not in prose and '999.0' not in prose
         assert '[[表格:table-1]]' in prose
         return prose
-    monkeypatch.setattr(module, 'repair_numeric_citations', repair)
+    assert not hasattr(module, "repair_numeric_citations")
     generator = ReportGenerator(SimpleNamespace(enabled=True, chat=chat), LLMConfig())
     paper = Paper.from_dict({'arxiv_id':'2502.19453', 'title':'Paper', 'version':1})
     output = generator.generate(paper, VerifiedMetadata(), ParsedPaper(note, [note]), [])

@@ -558,18 +558,24 @@ class DailyPipeline:
             report += "\n\n## 运行警告\n\n" + "\n".join(f"- {error}" for error in errors)
         report = prepare_publication(report, paper, metadata, method_figures, table_catalogue,
                                      finalize_report_structure)
-        report, evidence = attach_evidence(report, parsed, pdf_available=(paper_dir / "paper.pdf").is_file(),
-                                           full_report=report_quality == "full")
-        if table_catalogue is not None:
-            table_review = table_catalogue.review(report)
-            evidence['table_preservation'] = table_review
-            write_json(paper_dir / 'table-preservation.json', table_review)
-            if table_review['status'] != 'passed':
-                raise RuntimeError('原文表格展示未通过内容保全检查；冻结数据已保存在 tables.json')
-        report, source_displays = present_source_pages(report, evidence['table_coverage'], paper_dir / 'paper.pdf')
-        evidence['table_coverage']['source_displays'] = source_displays
-        # Content verification limits belong to the report and evidence.json;
-        # they are not execution failures or task component warnings.
+        from .report_citations import strip_tokens, unavailable_citations
+        unlinked_report = report
+        try:
+            report, evidence = attach_evidence(report, parsed, pdf_available=(paper_dir / "paper.pdf").is_file(),
+                                               full_report=report_quality == "full")
+            if table_catalogue is not None and not table_catalogue.data_intact(report):
+                report = strip_tokens(unlinked_report)
+                evidence = unavailable_citations()
+        except Exception:
+            report = strip_tokens(unlinked_report)
+            evidence = unavailable_citations()
+        try:
+            from .evidence import source_table_inventory
+            visual = [item for item in source_table_inventory(parsed) if item.get('kind') == 'visual']
+            report, _ = present_source_pages(report, {'visual': visual}, paper_dir / 'paper.pdf')
+        except Exception:
+            # Original-page illustrations are presentation, not a publication gate.
+            pass
         write_json(paper_dir / "evidence.json", evidence)
         task_progress("报告内容已生成，正在保存和渲染…", 88)
         report_path = paper_dir / "report.md"

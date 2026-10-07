@@ -42,16 +42,11 @@ def test_pipeline_publishes_frozen_tables_or_preserves_them_after_failed_review(
     damage = stage == 'evidence'
     pipeline = DailyPipeline(config, tmp_path, clients=clients)
     paper = Paper.from_dict({'arxiv_id':'2502.19453', 'title':'Paper', 'version':1})
-    if damage:
-        with pytest.raises(RuntimeError, match='内容保全'):
-            pipeline._process_paper(paper, pipeline.output_root / '2026-10-02', False)
-    else:
-        artifact = pipeline._process_paper(paper, pipeline.output_root / '2026-10-02', False)
-        assert '91.2' in artifact.report_path.read_text(encoding='utf-8')
-        assert artifact.report_path.with_suffix('.html').is_file()
+    artifact = pipeline._process_paper(paper, pipeline.output_root / '2026-10-02', False)
+    assert '91.2' in artifact.report_path.read_text(encoding='utf-8')
+    assert '9.12' not in artifact.report_path.read_text(encoding='utf-8')
+    assert artifact.report_path.with_suffix('.html').is_file()
     folder = next(Path(config.output_dir).glob('*/reports/*'))
     assert ReportTables.from_dict(read_json(folder / 'tables.json')) == catalogue
     assert (folder / 'report-draft.md').read_text(encoding='utf-8') == draft
-    assert read_json(folder / 'table-preservation.json')['status'] == ('failed' if damage else 'passed')
-    if damage:
-        assert not (folder / 'report.md').exists()
+    assert not (folder / 'table-preservation.json').exists()

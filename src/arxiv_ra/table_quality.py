@@ -10,7 +10,7 @@ import unicodedata
 
 from .markdown_rendering import _CODE_SPAN, _TABLE_MATH
 from .quality import numbers
-from .table_schema import reference_label
+from .table_schema import column_role, reference_label
 
 
 def mask_quotes(text, token):
@@ -78,8 +78,13 @@ def tables(text, token):
 
 def normalize_table_separators(text, token):
     """Pad missing separator cells, preserving headers and every data cell."""
-    lines = text.splitlines(keepends=True)
     masked = mask_quotes(text, token).splitlines(keepends=True)
+    # A multiline quotation becomes one masked logical line. Slice originals
+    # at those same offsets instead of indexing physical and logical lines.
+    lines, offset = [], 0
+    for line in masked:
+        lines.append(text[offset:offset + len(line)])
+        offset += len(line)
     fence = None
     for index in range(len(lines) - 1):
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})", masked[index])
@@ -139,7 +144,11 @@ def _plain_rows(page, owner):
             for following in lines[index + 1:index + 65]:
                 pieces = following.split()
                 if not pieces or not all(scalar(x) is not None for x in pieces):
-                    damaged = bool(pieces and re.match(r"^[+−-]?\d", pieces[0]))
+                    # A checkbox is a cell in this row, not the next model.
+                    # Do not accept the numeric prefix (e.g. a medal extracted
+                    # as "5") as a complete matrix row.
+                    damaged = bool(pieces and (re.match(r"^[+−-]?\d", pieces[0])
+                                               or pieces[0] in {'✓', '✗', '✔', '✘', '☑', '☒'}))
                     break
                 values.extend(scalar(x) for x in pieces)
                 end += len(following)
@@ -237,6 +246,13 @@ def check_row(row, sources, pages):
     owner_col = owner_columns[0]
     owner = label(values[owner_col])
     contexts = [label(values[i]) for i, h in enumerate(headers) if label(h) in _CONTEXT]
+    # Plain numeric runs cannot bind mixed-type columns (dates, checkboxes,
+    # technique labels, etc.). Only an explicit source matrix can validate
+    # those layouts; ignoring the nonnumeric cells would invent row boundaries.
+    plain_shape = all(i == owner_col or i in numeric or not value.strip()
+                      or label(headers[i]) in _CONTEXT or column_role(headers[i]) == 'reference'
+                      for i, value in enumerate(values))
+    incomplete = False
     candidates, explicit, conflicts = [], [], []
     for source in sources:
         page = pages[source["page"] - 1]
@@ -260,8 +276,14 @@ def check_row(row, sources, pages):
                    or _column_scalar(values[i], headers[i]) is None
                    or _header(headers[i])[1] != _header(sh[mapping[_header(headers[i])[0]]])[1]]
             explicit.append((bad, source["page"], source_row["start"], source_row["end"]))
-        for candidate in _plain_rows(page, owner):
+        for candidate in _plain_rows(page, owner) if plain_shape else ():
             if not _overlaps(candidate, source, quote, page):
+                continue
+            # A projection may omit source metrics, never invent missing ones.
+            # Too few parsed scalars establish incomplete extraction, not a
+            # demonstrated value/context conflict. Check before either binder.
+            if len(candidate['values']) < len(numeric):
+                incomplete = True
                 continue
             if contexts:
                 # Context names must be explicit standalone source labels.
@@ -285,6 +307,10 @@ def check_row(row, sources, pages):
                     "bad_columns": bad, "supported_columns": [i for i in numeric if i not in bad],
                     "source_rows": [list(x[1:]) for x in explicit]}
         return {"status": "unassessed", "reason": "conflicting_source_rows", "bad_columns": []}
+    if not plain_shape or incomplete:
+        return {'status': 'unassessed',
+                'reason': 'unsupported_mixed_type_row' if not plain_shape else 'incomplete_source_row',
+                'bad_columns': []}
     candidates = list({(tuple(x[0]), *x[1:4]): x for x in candidates}.values())
     if not candidates and conflicts:
         return {"status": "mismatch", "reason": "row_context_mismatch",

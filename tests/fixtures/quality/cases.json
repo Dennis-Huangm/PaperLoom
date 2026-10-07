@@ -2,29 +2,273 @@
   "version": 1,
   "description": "Synthetic, offline quality-guard fixtures. Not a live-model accuracy benchmark.",
   "cases": [
-    {"id":"report_correct_short","type":"report","pages":["On Dataset-A test split, accuracy is 91.2% with 64 samples."],"report":"## 关键结果\n准确率为 91.2%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]","expected":{"flagged":false,"citations":1}},
-    {"id":"report_invented_number","type":"report","pages":["On Dataset-A test split, accuracy is 91.2% with 64 samples."],"report":"## 关键结果\n准确率为 99.8%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]","expected":{"flagged":true,"citations":1}},
-    {"id":"report_percent_points","type":"report","pages":["On the test split, accuracy improves by 2 percentage points."],"report":"## 关键结果\n准确率相对提高 2%。[[证据:On the test split, accuracy improves by 2 percentage points.]]","expected":{"flagged":true,"citations":1}},
-    {"id":"report_unit_change","type":"report","pages":["Inference latency on the test machine is 12 ms per sample."],"report":"## 实验设置\n每个样本耗时 12 秒。[[证据:Inference latency on the test machine is 12 ms per sample.]]","expected":{"flagged":true,"citations":1}},
-    {"id":"report_unit_alias","type":"report","pages":["Inference latency on the test machine is 12 ms per sample."],"report":"## 关键结果\n每个样本耗时 12 毫秒。[[证据:Inference latency on the test machine is 12 ms per sample.]]","expected":{"flagged":false,"citations":1}},
-    {"id":"report_unsupported_no_quote","type":"report","pages":["The experiments are described without exact accuracy values."],"report":"## 关键结果\n测试准确率达到 99.9%。","expected":{"flagged":true,"citations":0}},
-    {"id":"report_scan_no_text","type":"report","pages":["",""],"report":"## 关键结果\n准确率为 91.2%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]","expected":{"flagged":true,"citations":0}},
-    {"id":"report_duplicate_page_quote","type":"report","pages":["The evaluated system obtains 91.2% accuracy on Dataset-A.","The evaluated system obtains 91.2% accuracy on Dataset-A."],"report":"## 关键结果\n准确率为 91.2%。[[证据:The evaluated system obtains 91.2% accuracy on Dataset-A.]]","expected":{"flagged":true,"citations":0}},
-    {"id":"report_table_row","type":"report","pages":["Table 2 reports Dataset-A accuracy as 91.2% and F1 as 88.4%."],"report":"## 关键结果\n| 指标 | 值 |\n|---|---|\n| accuracy | 99.1% [[证据:Table 2 reports Dataset-A accuracy as 91.2% and F1 as 88.4%.]] |","expected":{"flagged":true,"citations":1}},
-    {"id":"report_formula_not_experiment","type":"report","pages":["The loss function uses a weighted sum of squared residuals."],"report":"## 核心方法\n目标函数为 \\[L = \\sum_{i=1}^{n} (y_i-f(x_i))^2\\]。[[证据:The loss function uses a weighted sum of squared residuals.]]","expected":{"flagged":false,"citations":1}},
-    {"id":"report_math_scalar","type":"report","pages":["The evaluated system obtains 91.2% accuracy on Dataset-A."],"report":"## 关键结果\n准确率为 \\(99.1\\%\\)。[[证据:The evaluated system obtains 91.2% accuracy on Dataset-A.]]","expected":{"flagged":true,"citations":1}},
-    {"id":"report_formatting_equivalent","type":"report","pages":["The evaluated system obtains 91.20 percent accuracy on Dataset-A."],"report":"## 关键结果\n准确率为 ９１.２％。[[证据:The evaluated system obtains 91.20 percent accuracy on Dataset-A.]]","expected":{"flagged":false,"citations":1}},
-    {"id":"report_new_revision_old_claim","type":"report","pages":["Revision two corrects the result: accuracy is 87.5% on Dataset-A."],"report":"## 关键结果\n修订结果准确率为 91.2%。[[证据:Revision two corrects the result: accuracy is 87.5% on Dataset-A.]]","expected":{"flagged":true,"citations":1}},
-    {"id":"compare_supported_number","type":"comparison","source":"Dataset-A test accuracy is 91.2% under the stated protocol.","text":"Dataset-A 测试准确率为 91.2%。","support":"Dataset-A test accuracy is 91.2% under the stated protocol.","expected":{"kind":"source"}},
-    {"id":"compare_invented_number","type":"comparison","source":"Dataset-A test accuracy is 91.2% under the stated protocol.","text":"Dataset-A 测试准确率为 99.8%。","support":"Dataset-A test accuracy is 91.2% under the stated protocol.","expected":{"kind":"unknown"}},
-    {"id":"compare_wrong_paper","type":"comparison","source":"Dataset-A test accuracy is 91.2% under the stated protocol.","text":"准确率为 91.2%。","support":"Dataset-A test accuracy is 91.2% under the stated protocol.","wrong_ref":true,"expected":{"kind":"unknown"}},
-    {"id":"compare_no_support_span","type":"comparison","source":"The paper studies a retrieval-based method for question answering.","text":"使用检索方法。","expected":{"kind":"unknown"}},
-    {"id":"compare_fabricated_support","type":"comparison","source":"The paper studies a retrieval-based method for question answering.","text":"采用视频训练。","support":"The paper uses video training for improved generation.","expected":{"kind":"unknown"}},
-    {"id":"compare_secondary_report","type":"comparison","source":"分析者推断：该方法可能适用于数据稀缺场景。","source_kind":"report","text":"可能适用于数据稀缺场景。","support":"分析者推断：该方法可能适用于数据稀缺场景。","expected":{"kind":"inference"}},
-    {"id":"compare_explicit_inference","type":"comparison","source":"The method is evaluated on one small dataset only.","text":"在其他数据集上的适用性仍需验证。","kind":"inference","support":"The method is evaluated on one small dataset only.","expected":{"kind":"inference"}},
-    {"id":"compare_unsupported_computed_gain","type":"comparison","source":"The method scores 90% and the baseline scores 80% on Dataset-A.","text":"相对提升 12.5%。","kind":"inference","support":"The method scores 90% and the baseline scores 80% on Dataset-A.","expected":{"kind":"unknown"}},
-    {"id":"compare_unchecked_ranking","type":"comparison","source":"Dataset-A test accuracy is 91.2% under the stated protocol.","text":"准确率 91.2%，优于 P2。","support":"Dataset-A test accuracy is 91.2% under the stated protocol.","expected":{"kind":"unknown"}},
-    {"id":"compare_missing_dimension","type":"comparison","source":"The paper studies a retrieval-based method for question answering.","omit_cell":true,"expected":{"kind":"unknown"}},
-    {"id":"compare_metric_swap_manual","type":"comparison","source":"Accuracy is 91.2% and F1 is 88.4% under the same protocol.","text":"准确率为 88.4%，F1 为 91.2%。","support":"Accuracy is 91.2% and F1 is 88.4% under the same protocol.","manual_review":"数值均在摘录中，但指标归属被交换；数值字面检查无法判断语义支持。"}
+    {
+      "id": "report_correct_short",
+      "type": "report",
+      "pages": [
+        "On Dataset-A test split, accuracy is 91.2% with 64 samples."
+      ],
+      "report": "## 关键结果\n准确率为 91.2%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_invented_number",
+      "type": "report",
+      "pages": [
+        "On Dataset-A test split, accuracy is 91.2% with 64 samples."
+      ],
+      "report": "## 关键结果\n准确率为 99.8%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_percent_points",
+      "type": "report",
+      "pages": [
+        "On the test split, accuracy improves by 2 percentage points."
+      ],
+      "report": "## 关键结果\n准确率相对提高 2%。[[证据:On the test split, accuracy improves by 2 percentage points.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_unit_change",
+      "type": "report",
+      "pages": [
+        "Inference latency on the test machine is 12 ms per sample."
+      ],
+      "report": "## 实验设置\n每个样本耗时 12 秒。[[证据:Inference latency on the test machine is 12 ms per sample.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_unit_alias",
+      "type": "report",
+      "pages": [
+        "Inference latency on the test machine is 12 ms per sample."
+      ],
+      "report": "## 关键结果\n每个样本耗时 12 毫秒。[[证据:Inference latency on the test machine is 12 ms per sample.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_unsupported_no_quote",
+      "type": "report",
+      "pages": [
+        "The experiments are described without exact accuracy values."
+      ],
+      "report": "## 关键结果\n测试准确率达到 99.9%。",
+      "expected": {
+        "flagged": false,
+        "citations": 0
+      }
+    },
+    {
+      "id": "report_scan_no_text",
+      "type": "report",
+      "pages": [
+        "",
+        ""
+      ],
+      "report": "## 关键结果\n准确率为 91.2%。[[证据:On Dataset-A test split, accuracy is 91.2% with 64 samples.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 0
+      }
+    },
+    {
+      "id": "report_duplicate_page_quote",
+      "type": "report",
+      "pages": [
+        "The evaluated system obtains 91.2% accuracy on Dataset-A.",
+        "The evaluated system obtains 91.2% accuracy on Dataset-A."
+      ],
+      "report": "## 关键结果\n准确率为 91.2%。[[证据:The evaluated system obtains 91.2% accuracy on Dataset-A.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 0
+      }
+    },
+    {
+      "id": "report_table_row",
+      "type": "report",
+      "pages": [
+        "Table 2 reports Dataset-A accuracy as 91.2% and F1 as 88.4%."
+      ],
+      "report": "## 关键结果\n| 指标 | 值 |\n|---|---|\n| accuracy | 99.1% [[证据:Table 2 reports Dataset-A accuracy as 91.2% and F1 as 88.4%.]] |",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_formula_not_experiment",
+      "type": "report",
+      "pages": [
+        "The loss function uses a weighted sum of squared residuals."
+      ],
+      "report": "## 核心方法\n目标函数为 \\[L = \\sum_{i=1}^{n} (y_i-f(x_i))^2\\]。[[证据:The loss function uses a weighted sum of squared residuals.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_math_scalar",
+      "type": "report",
+      "pages": [
+        "The evaluated system obtains 91.2% accuracy on Dataset-A."
+      ],
+      "report": "## 关键结果\n准确率为 \\(99.1\\%\\)。[[证据:The evaluated system obtains 91.2% accuracy on Dataset-A.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_formatting_equivalent",
+      "type": "report",
+      "pages": [
+        "The evaluated system obtains 91.20 percent accuracy on Dataset-A."
+      ],
+      "report": "## 关键结果\n准确率为 ９１.２％。[[证据:The evaluated system obtains 91.20 percent accuracy on Dataset-A.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "report_new_revision_old_claim",
+      "type": "report",
+      "pages": [
+        "Revision two corrects the result: accuracy is 87.5% on Dataset-A."
+      ],
+      "report": "## 关键结果\n修订结果准确率为 91.2%。[[证据:Revision two corrects the result: accuracy is 87.5% on Dataset-A.]]",
+      "expected": {
+        "flagged": false,
+        "citations": 1
+      }
+    },
+    {
+      "id": "compare_supported_number",
+      "type": "comparison",
+      "source": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "text": "Dataset-A 测试准确率为 91.2%。",
+      "support": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "expected": {
+        "kind": "source"
+      }
+    },
+    {
+      "id": "compare_invented_number",
+      "type": "comparison",
+      "source": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "text": "Dataset-A 测试准确率为 99.8%。",
+      "support": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_wrong_paper",
+      "type": "comparison",
+      "source": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "text": "准确率为 91.2%。",
+      "support": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "wrong_ref": true,
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_no_support_span",
+      "type": "comparison",
+      "source": "The paper studies a retrieval-based method for question answering.",
+      "text": "使用检索方法。",
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_fabricated_support",
+      "type": "comparison",
+      "source": "The paper studies a retrieval-based method for question answering.",
+      "text": "采用视频训练。",
+      "support": "The paper uses video training for improved generation.",
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_secondary_report",
+      "type": "comparison",
+      "source": "分析者推断：该方法可能适用于数据稀缺场景。",
+      "source_kind": "report",
+      "text": "可能适用于数据稀缺场景。",
+      "support": "分析者推断：该方法可能适用于数据稀缺场景。",
+      "expected": {
+        "kind": "inference"
+      }
+    },
+    {
+      "id": "compare_explicit_inference",
+      "type": "comparison",
+      "source": "The method is evaluated on one small dataset only.",
+      "text": "在其他数据集上的适用性仍需验证。",
+      "kind": "inference",
+      "support": "The method is evaluated on one small dataset only.",
+      "expected": {
+        "kind": "inference"
+      }
+    },
+    {
+      "id": "compare_unsupported_computed_gain",
+      "type": "comparison",
+      "source": "The method scores 90% and the baseline scores 80% on Dataset-A.",
+      "text": "相对提升 12.5%。",
+      "kind": "inference",
+      "support": "The method scores 90% and the baseline scores 80% on Dataset-A.",
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_unchecked_ranking",
+      "type": "comparison",
+      "source": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "text": "准确率 91.2%，优于 P2。",
+      "support": "Dataset-A test accuracy is 91.2% under the stated protocol.",
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_missing_dimension",
+      "type": "comparison",
+      "source": "The paper studies a retrieval-based method for question answering.",
+      "omit_cell": true,
+      "expected": {
+        "kind": "unknown"
+      }
+    },
+    {
+      "id": "compare_metric_swap_manual",
+      "type": "comparison",
+      "source": "Accuracy is 91.2% and F1 is 88.4% under the same protocol.",
+      "text": "准确率为 88.4%，F1 为 91.2%。",
+      "support": "Accuracy is 91.2% and F1 is 88.4% under the same protocol.",
+      "manual_review": "数值均在摘录中，但指标归属被交换；数值字面检查无法判断语义支持。"
+    }
   ]
 }

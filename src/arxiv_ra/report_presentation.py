@@ -8,6 +8,8 @@ import re
 
 
 def compact_report(markdown_text: str) -> str:
+    from .report_cleanup import clean_report_diagnostics
+    markdown_text = clean_report_diagnostics(markdown_text)
     # Only recognize real level-two headings, not examples inside code fences.
     headings = []
     offset = 0

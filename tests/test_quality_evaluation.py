@@ -77,8 +77,7 @@ def test_long_document_table_and_physical_pages_remain_auditable(tmp_path):
     report += f"\n\n## 关键结果\n| 指标 | 值 |\n|---|---|\n| accuracy | 99.9% [[证据:{quote}]] |"
     result, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert evidence["cited_pages"] == [12]
-    assert evidence["numeric_audit"]["table_diagnostics"][0]["numbers"] == ["99.9%"]
-    assert not evidence['numeric_audit']['issues']
+    assert 'numeric_audit' not in evidence
     assert '待核对' not in result
     assert "paper.pdf#page=12" in result
 
@@ -92,9 +91,9 @@ def test_scan_or_truncated_pdf_never_confirms_unseen_numbers(tmp_path):
     parsed = PDFParser(PDFConfig(use_docling_if_available=False, max_pages=1)).parse(pdf, tmp_path / "parsed")
     report = "## 关键结果\n准确率为 91.2%。[[证据:The reported accuracy on the held-out test set is 91.2%.]]"
     _, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
-    assert evidence["status"] == "unavailable" and evidence["nonempty_pages"] == 0
+    assert evidence["status"] == "unavailable"
     assert evidence["total_pages"] == 2 and evidence["validated_citations"] == 0
-    assert evidence["numeric_audit"]["prose_diagnostics"][0]["reason"] == "no_located_quote"
+    assert 'numeric_audit' not in evidence
 
 
 def snapshot(kind="abstract"):
@@ -182,12 +181,11 @@ def test_report_warning_persistence_and_comparison_uses_fixed_revision(tmp_path)
         artifact = DailyPipeline(cfg, tmp_path, clients=clients)._process_paper(paper, Path(cfg.output_dir) / "2026-09-25", False, local_pdf=pdf)
     metadata = read_json(artifact.report_path.with_name("metadata.json"))
     assert metadata["report_quality"] == "full"  # Execution mode, not a truthfulness grade.
-    assert metadata["evidence"]["numeric_audit"]["prose_diagnostics"]
+    assert 'numeric_audit' not in metadata['evidence']
     assert "准确率为 91.2%" in artifact.report_path.read_text(encoding="utf-8")
-    assert "91.2%" in metadata["evidence"]["numeric_audit"]["prose_diagnostics"][0]["original"]
     assert not any(component == "报告数值核对" for component, _ in warnings)
     PaperLibraryStore(Path(cfg.output_dir), "alpha").add({"paper":{"arxiv_id":"2407.05601", "version":1, "title":"Other"}}, "Alpha")
     comparison = ComparisonService(cfg, tmp_path, clients=SimpleNamespace(llm=llm)).prepare(["2407.05600v2", "2407.05601v1"])
-    assert comparison["sources"][0]["report_numeric_issues"] == 1
+    assert comparison["sources"][0]["report_numeric_issues"] == 0
     assert comparison["sources"][0]["key"] == "2407.05600v2"
     assert any("87.5%" in e["text"] for e in comparison["sources"][0]["evidence"] if e["kind"] == "quote")

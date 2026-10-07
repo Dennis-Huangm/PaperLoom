@@ -22,36 +22,11 @@ def test_valid_quote_uses_real_page_and_reports_partial_coverage():
                                        pdf_available=True, full_report=True)
     assert "paper.pdf#page=2" in result
     assert evidence["cited_pages"] == [2]
-    assert evidence["covered_sections"] == ["关键结果"]
-    assert "核心方法" in evidence["missing_sections"]
-    assert "部分页面" in result
+    assert evidence["scope"] == "source_location_only"
+    assert "引用与核对" not in result
     assert "paper.pdf#page=2" in markdown_with_math(result)[0]
     assert "[1](paper.pdf#page=2" in result
     assert "PDF 第 2 页" not in markdown_with_math(result.split("## 引用与核对")[0])[0].split("</a>")[0].split(">")[-1]
-
-
-def test_missing_source_results_table_is_visible_in_coverage():
-    pages = ["Table 3: Main benchmark results.\nModel A 91.2", "Table 4: Visual quality results.\nModel A 4.2"]
-    report = "# Paper\n\n## 关键结果\n\n### Table 4 视觉质量\n\n| Model | Score |\n|---|---|\n| A | 4.2 |\n"
-    result, evidence = attach_evidence(report, ParsedPaper("", pages), pdf_available=True, full_report=True)
-    assert evidence["table_coverage"]["source_count"] == 2
-    assert evidence["table_coverage"]["presented"] == [4]
-    assert [item["number"] for item in evidence["table_coverage"]["missing"]] == [3]
-    assert '原文表格索引' not in result
-    # Publication supplies original-page displays beside the discussion;
-    # evidence review keeps the unmatched matrix in its machine-readable audit.
-
-    with_crop = report.replace("## 关键结果", "## 关键结果\n\n![原文 Table 3](source-table-03.png)")
-    _, cropped = attach_evidence(with_crop, ParsedPaper("", pages), pdf_available=True, full_report=True)
-    assert cropped["table_coverage"]["presented"] == [4]
-
-    with_table = report.replace("### Table 4 视觉质量", "### Table 3 主结果\n\n| Model | Score |\n|---|---|\n| A | 91.2 |\n\n### Table 4 视觉质量")
-    _, reproduced = attach_evidence(with_table, ParsedPaper("", pages), pdf_available=True, full_report=True)
-    assert reproduced["table_coverage"]["presented"] == [3, 4]
-
-    partial = with_table.replace("### Table 3 主结果", "### Table 3 主结果节选")
-    _, excerpt = attach_evidence(partial, ParsedPaper("", pages), pdf_available=True, full_report=True)
-    assert excerpt["table_coverage"]["presented"] == [4]
 
 
 def test_fake_ambiguous_short_or_unavailable_quotes_never_get_links():
@@ -68,7 +43,7 @@ def test_repeated_quotes_are_deduplicated_and_raw_model_page_links_unverified():
     report = f"## 核心方法\n[[证据:{QUOTE}]]\n## 关键结果\n[[证据:{QUOTE}]]\n[原文](paper.pdf#page=99)"
     result, data = attach_evidence(report, ParsedPaper("", [QUOTE]), pdf_available=True, full_report=True)
     assert len(data["citations"]) == 1
-    assert set(data["covered_sections"]) == {"核心方法", "关键结果"}
+    assert set(data["citations"][0]["sections"]) == {"核心方法", "关键结果"}
     assert "page=99" not in result
 
 
@@ -84,7 +59,7 @@ def test_quotes_are_retained_in_data_without_repeating_source_in_report():
     body = markdown_with_math(report)[0]
     assert "<img" not in body and "&lt;img" not in body
     assert data["citations"][0]["quote"] == quote
-    assert 'href="paper.pdf#page=1"' in body and 'href="evidence.json"' in body
+    assert 'href="paper.pdf#page=1"' in body and 'href="evidence.json"' not in body
 
 
 def test_numeric_warning_does_not_copy_formatted_claim_into_appendix():
@@ -93,10 +68,8 @@ def test_numeric_warning_does_not_copy_formatted_claim_into_appendix():
                                   ParsedPaper("", [QUOTE]), pdf_available=True, full_report=True)
     assert "13.9%" in report and "**[待核对]**" not in report
     assert "### 1. 质量排名" in report
-    assert data["numeric_audit"]["prose_diagnostics"][0]["original"] == "**评测分析**：结果为 13.9%。"
+    assert 'numeric_audit' not in data
     assert "实验数值待核对" not in report and "原陈述" not in report
-    assert data["numeric_audit"]["prose_diagnostics"][0]["numbers"] == ["13.9%"]
-    assert "评测分析" in data["numeric_audit"]["prose_diagnostics"][0]["claim"]
 
 
 def test_numeric_table_rows_need_their_own_single_page_exact_evidence():
@@ -111,9 +84,7 @@ def test_numeric_table_rows_need_their_own_single_page_exact_evidence():
               "| missing | 10488 | |\n")
     _, evidence = attach_evidence(report, parsed, pdf_available=True, full_report=True)
     assert evidence["validated_citations"] == 2
-    assert not evidence['numeric_audit']['issues']
-    assert [issue["numbers"] for issue in evidence["numeric_audit"]["table_diagnostics"]] == [["8527"], ["10488"]]
-    assert [issue["reason"] for issue in evidence["numeric_audit"]["table_diagnostics"]] == ["not_in_quote", "no_located_quote"]
+    assert 'numeric_audit' not in evidence
 
     # A real but cross-page quote cannot yield a fabricated page link.
     split = ParsedPaper("", [header + " " + baseline, model])
@@ -131,10 +102,7 @@ def test_table_after_prose_or_nested_in_list_cannot_borrow_another_rows_quote():
                + indent + f'| A | 91.2% | [[证据:{quote}]] |\n'
                + indent + '| B | 91.2% | |\n')
         _, evidence = attach_evidence(raw, parsed, pdf_available=True, full_report=True)
-        assert not evidence['numeric_audit']['issues']
-        issues = evidence['numeric_audit']['table_diagnostics']
-        assert len(issues) == 1
-        assert issues[0]['reason'] == 'no_located_quote' and '| B |' in issues[0]['claim']
+        assert 'numeric_audit' not in evidence
 
 
 def test_table_audit_preserves_multiline_quote_with_blank_lines_and_pipes():
@@ -143,10 +111,7 @@ def test_table_audit_preserves_multiline_quote_with_blank_lines_and_pipes():
            f'| A | 91.2% | [[证据:{quote}]] |\n| B | 91.2% | |')
     _, evidence = attach_evidence(raw, ParsedPaper('', [quote]), pdf_available=True, full_report=True)
     assert evidence['validated_citations'] == 1
-    assert evidence['numeric_audit']['checked_claims'] == 2
-    assert not evidence['numeric_audit']['issues']
-    assert len(evidence['numeric_audit']['table_diagnostics']) == 1
-    assert '| B |' in evidence['numeric_audit']['table_diagnostics'][0]['claim']
+    assert 'numeric_audit' not in evidence
 
 
 def test_real_pdf_parser_and_pipeline_store_validated_evidence(tmp_path):

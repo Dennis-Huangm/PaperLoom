@@ -166,6 +166,83 @@ class ReportTables:
     # ID partitions reference immutable raw annotations, never replacement text.
     annotations: tuple[dict, ...] = ()
     source_resolutions: tuple[dict, ...] = ()
+    editorials: tuple[dict, ...] = ()
+    editorial_status: tuple[dict, ...] = ()
+
+    def localize_annotations(self, chat):
+        from .table_editorial import SYSTEM, PROMPT, material, editorial_errors
+        accepted = {e['id']: e for e in self.editorials}
+        statuses = [s for s in self.editorial_status if s['id'] in accepted]
+        previous = {s['id']: s for s in self.editorial_status}
+
+        def correction(draft, errors):
+            return ('\n上次稿件未通过，请根据以下诊断修正完整 JSON，不能删除科学信息或改写矩阵。'
+                    '\n上次稿件：' + json.dumps(draft, ensure_ascii=False)
+                    + '\n诊断：' + json.dumps(errors, ensure_ascii=False))
+
+        for table in self.tables:
+            if table.id in accepted:
+                continue
+            status = 'unavailable'
+            detail = ''
+            attempts = list(previous.get(table.id, {}).get('attempts', ()))
+            offset = len(attempts)
+            try:
+                source = material(table)
+                feedback = ''
+                last = next((a for a in reversed(attempts) if a.get('draft') is not None and a.get('errors')), None)
+                if last:
+                    feedback = correction(last['draft'], last['errors'])
+                for attempt in range(2):
+                    key = f'table-editorial-v2-{table.id}-{offset + attempt + 1}'
+                    raw = chat(key, SYSTEM, PROMPT + source + feedback)
+                    try:
+                        draft = extract_json_object(raw)
+                        errors = editorial_errors(table, draft)
+                    except (ValueError, TypeError):
+                        draft = raw
+                        errors = ['输出不是有效的 JSON 对象，请按指定结构重新输出。']
+                    status = 'invalid'
+                    detail = '；'.join(errors)
+                    record = {'status': status, 'errors': errors, 'draft': draft}
+                    attempts.append(record)
+                    if not errors:
+                        review_raw = chat(key + '-review', SYSTEM,
+                            '独立核查以下中文表题和说明是否完整忠实于本表来源。只返回 JSON：'
+                            '{"approved":true或false,"reason":"原因"}。检查是否遗漏条件、单位、例外、'
+                            '模型、范围，是否颠倒指标方向、引入不支持的事实或整段英文，'
+                            '是否仍有同义重复或转录过程备注。来源 ID 完整不代表语义正确。任何问题返回 false。'
+                            '不同 v0/v1 的实验变体各自保留必要条件，不能仅因跨变体重复必要条件而拒绝。'
+                            '科学信息中的缺失值、单位和原文差异说明应保留，不能当作处理备注删除。'
+                            '等义中文转换合法：Part I/II 可写成任务 1/2，SVGs 可写成 SVG，'
+                            'Turn-3 可写成第 3 轮，DINOv2 和 DINO-v2 等义，DINOv3-based 可写成基于 DINOv3，'
+                            '↑/↓ 可写成越高/越低越好；不得仅因这些写法变化拒绝。'
+                            'omittable=true 的处理备注及空引用应省略，不算科学信息遗漏。'
+                            '\n来源：' + source + '\n中文展示：' + json.dumps(draft, ensure_ascii=False))
+                        try:
+                            review = extract_json_object(review_raw)
+                        except (ValueError, TypeError):
+                            review = None
+                        status = 'review_rejected'
+                        detail = str(review.get('reason') or '语义核查未提供通过结论或具体原因。') if isinstance(review, dict) else '语义核查输出格式无效。'
+                        if isinstance(review, dict) and review.get('approved') is True:
+                            accepted[table.id] = {**draft, 'id': table.id}
+                            status = 'localized'
+                            detail = str(review.get('reason') or '结构校验与独立语义核查通过。')
+                        else:
+                            errors = [detail]
+                    record.update(status=status, errors=errors)
+                    if status == 'localized':
+                        break
+                    feedback = correction(draft, errors)
+            except (ModelBudgetExceeded, CheckpointWriteError):
+                raise
+            except Exception as exc:
+                status = 'unavailable'
+                detail = type(exc).__name__
+                attempts.append({'status': status, 'errors': [detail]})
+            statuses.append({'id': table.id, 'status': status, 'detail': detail, 'attempts': attempts})
+        return replace(self, editorials=tuple(accepted.values()), editorial_status=tuple(statuses))
 
     def consolidate_annotations(self, chat):
         if not self.tables or self.annotations:
@@ -230,8 +307,9 @@ class ReportTables:
                          for number, data in sorted(collected.items())))
 
     def to_dict(self):
-        payload = {'version': 3, 'tables': [asdict(table) for table in self.tables],
+        payload = {'version': 4, 'tables': [asdict(table) for table in self.tables],
                    'annotations': list(self.annotations),
+                   'editorials': list(self.editorials), 'editorial_status': list(self.editorial_status),
                    'source_resolutions': list(self.source_resolutions),
                    'assessment': 'extracted_cells; PDF completeness and correctness remain unassessed'}
         return {**payload, 'sha256': _digest(payload)}
@@ -239,7 +317,7 @@ class ReportTables:
     @classmethod
     def from_dict(cls, data):
         payload = {k: v for k, v in data.items() if k != 'sha256'}
-        if data.get('version') not in {1, 2, 3} or data.get('sha256') != _digest(payload):
+        if data.get('version') not in {1, 2, 3, 4} or data.get('sha256') != _digest(payload):
             raise ValueError('Invalid or changed table catalogue')
         tables = []
         for table in data['tables']:
@@ -265,7 +343,14 @@ class ReportTables:
             raise ValueError('Invalid table annotation selection')
         if len({a['id'] for a in annotations}) != len(annotations):
             raise ValueError('Duplicate table annotation selections')
-        return cls(tuple(tables), tuple(annotations), tuple(data.get('source_resolutions', ())))
+        from .table_editorial import validate_editorial
+        editorials = data.get('editorials', [])
+        if (not isinstance(editorials, list) or any(not isinstance(e, dict) or e.get('id') not in known
+                or not validate_editorial(known[e['id']], e) for e in editorials)
+                or len({e['id'] for e in editorials}) != len(editorials)):
+            raise ValueError('Invalid localized table annotations')
+        return cls(tuple(tables), tuple(annotations), tuple(data.get('source_resolutions', ())),
+                   tuple(editorials), tuple(data.get('editorial_status', ())))
 
     def synthesis_notes(self, notes):
         """Keep note analysis; replace all original-table copies with identities."""
@@ -277,6 +362,41 @@ class ReportTables:
 
     def prompt_material(self):
         return json.dumps({'tables': [asdict(table) for table in self.tables]}, ensure_ascii=False)
+
+    def fallback_report(self, report):
+        """Keep prose and expose raw matrices when enhanced presentation fails."""
+        # Only managed displays are replaced; narrative and scientific notes
+        # outside them are retained. This path needs no parser or editorial.
+        report = _MANAGED.sub('', str(report))
+        report = _SLOT.sub('', report)
+        blocks = [report.rstrip()]
+        for table in self.tables:
+            lines = [f'<a id="paper-{table.id}"></a>', '', f'#### {table.caption}', '']
+            for variant in table.variants:
+                if variant.condition:
+                    lines.extend([variant.condition, ''])
+                lines.extend(variant.context)
+                lines.extend(['', '| ' + ' | '.join(variant.headers) + ' |',
+                              '| ' + ' | '.join('---' for _ in variant.headers) + ' |'])
+                lines.extend('| ' + ' | '.join(row.cells) + ' |' for row in variant.rows)
+                lines.append('')
+            blocks.append('\n'.join(lines))
+        return '\n\n'.join(blocks)
+
+    def data_intact(self, report):
+        """Compare only owned data cells and order, never citations or prose."""
+        try:
+            for table in self.tables:
+                actual = [rows for number, rows, *_ in _blocks(report) if number == table.number]
+                expected = [[tuple((h, _cell_value(v, h)) for h, v, role in zip(variant.headers, row.cells, variant.column_roles)
+                                   if role == 'data') for row in variant.rows] for variant in table.variants]
+                observed = [[tuple((h, _cell_value(c[0], h)) for h, c in zip(row['headers'], row['cells'])
+                                   if column_role(h) == 'data') for row in rows] for rows in actual]
+                if expected != observed:
+                    return False
+            return True
+        except Exception:
+            return False
 
     def prepare_draft(self, draft):
         known = {table.number for table in self.tables}
@@ -325,7 +445,12 @@ class ReportTables:
 
     def _render_table(self, table, display):
         selection = next((a['groups'] for a in self.annotations if a['id'] == table.id), None)
-        caption, notes = display_annotations(table, selection)
+        editorial = next((e for e in self.editorials if e['id'] == table.id), None)
+        if editorial:
+            from .table_editorial import display_editorial
+            caption, notes = display_editorial(table, editorial)
+        else:
+            caption, notes = display_annotations(table, selection)
         lines = [f'<!-- paperloom-table:{table.id}:start -->', f'<a id="paper-{table.id}"></a>', '',
                  '#### ' + caption, '']
         for variant, note in zip(table.variants, notes):
@@ -376,6 +501,17 @@ class ReportTables:
                 baseline = plain(annotations_only(self._render_table(table, None)))
                 observed_text = plain(annotations_only(blocks[0]))
                 units = {u['id']: u for u in annotation_units(table)}
+                editorial = next((e for e in self.editorials if e['id'] == table.id), None)
+                if editorial:
+                    units = {str(i): {'text': e['text']} for i, e in enumerate(editorial['entries'])}
+                    selection = [[key] for key in units]
+                    # Reject extra English/provenance clauses too, rather than
+                    # only checking that each accepted Chinese clause survived.
+                    def displayed_prose(text):
+                        return plain(' '.join(re.findall(
+                            r'(?m)^#### [^\n]+|^\*\*说明：\*\*[^\n]+', text)))
+                    if displayed_prose(self._render_table(table, None)) != displayed_prose(blocks[0]):
+                        issues.append({'table_id': table.id, 'reason': 'changed_editorial'})
                 for group in selection:
                     # Clause punctuation may change when it ends the note;
                     # compare the content, including short unit/condition notes.

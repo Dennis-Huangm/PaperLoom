@@ -1,0 +1,237 @@
+{
+  "version": 4,
+  "tables": [
+    {
+      "id": "table-2",
+      "number": 2,
+      "caption": "Table 2: Overall results on SVGEval. Binary Diagnosis task (Part1) reports binary accuracy. Scoring task (Part2) reports MAE and Adjacent Accuracy on the 1–5 scale.Our SVGEval-Scorer is designed for the multi-aspect scoring task (Scoring); therefore Binary Diagnosis task is not applicable and results are marked with “—”.",
+      "source_page": 11,
+      "variants": [
+        {
+          "id": "variant-920d200707e50924f23d",
+          "condition": "",
+          "headers": [
+            "Model",
+            "Binary Diagnosis Acc. (%) ↑",
+            "Scoring MAE ↓",
+            "Scoring Adj. Acc. (%) ↑",
+            "原文依据"
+          ],
+          "rows": [
+            {
+              "id": "row-67eff501847bb840543d",
+              "cells": [
+                "Gemini-3 Flash",
+                "89.40",
+                "0.7720",
+                "62.80",
+                "[[证据ID:S1-2132d648d3f5fe78e67cb416-11-0-500]]"
+              ],
+              "category": "",
+              "group_heading": false
+            }
+          ],
+          "context": [
+            "[[证据ID:S1-2132d648d3f5fe78e67cb416-11-0-500]]、[[证据ID:S1-2132d648d3f5fe78e67cb416-11-400-899]]、[[证据ID:S1-2132d648d3f5fe78e67cb416-11-799-1273]]",
+            "*注：Binary Diagnosis Acc. 指 Part I 感知二元准确率；Scoring MAE 和 Scoring Adj. Acc. 分别指 Part II 的平均绝对误差与邻近准确率。SVGEval-Scorer 未针对二元诊断设计，故 Part I 标记为 “–”。*"
+          ],
+          "column_roles": [
+            "data",
+            "data",
+            "data",
+            "data",
+            "reference"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "table-3",
+      "number": 3,
+      "caption": "Table 3: Per-dimension MAE on Scoring task (Part II) (1–5 Likert).",
+      "source_page": 12,
+      "variants": [
+        {
+          "id": "variant-6c4fba4ea84c3d23e17b",
+          "condition": "",
+          "headers": [
+            "Model",
+            "MAE ↓",
+            "Aesthetic ↓",
+            "Semantic ↓",
+            "Spatial ↓",
+            "Structural ↓",
+            "原文依据"
+          ],
+          "rows": [
+            {
+              "id": "row-91ba37f4f95f12fdb12c",
+              "cells": [
+                "GPT-4o-mini",
+                "0.9060",
+                "0.8790",
+                "0.7280",
+                "0.9600",
+                "1.0556",
+                "[[证据ID:S1-2132d648d3f5fe78e67cb416-12-0-489]]"
+              ],
+              "category": "",
+              "group_heading": false
+            }
+          ],
+          "context": [
+            "[[证据ID:S1-2132d648d3f5fe78e67cb416-12-0-489]]、[[证据ID:S1-2132d648d3f5fe78e67cb416-12-389-883]]、[[证据ID:S1-2132d648d3f5fe78e67cb416-12-783-1217]]",
+            "*注：Table 3 模型行中的命名与 Table 2 保持一致，仅 `Doubao-Seed-1.6-Vision` 在 Table 3 原文中多带连字符。*"
+          ],
+          "column_roles": [
+            "data",
+            "data",
+            "data",
+            "data",
+            "data",
+            "data",
+            "reference"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "table-4",
+      "number": 4,
+      "caption": "Table 4: Example outputs of SVGEval-Scorer. Representative rendered SVGs, evaluated dimensions/scores, and evidence-grounded rationales. Prompts and rationales are truncated for readability; highlighted phrases are model-identified evidence.",
+      "source_page": 13,
+      "variants": [
+        {
+          "id": "variant-219d43bd432e4da2ed8d",
+          "condition": "",
+          "headers": [
+            "Rendered SVG",
+            "Dim. / Score",
+            "Prompt (truncated)",
+            "Rationale (truncated)",
+            "原文依据"
+          ],
+          "rows": [
+            {
+              "id": "row-4ece18734cd101bd1a1c",
+              "cells": [
+                "*(图像)*",
+                "Aesthetic 1/5",
+                "a woman's silhouette with flowing hair, . . . soft pastel colors, . . . conveying feminine elegance and tranquility.",
+                "a silhouette that lacks clarity and definition . . . overly simplified and becomes indistinct. . . . The purple/blue hues appear randomly placed and fail to form a harmonious composition. . . . visually noisy . . . result in a very poor aesthetic quality.",
+                "[[证据ID:S1-2132d648d3f5fe78e67cb416-13-0-489]], [[证据ID:S1-2132d648d3f5fe78e67cb416-13-389-879]]"
+              ],
+              "category": "",
+              "group_heading": false
+            }
+          ],
+          "context": [
+            "*注：原文表格第一列展示生成的渲染矢量图像（Rendered SVG），在此以文字标记说明；提示词（Prompt）与理由依据（Rationale）在原文中为了版面可读性进行了省略截断处理。*"
+          ],
+          "column_roles": [
+            "data",
+            "data",
+            "data",
+            "data",
+            "reference"
+          ]
+        }
+      ]
+    }
+  ],
+  "annotations": [],
+  "editorials": [
+    {
+      "id": "table-2",
+      "entries": [
+        {
+          "scope": "title",
+          "text": "SVGEval 总体评测结果",
+          "sources": [
+            "title"
+          ]
+        },
+        {
+          "scope": "v0",
+          "text": "二元诊断任务（任务 1）报告准确率；评分任务（任务 2）采用 1–5 分量表，报告平均绝对误差（MAE）和邻近准确率。SVGEval-Scorer 专用于多维度评分，不适用于二元诊断，因此该项结果记为“—”。",
+          "sources": [
+            "u1",
+            "u2",
+            "u3",
+            "u5",
+            "u6",
+            "u7",
+            "u8",
+            "u9"
+          ]
+        }
+      ],
+      "omitted": [
+        "u4"
+      ]
+    },
+    {
+      "id": "table-3",
+      "entries": [
+        {
+          "scope": "title",
+          "text": "评分任务（任务 2，1–5 分量表）各维度的平均绝对误差（MAE）",
+          "sources": [
+            "title"
+          ]
+        }
+      ],
+      "omitted": [
+        "u1",
+        "u2",
+        "u3"
+      ]
+    },
+    {
+      "id": "table-4",
+      "entries": [
+        {
+          "scope": "title",
+          "text": "SVGEval-Scorer 的评分与解释示例",
+          "sources": [
+            "title"
+          ]
+        },
+        {
+          "scope": "v0",
+          "text": "展示代表性的 SVG 渲染图像、评估维度及得分，以及有证据支持的评分理由；图像位于原表第一列。原文为便于阅读，对提示词和评分理由作了截断，并突出标出了模型识别的依据。",
+          "sources": [
+            "u1",
+            "u2",
+            "u3",
+            "u4",
+            "u6"
+          ]
+        }
+      ],
+      "omitted": [
+        "u5"
+      ]
+    }
+  ],
+  "editorial_status": [
+    {
+      "id": "table-2",
+      "status": "localized",
+      "verification": "manual comparison with PDF pages 11–13"
+    },
+    {
+      "id": "table-3",
+      "status": "localized",
+      "verification": "manual comparison with PDF pages 11–13"
+    },
+    {
+      "id": "table-4",
+      "status": "localized",
+      "verification": "manual comparison with PDF pages 11–13"
+    }
+  ],
+  "source_resolutions": [],
+  "assessment": "extracted_cells; PDF completeness and correctness remain unassessed",
+  "sha256": "c1cca15411031e5be99e70b4ff5d258457b68b2145fd373fb6af8625f170a5c6"
+}

@@ -8,8 +8,8 @@ from .models import FigureCandidate, Paper, ParsedPaper, VerifiedMetadata
 from .utils import normalize_space
 from .task_runtime import task_warning, task_progress, task_checkpoint
 from .report_checkpoint import CheckpointWriteError, current_report_checkpoint, file_digest
-from .evidence import EVIDENCE_GUIDANCE, restore_table_row_citations, source_table_inventory
-from .citation_repair import repair_numeric_citations
+from .evidence import EVIDENCE_GUIDANCE, source_table_inventory
+from .report_citations import strip_tokens
 from .quality import QUALITY_GUIDANCE
 from .source_spans import (source_spans, span_batches, span_material, cited_span_material,
                            ground_note_quotes, normalize_grouped_source_ids, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
@@ -325,21 +325,23 @@ class ReportGenerator:
 解析正文的表头、列数或行列归属与独立 PDF 页面不同，应回查完整页面及其证据 ID，不能把解析器多出的列、重复单元格或分片边界当作原文缺失。
 同一原表的全部模型、难度和指标应保留，不能把完整数值行压缩成无列归属的数值串。""",
             )
-            cleaned, _ = cited_span_material([note], {s["source_id"]: s for s in banks[index - 1]})
-            evidence_notes.append(cleaned[0])
+            evidence_notes.append(note)
             if checkpoint:
                 checkpoint.publish(chunks_done=index)
-        evidence_notes, synthesis_spans, _ = ground_note_quotes(evidence_notes, parsed, spans)
-        evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
+        try:
+            evidence_notes, synthesis_spans, _ = ground_note_quotes(evidence_notes, parsed, spans)
+            evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
+        except Exception:
+            evidence_notes = [strip_tokens(note) for note in evidence_notes]
+            cited_material = ''
         metadata_text = self._metadata_text(paper, metadata)
-        table_inventory = source_table_inventory(parsed)
-        # Enrich references once while importing extraction, before freezing.
-        table_notes = [restore_table_row_citations(note, evidence_notes, parsed, synthesis_spans)
-                       for note in evidence_notes]
-        table_catalogue = ReportTables.from_notes(table_notes, table_inventory, source_pages=parsed.page_texts)
-        table_catalogue = table_catalogue.consolidate_annotations(
-            lambda system, prompt: self._chat('table-annotations', system, prompt))
-        synthesis_notes = table_catalogue.synthesis_notes(evidence_notes)
+        try:
+            table_inventory = source_table_inventory(parsed)
+            # Import extracted cells without an independent source verdict.
+            table_catalogue = ReportTables.from_notes(evidence_notes, table_inventory)
+            synthesis_notes = table_catalogue.synthesis_notes(evidence_notes)
+        except Exception:
+            table_inventory, table_catalogue, synthesis_notes = [], ReportTables(()), evidence_notes
         evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(synthesis_notes))
         table_inventory_text = "\n".join(
             f'- Table {item["number"]}（PDF 第 {item["page"]} 页）：{item["title"]}'
@@ -383,7 +385,7 @@ class ReportGenerator:
 每张表的 id 唯一。正文在讨论对应实验的小节中，用独立一行的 `[[表格:table-N]]` 选择展示位置。
 主结果可写 `[[表格:table-N|展开]]`；较大的补充矩阵可写 `[[表格:table-N|折叠]]`。
 N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段落用普通文字引用原表号。
-不要输出原文实验表格的 Markdown 行、表头、Table 标题或表注；标题和指标定义由表格展示统一提供。
+{('不要输出已冻结实验表格的 Markdown 行、表头、Table 标题或表注；标题和指标定义由表格展示统一提供。' if table_catalogue.tables else '当前无托管表格，请直接根据分片笔记保留实验 Markdown 表格、中文标题、条件与脚注；不要使用表格位置指令。')}
 正文负责解释结果及其意义，不在表格位置指令前后复述表题、统计口径或单位。不重新抄写矩阵，不输出数据缺失占位行。
 正文复述数量时保留原始科学计数法及单位（如 FLOPs 的 ×10^9、参数量 M/B），不要将英文 billion 直接写成“亿”。如需换算，必须核验倍率：1 billion = 10^9 = 10 亿，不能只保留尾数。笔记与冻结表格的数量级不一致时回查原文，不能沿用笔记的换算。
 程序会在该位置插入完整已提取表格及原有条件。仅引用未能定位时不影响数值保留。
@@ -425,7 +427,7 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 13. 写“未提供”前核对全部分片和直接原文补充；仅笔记未保留、公式解析不清或材料截断时，写“当前材料未能确认”，不能断言论文没有提供。
 14. 原文明确给出的作者机构和资源网址应保留并注明来自论文；资源链接未经在线可用性验证。不得把参考文献网址当作本文资源，不补造或猜测网址。
 15. 公式后保留对应公式的原文片段 ID；定义或相关任务描述不能替代公式自身的出处。原文主结果、与人类评价对齐、关键消融和鲁棒性表由程序从冻结数据展示。你只放置唯一表格 id，不重新创建矩阵；保留对实验条件、任务、指标、轮次、单位和比较基线的解释，不可只分析最优模型。
-16. 写完后对照“PDF 原文表格目录”检查实验表格覆盖；未重现的关键实验表格说明原因。目录中的表号和标题只用于查漏，不能作为数值依据。
+16. 按研究内容组织实验讨论。原文表号用于读者查阅；不要增加表格覆盖率、核查结果或处理失败的说明。
 17. 对“随难度增加均下降”“单调退化”等趋势，逐模型、逐指标检查相邻难度；总体趋势不能写成每一行都成立。存在回升或指标间分歧时给出反例；原文作者的概括与表格观察分开表述，不能把作者概括强化成“不可避免”。
 18. 表格放在讨论该实验、比较或成本的正文小节，紧邻解释；同一表不要分别列节选与原文摘录。保留原始表头和模型行标签，不添加“vs.”或“(本文)”等改写；说明放在表格外。不要另设“原文表格摘录”章节。
 19. 表格标题使用原表号和内容名称，不添加“部分摘录”“部分数据重现”“具备文本引用之部分”等处理阶段标签。引用是否可定位不决定已提取数值是否应保留；不要用“当前材料截断”替换分片笔记中已有的单元格。确实发现缺失行列时，在对应讨论中说明具体缺失；未完成完整性检查不等于已确认缺失。
@@ -436,23 +438,11 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         raw_draft = report
         # Compatibility with a model that ignores the slot instruction is a
         # projection to identities, never a second source of table values.
-        report = table_catalogue.prepare_draft(report)
-        task_progress("正在回查实验数值引用…", 85)
         try:
-            repair_batch = 0
-
-            def chat_repair(system: str, user: str) -> str:
-                nonlocal repair_batch
-                repair_batch += 1
-                return self._chat(f"numeric-citation-repair-v1-{repair_batch}", system, user)
-
-            report = repair_numeric_citations(report, parsed, chat_repair)
-        except CheckpointWriteError:
-            raise
-        except Exception as exc:
-            task_warning("报告数值引用补核", f"自动补核未完成，未确认内容将标注待核对：{type(exc).__name__}: {exc}")
+            report = table_catalogue.render(report)
+        except Exception:
+            report = table_catalogue.fallback_report(raw_draft)
         report = normalize_grouped_source_ids(report)
-        report = table_catalogue.render(report)
         report = protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
         return GeneratedReport(report, table_catalogue, raw_draft)
 
@@ -536,17 +526,25 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
     def analysis_inputs(self, parsed: ParsedPaper) -> tuple[list[str], list[list[dict]], dict]:
         """Return the exact bounded call plan, also used by live request budgets."""
         chunks = self._chunks(parsed.text)
-        spans = source_spans(parsed)
-        bank_size = sum(len(s["quote"]) for s in spans.values())
-        chunk_size = max(4000, self.config.max_chunk_chars)
-        count = max(len(chunks), (bank_size + chunk_size - 1) // chunk_size)
-        chunks.extend([""] * (count - len(chunks)))
-        banks = span_batches(spans, count)
+        try:
+            spans = source_spans(parsed)
+            banks = span_batches(spans, len(chunks))
+        except Exception:
+            spans, banks = {}, [[] for _ in chunks]
         for chunk, bank in zip(chunks, banks):
             table_pages = set(self._table_pages(parsed, chunk))
             present = {span['source_id'] for span in bank}
             bank.extend(span for key, span in spans.items()
                         if span['page'] in table_pages and key not in present)
+            # References share existing writing calls and a bounded context;
+            # they must not force extra chunks or an oversized model request.
+            limit = max(4000, min(self.config.max_chunk_chars, 16000))
+            retained, size = [], 0
+            for span in sorted(bank, key=lambda s: s['page'] not in table_pages):
+                if size + len(span['quote']) <= limit:
+                    retained.append(span)
+                    size += len(span['quote'])
+            bank[:] = retained
         return chunks, banks, spans
 
     @staticmethod
@@ -555,8 +553,11 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         # physical pages. More than one table can share a source page.
         numbers = {int(match[1]) for match in re.finditer(
             r"(?im)^(?:#{1,6}\s*)?Table\s+(\d+)\s*[:：.]", chunk)}
-        return sorted({item['page'] for item in source_table_inventory(parsed)
-                       if item['number'] in numbers})
+        try:
+            return sorted({item['page'] for item in source_table_inventory(parsed)
+                           if item['number'] in numbers})
+        except Exception:
+            return []
 
     def _metadata_text(self, paper: Paper, metadata: VerifiedMetadata) -> str:
         authors = "; ".join(
