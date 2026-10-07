@@ -72,7 +72,7 @@ def test_single_bad_reference_does_not_lose_good_references(monkeypatch):
 
 
 @pytest.mark.parametrize('failure', ['none', 'source_bank', 'table_import', 'table_render'])
-def test_generation_only_calls_model_for_existing_chunks_and_synthesis(monkeypatch, failure):
+def test_generation_survives_optional_table_organization_failure(monkeypatch, failure):
     import arxiv_ra.report as module
     from arxiv_ra.report_tables import ReportTables
     retired = Mock(side_effect=AssertionError('No annotation review or retries'))
@@ -88,12 +88,12 @@ def test_generation_only_calls_model_for_existing_chunks_and_synthesis(monkeypat
     draft = '# Paper\n\n## 关键结果\n\n分析结论 91.2。\n\n[[表格:table-1]]'
     if failure == 'table_import':
         draft = draft.replace('[[表格:table-1]]', note)
-    llm = SimpleNamespace(enabled=True, chat=Mock(side_effect=[note, draft]))
+    llm = SimpleNamespace(enabled=True, chat=Mock(side_effect=[note, RuntimeError("optional editor unavailable"), draft]))
     generator = ReportGenerator(llm, LLMConfig())
     result = generator.generate(Paper.from_dict({'arxiv_id': '2501.12345', 'title': 'Paper'}),
                                 VerifiedMetadata(), ParsedPaper(note, [note]), [])
     assert '分析结论 91.2' in result and '| A | 91.2 |' in result
-    assert llm.chat.call_count == 2
+    assert llm.chat.call_count == 3
     retired.assert_not_called()
 
 

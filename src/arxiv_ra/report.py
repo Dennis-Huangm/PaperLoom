@@ -26,6 +26,7 @@ CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论�
 原文表格与正文数值不一致时，矩阵内逐字保留原表数值，在表注单独说明差异；不得用正文、常识或其他版本的值“纠正”原表，不能添加原表没有的星号。原表空白单元格保持为空；若题注规定空白沿用基线，则在表注完整保留该规则，不写成“未提供”、不填充推测值。原表未命名的行标签列保留空表头，不另造“变体行”或“条件/变体”等标题。
 数学表头及数值必须保留上下标和数量级，用 LaTeX 或 Unicode 上下标表达。例如参数量单位 ×10⁶ 不能平铺成 ×106，FLOPs 的 10¹⁸ 不能写成 1018；对照解析正文中的数学标记与原文上下文，不能因 PDF 文本平铺而丢失幂次。
 表格说明与脚注用自然中文解释具体含义，明确规模、单位、指标方向和比较条件；保留必要英文列名，不能只贴英文表注或生硬逐词翻译。
+每张表只写一个带原表号的标题和一段中文表注；不另写“原文标题”“表注说明”等重复包装，不把标题再复制到表注。中文表注完整保留单位、条件、符号和脚注，但同一含义只解释一次；结果趋势分析放在正文，不在表注中重复。
 片段编号是内部处理顺序，不是 PDF 页码，也不是可引用的原文位置。"""
 
 
@@ -338,7 +339,8 @@ class ReportGenerator:
         try:
             table_inventory = source_table_inventory(parsed)
             # Import extracted cells without an independent source verdict.
-            table_catalogue = ReportTables.from_notes(evidence_notes, table_inventory)
+            from .table_organization import organize_tables
+            table_catalogue = organize_tables(evidence_notes, table_inventory, parsed, self._chat)
             synthesis_notes = table_catalogue.synthesis_notes(evidence_notes)
         except Exception:
             table_inventory, table_catalogue, synthesis_notes = [], ReportTables(()), evidence_notes

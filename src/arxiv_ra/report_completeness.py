@@ -197,6 +197,7 @@ def _blocks(text):
         context = text[heading[1]:start]
         title = re.sub(r'[（(](?:部分摘录|部分数据重现|具备文本引用之部分)[）)]', '', heading[3]).strip()
         title = re.sub(r'(?<=\d)\s+部分数据重现', '', title)
+        title = re.sub(r'^原文标题\s*[：:]\s*', '', title)
         # Bilingual caption translations commonly appear in parentheses. They
         # are context to preserve, not a different experimental setting. Bind
         # explicit setting qualifiers; preserve all other title text below too.
@@ -204,7 +205,8 @@ def _blocks(text):
         qualifiers = [value.strip() for value in re.findall(r'[（(]([^）)]+)[）)]', title)
                       if setting.search(value)]
         if '=' in title and not qualifiers:
-            qualifiers.append(re.sub(r'\bTable\s+\d+\b|表\s*\d+', '', title, flags=re.I).strip())
+            qualifiers.append(re.sub(r'\bTable\s+\d+\b|表\s*\d+', '',
+                                     TOKEN.sub('', title), flags=re.I).strip(' .:：。'))
         # Keep the introductory conditions; don't duplicate earlier sibling tables.
         earlier = [position for position in groups if heading[1] < position < start]
         if earlier:

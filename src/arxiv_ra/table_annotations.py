@@ -15,7 +15,7 @@ from .evidence import TOKEN
 
 _NUMBERED = re.compile(r'^(?:Table\s+(\d+)|表\s*(\d+))\s*[：:.]?\s*', re.I)
 _DIAGNOSTIC = re.compile(r'[（(](?:(?:片段引用不可用|分片摘录未能唯一定位)[，,]\s*缺少可定位原文依据|当前材料缺少可定位原文依据)[）)]')
-_PREFIX = re.compile(r'^(?:原文表头及说明|中文解释|中文说明|表格说明|说明)\s*[：:]\s*')
+_PREFIX = re.compile(r'^(?:表注说明|原文标题|原文表头及说明|中文解释|中文说明|表格说明|说明)\s*[：:]\s*')
 
 
 def _clean(text):
@@ -89,7 +89,10 @@ def annotation_units(table):
                 # A caption with and without its locator is the same title.
                 # Keep independently cited/qualified notes, without requiring
                 # a model to decide an exact textual duplicate.
-                if not TOKEN.search(text) and re.sub(r'\s+', ' ', text).strip().rstrip('。.，,；;') == title_key:
+                if re.sub(r'\s+', ' ', TOKEN.sub('', text)).strip().rstrip('。.，,；;') == title_key:
+                    locators = [m[0] for m in TOKEN.finditer(text) if m[0] not in units[0]['text']]
+                    if locators:
+                        units[0]['text'] += ' ' + ' '.join(dict.fromkeys(locators))
                     continue
                 for si, clause in enumerate(_clauses(text)):
                     units.append({'id': f'v{vi}-p{pi}-l{li}-s{si}', 'scope': f'v{vi}', 'text': clause})

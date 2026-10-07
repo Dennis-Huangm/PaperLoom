@@ -169,6 +169,8 @@ class ReportTables:
     editorials: tuple[dict, ...] = ()
     editorial_status: tuple[dict, ...] = ()
 
+    organization: tuple[dict, ...] = ()
+
     def localize_annotations(self, chat):
         from .table_editorial import SYSTEM, PROMPT, material, editorial_errors
         accepted = {e['id']: e for e in self.editorials}
@@ -308,7 +310,7 @@ class ReportTables:
 
     def to_dict(self):
         payload = {'version': 4, 'tables': [asdict(table) for table in self.tables],
-                   'annotations': list(self.annotations),
+                   'annotations': list(self.annotations), 'organization': list(self.organization),
                    'editorials': list(self.editorials), 'editorial_status': list(self.editorial_status),
                    'source_resolutions': list(self.source_resolutions),
                    'assessment': 'extracted_cells; PDF completeness and correctness remain unassessed'}
@@ -350,7 +352,7 @@ class ReportTables:
                 or len({e['id'] for e in editorials}) != len(editorials)):
             raise ValueError('Invalid localized table annotations')
         return cls(tuple(tables), tuple(annotations), tuple(data.get('source_resolutions', ())),
-                   tuple(editorials), tuple(data.get('editorial_status', ())))
+                   tuple(editorials), tuple(data.get('editorial_status', ())), tuple(data.get('organization', ())))
 
     def synthesis_notes(self, notes):
         """Keep note analysis; replace all original-table copies with identities."""
@@ -446,7 +448,9 @@ class ReportTables:
     def _render_table(self, table, display):
         selection = next((a['groups'] for a in self.annotations if a['id'] == table.id), None)
         editorial = next((e for e in self.editorials if e['id'] == table.id), None)
-        if editorial:
+        if self.organization:
+            caption, notes = table.caption, tuple('\n\n'.join(v.context) for v in table.variants)
+        elif editorial:
             from .table_editorial import display_editorial
             caption, notes = display_editorial(table, editorial)
         else:
@@ -454,7 +458,7 @@ class ReportTables:
         lines = [f'<!-- paperloom-table:{table.id}:start -->', f'<a id="paper-{table.id}"></a>', '',
                  '#### ' + caption, '']
         for variant, note in zip(table.variants, notes):
-            if len(table.variants) > 1 and variant.condition:
+            if variant.condition and (self.organization or len(table.variants) > 1):
                 lines.extend(['**实验条件：' + variant.condition + '**', ''])
             if note:
                 lines.extend(['**说明：** ' + note, ''])
