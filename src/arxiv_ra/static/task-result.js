@@ -22,7 +22,5 @@
     filter();
   }));
   search?.addEventListener('input', filter);
-  if (window.katex) document.querySelectorAll('.math-inline,.math-block').forEach(node => {
-    try { window.katex.render(node.textContent, node, {displayMode: node.classList.contains('math-block'), throwOnError: false, trust: false}); } catch (_) { /* Keep original evidence readable. */ }
-  });
+  if(!window.PaperLoomMath){const script=document.createElement('script');script.src=new URL('math.js',document.currentScript.src);document.head.append(script);}
 })();

@@ -5,12 +5,15 @@
   const reportButton = document.querySelector('#report-library-add');
   if (!host && !papers) return;
   if (!['http:', 'https:'].includes(location.protocol)) {
-    if (reportButton) {
+    const source=reportButton || papers;
+    if (source?.dataset.arxivId) {
       const link = document.createElement('a');
-      link.href = 'http://127.0.0.1:8000/reading?' + new URLSearchParams({arxiv_id: reportButton.dataset.arxivId, report_id: reportButton.dataset.reportId || ''});
+      link.href = 'http://127.0.0.1:8000/reading?' + new URLSearchParams({arxiv_id: source.dataset.arxivId, report_id: source.dataset.reportId || ''});
       link.textContent = '在 PaperLoom 中继续对话（请先启动服务）';
-      document.querySelector('.report-actions').append(link);
+      const existing=document.querySelector('.reading-open');
+      if(existing)existing.replaceWith(link);else document.querySelector('.report-actions').append(link);
     }
+    else document.querySelector('.reading-open')?.remove();
     return;
   }
   if (!host) {
@@ -21,7 +24,8 @@
     document.addEventListener('reading-dock-opening', () => {
       if(!papers.hidden)document.querySelector('#report-papers-close').click();
     });
-    const open = document.createElement('button'); open.className = 'reading-open'; open.textContent = '阅读对话 / 提问选区';
+    const open = document.querySelector('.reading-open') || document.createElement('button'); open.className = 'reading-open'; open.textContent = '阅读对话 / 提问选区';
+    open.disabled=false;
     open.setAttribute('aria-controls',host.id);open.setAttribute('aria-expanded','false');
     document.querySelector('.report-actions').append(open);
     open.onclick = async () => {
@@ -52,7 +56,9 @@
   const selectionBox = $('.reading-selection'), history = $('.reading-history');
   let session = null, selection = '', pictures = [], requestToken = null, busy = false, generation = 0, lastRender = '';
   let currentAid = host.dataset.arxivId || '', currentReport = host.dataset.reportId || '';
-  let profile = '';
+  // The page owns its research direction; model settings are optional display data.
+  const profile = host.dataset.profileId || document.body.dataset.profileId || '';
+  let starting = null, retryFresh = false;
   function updateElapsed() {
     for (const node of messages.querySelectorAll('[data-elapsed]')) {
       const seconds = Math.floor(Number(node.dataset.elapsed) + (node.dataset.running === 'true' ? (Date.now() - Number(node.dataset.received)) / 1000 : 0));
@@ -67,7 +73,8 @@
   const historyController=createConversationHistory({host,view,reportHistory,api,
     getContext:()=>({session,currentAid}),
     async onOpen(row) {
-      saveDraft();generation++;session=row;
+      saveDraft();generation++;busy=false;session=row;
+      $('[data-action=retry-start]').hidden=true;
       currentAid=reportHistory ? row.paper.arxiv_id+'v'+row.paper.version : '';
       currentReport='';selection='';pictures=[];showPictures();input.value='';restoreDraft();
       lastRender='';await refresh();
@@ -134,7 +141,9 @@
     try {
       const value=await api('/sessions/'+sid+'/references','PUT',{report_ids:reportIds, mode:'workspace'});
       if(session?.id===sid && generation===ticket){render(value);if(!history.hidden)await historyController.refresh();}
-    } finally {busy=false;if(session)render(session);}
+    } catch(e) {
+      if(session?.id===sid && generation===ticket)throw e;
+    } finally {if(session?.id===sid && generation===ticket){busy=false;render(session);}}
   }
   if(!reportHistory) {
     $('[data-action=new-workspace]').onclick=()=> $('[data-action=new]').click();
@@ -318,9 +327,6 @@ ${f.text}`));row.append(pieces);}
         box.append(actions);
       }
       for (const data of message.images || []) {const img = document.createElement('img'); img.src = data; img.alt = '本条问题图片'; box.append(img);}
-      if (window.katex) box.querySelectorAll('.math-inline,.math-block').forEach(node => {
-        try {katex.render(node.textContent,node,{displayMode:node.dataset.display==='true',throwOnError:false,trust:false});}catch{}
-      });
       if(old){
         const before=old.querySelector('.reading-message-content'),after=box.querySelector('.reading-message-content');
         if(before && after){patchContent(before,after);after.replaceWith(before);}
@@ -353,28 +359,51 @@ ${f.text}`));row.append(pieces);}
     const value = await api('/sessions/' + sid);
     if (ticket === generation && session?.id === sid) render(value);
   }
-  async function start(fresh = false) {
+  function start(fresh = false) {
+    if(!fresh && starting?.ticket===generation)return starting.promise;
+    const promise=prepareSession(fresh);
+    const operation={ticket:generation,promise};starting=operation;
+    promise.finally(()=>{if(starting===operation)starting=null;}).catch(()=>{});
+    return promise;
+  }
+  async function prepareSession(fresh) {
     if (reportHistory && !currentAid) {historyController.showAll(); setHistory(true); messages.replaceChildren();showWelcome();return;}
     busy = true;
+    retryFresh=fresh;
     const ticket = ++generation;
-    status.textContent = '正在确认论文版本…';
+    $('[data-action=retry-start]').hidden=true;
+    compose.querySelector('[type=submit]').disabled=true;
+    if(!reportHistory)$('[data-action=add-references]').disabled=true;
+    status.textContent = currentAid || currentReport ? '正在确认论文版本…' : '正在准备阅读会话…';
     try {
       const value = await api('/sessions', 'POST', {arxiv_id: currentAid, report_id: currentReport, new: fresh,
         origin: host.dataset.origin || '', source_date: host.dataset.sourceDate || '', mode: reportHistory ? 'report' : 'workspace'});
       if (ticket !== generation) return;
-      session = value; await refresh();
-      if(!history.hidden)await historyController.refresh();
+      // Creation returns stored data; presentation adds validated references and HTML.
+      const presented = await api('/sessions/' + value.id);
+      if(ticket !== generation)return;
+      render(presented);
+      if(!history.hidden)historyController.refresh().catch(error);
       // Keep a question drafted before version resolution.
       if (!input.value) restoreDraft();
     } catch(e) {
-      if(!reportHistory && !session){currentAid='';currentReport='';messages.replaceChildren();showWelcome();}
+      if(ticket !== generation)return;
+      $('[data-action=retry-start]').hidden=false;
       throw e;
-    } finally {busy = false; if(session) render(session);}
+    } finally {
+      if(ticket === generation){busy=false;if(session)render(session);else if(!reportHistory)$('[data-action=add-references]').disabled=false;}
+    }
   }
+  $('[data-action=retry-start]').onclick=()=>start(retryFresh).catch(error);
   $('[data-action=history]').onclick = () => setHistory(history.hidden);
-  $('[data-action=new]').onclick = () => {if(!reportHistory){currentAid='';currentReport='';} saveDraft(); input.value = ''; selection = ''; pictures = []; showSelection(); showPictures(); start(true).catch(error);};
+  $('[data-action=new]').onclick = () => {
+    saveDraft();if(!reportHistory){currentAid='';currentReport='';}
+    session=null;lastRender='';watchSession();view.setSessionActions(false);
+    messages.replaceChildren();showWelcome();input.value='';input.disabled=false;
+    selection='';pictures=[];requestToken=null;showSelection();showPictures();start(true).catch(error);
+  };
   function clearDeletedSession() {
-    generation++;session=null;watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
+    generation++;busy=false;session=null;watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
     showSelection();showPictures();messages.replaceChildren();showWelcome();lastRender='';status.textContent='会话已删除';
     if(!reportHistory){currentAid='';currentReport='';renderReferences({references:[],messages:[]});compose.querySelector('[type=submit]').disabled=true;}
     view.setSessionActions(false);
@@ -397,7 +426,9 @@ ${f.text}`));row.append(pieces);}
       }
       requestToken=null; showSelection(); showPictures(); saveDraft(); await refresh();
       if(!history.hidden)await historyController.refresh();
-    } finally {busy=false; if(session)render(session);}
+    } catch(e) {
+      if(ticket === generation && session?.id === sid)throw e;
+    } finally {if(ticket === generation && session?.id === sid){busy=false;render(session);}}
   }
   compose.onsubmit = async event => {
     event.preventDefault(); if(!input.value.trim())return;
@@ -432,12 +463,28 @@ ${f.text}`));row.append(pieces);}
     try{const saved=await api('/settings','PUT',body);settingsForm.elements.api_key.value='';$('.reading-model-label').textContent=saved.model;settingsDialog.close();status.textContent='阅读设置已保存，应用于下一轮回答';}catch(e){error(e);}
   };
   restoreDraft();
-  api('/settings').then(value=>{
-    profile=value.profile_id;
-    $('.reading-model-label').textContent=value.model;
-    for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
-    return start().then(()=>{if(!papers && innerWidth >= 850)setHistory(true);});
-  }).catch(error);
+  showWelcome();
+  compose.querySelector('[type=submit]').disabled=true;
+  if(!papers && innerWidth >= 850)setHistory(true);
+  start().catch(error);
+  let settingsLoaded=false, settingsLoading=false;
+  async function loadSettings() {
+    if(settingsLoading)return;
+    settingsLoading=true;
+    for(const field of settingsForm.elements)field.disabled=true;
+    try {
+      const value=await api('/settings');
+      $('.reading-model-label').textContent=value.model;
+      for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
+      settingsLoaded=true;
+      for(const field of settingsForm.elements)field.disabled=false;
+    } catch(e) {
+      $('.reading-model-label').textContent='模型设置暂不可用 · 点击重试';
+      $('.reading-model-label').title=e.message;
+    } finally {settingsLoading=false;}
+  }
+  $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => {settingsDialog.showModal();if(!settingsLoaded)loadSettings();};
+  loadSettings();
   window.addEventListener('pagehide',()=>eventSource?.close());
   window.addEventListener('pageshow',e=>{if(e.persisted){eventSource=null;watchSession();}});
   // An editor opening is a transaction: draft selection is committed only on Save.
@@ -566,6 +613,9 @@ ${f.text}`));row.append(pieces);}
       const {session,currentAid}=getContext();
       const request = ++historyRequest;
       historyLoading=true;updateHistorySelection();
+      const list=$('.reading-history-list');
+      list.setAttribute('aria-busy','true');
+      if(!visibleHistory.length)list.replaceChildren(textNode('p','正在加载会话记录…','reading-history-empty'));
       const aid = reportHistory && historyScope === 'current' ? currentAid : '';
       const q = history.querySelector('input[type=search]').value;
       history.querySelectorAll('[data-scope]').forEach(button => {
@@ -578,17 +628,23 @@ ${f.text}`));row.append(pieces);}
       let rows;
       try {rows=await api('/sessions?' + new URLSearchParams({arxiv_id: aid, q, mode:reportHistory ? 'report' : ''}));}
       catch(e){
-        if(request===historyRequest){historyLoading=false;visibleHistory=[];selectedHistory.clear();$('.reading-history-list').replaceChildren();updateHistorySelection();}
-        throw e;
+        if(request===historyRequest){
+          historyLoading=false;visibleHistory=[];selectedHistory.clear();updateHistorySelection();
+          const retry=textNode('button','重试加载历史');retry.type='button';retry.onclick=()=>listHistory().catch(error);
+          list.replaceChildren(textNode('p',e.message,'reading-history-empty'),retry);
+          list.setAttribute('aria-busy','false');
+        }
+        return;
       }
       if(request !== historyRequest)return;
       historyLoading=false;
+      list.setAttribute('aria-busy','false');
       const activeId=getContext().session?.id;
       view.renderHistorySummary(historyScope, rows.length, q);
       visibleHistory = rows;
       const available = new Set(rows.map(row=>row.id));
       for(const id of selectedHistory)if(!available.has(id))selectedHistory.delete(id);
-      const list = $('.reading-history-list'); list.replaceChildren();
+      list.replaceChildren();
       for (const row of rows) {
         const item = textNode('div', '', 'reading-history-row');
         item.classList.toggle('selected', row.id === activeId);
@@ -658,7 +714,7 @@ ${f.text}`));row.append(pieces);}
     const adapter=adapters[mode], isReport=mode==='report';
     host.classList.add('reading-chat');
     host.innerHTML = `<header class="reading-header"><div class="reading-brand"><span class="reading-brand-icon" aria-hidden="true">✦</span><strong>论文助手</strong><span class="reading-header-note">和论文深入聊聊</span></div>
-    <div class="reading-toolbar"><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button>${adapter.menu}</div></header>
+    <div class="reading-toolbar"><button type="button" data-action="retry-start" hidden>重试加载会话</button><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button>${adapter.menu}</div></header>
     ${adapter.paper}
     <section class="reading-history" hidden aria-label="历史记录"><div class="reading-history-heading">${adapter.historyHeading}</div><div class="reading-history-filters">${adapter.scope}<input type="search" placeholder="搜索会话、论文或对话内容…" aria-label="搜索会话标题" title="支持会话标题、论文标题、arXiv ID、提问与回答；空格分隔多个关键词"></div>${adapter.summary}<div class="reading-history-list"></div>${adapter.historyFooter}</section>
     <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>阅读模型设置</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div><form class="reading-settings">

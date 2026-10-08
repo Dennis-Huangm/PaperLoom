@@ -1,5 +1,6 @@
 if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){requestAnimationFrame(function(){window.scrollTo(0,0);});}
-document.querySelectorAll('.math-block,.math-inline').forEach(function(node){try{katex.render(node.textContent,node,{displayMode:node.dataset.display==='true',throwOnError:false,strict:'ignore',trust:false});}catch(error){node.classList.add('math-error');}});
+// Exported older reports load this shared script without the enhancement module.
+if(!window.PaperLoomMath){const script=document.createElement('script');script.src=new URL('math.js',document.currentScript.src);document.head.append(script);}
 (() => {
   const sidebar = document.querySelector('.report-sidebar');
   const shell = document.querySelector('.report-shell');

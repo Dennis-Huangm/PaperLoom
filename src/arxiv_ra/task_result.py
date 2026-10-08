@@ -123,7 +123,7 @@ def task_document(source: str, title: str, kind: str, *, asset_base: str = '/sta
 <header class="result-heading"><div><p class="result-kicker">{kicker}</p><h1>{label}</h1><p class="result-subtitle">{html.escape(title)}</p></div><button type="button" class="print-result">打印 / 保存 PDF</button></header>
 <p class="result-description">{description}</p><div class="result-intro result-prose">{intro}</div>{stats}{panels}{paper_list}
 <footer class="result-footer">PaperLoom · 本页保留任务生成时的记录。<a href="/versions">查看当前追踪状态 →</a></footer></main>
-<script defer src="{assets}/vendor/katex/katex.min.js"></script><script defer src="{_reader_asset_url(asset_base, 'task-result.js')}"></script></body></html>'''
+<script async src="{assets}/vendor/katex/katex.min.js"></script><script defer src="{_reader_asset_url(asset_base, 'math.js')}"></script><script defer src="{_reader_asset_url(asset_base, 'task-result.js')}"></script></body></html>'''
 
 
 def render_task_result(source: str, destination: Path, title: str, kind: str) -> None:

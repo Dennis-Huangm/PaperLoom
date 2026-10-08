@@ -1,15 +1,4 @@
-const renderSummaryMath = (root) => {
-  root.querySelectorAll('.math-inline,.math-block').forEach((node) => {
-    if (node.querySelector('.katex') || !window.katex) return;
-    try {
-      window.katex.render(node.textContent, node, {
-        displayMode: node.dataset.display === 'true', throwOnError: false,
-        strict: 'ignore', trust: false,
-      });
-    } catch (_) { node.classList.add('math-error'); }
-  });
-};
-document.querySelectorAll('.paper-summary').forEach(renderSummaryMath);
+const renderSummaryMath = root => window.PaperLoomMath?.render(root);
 
 // Carry the direction shown by this page through every asynchronous operation.
 const scopedFetch = (url, options = {}) => {
