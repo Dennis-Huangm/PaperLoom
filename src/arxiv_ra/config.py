@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-import yaml
+from .yaml_io import read_yaml
 
 
 @dataclass(slots=True)
@@ -244,7 +244,7 @@ def _section(cls: type, data: dict[str, Any], name: str):
 
 
 def load_config(path: Path, *, profile_id: str | None = None) -> AppConfig:
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = read_yaml(path) or {}
     explicit_profile = profile_id is not None
     if explicit_profile and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", profile_id):
         raise ValueError("无效的研究方向 ID")
@@ -256,7 +256,7 @@ def load_config(path: Path, *, profile_id: str | None = None) -> AppConfig:
             profile_id = active_path.read_text(encoding="utf-8").strip()
         profile_path = path.parent / "profiles" / f"{profile_id}.yaml"
         if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", profile_id) and profile_path.exists():
-            profile = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+            profile = read_yaml(profile_path) or {}
             profile_name = str(profile.get("name") or profile_id)
             # Enabling automation in one direction must never enable another.
             data["version_sync"] = profile.get("version_sync") or {}

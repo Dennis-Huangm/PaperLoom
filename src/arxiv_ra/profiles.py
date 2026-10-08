@@ -18,6 +18,7 @@ from .research_clients import ResearchClients
 from .utils import atomic_write_text, extract_json_object
 from .profile_plan import new_draft, refresh_draft
 from .reading_state import _locked
+from .yaml_io import read_yaml
 
 
 PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -128,7 +129,7 @@ class ProfileManager:
         path = self.root / f"{profile_id}.yaml"
         if not path.exists():
             raise KeyError(profile_id)
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return read_yaml(path) or {}
 
     def list(self) -> list[dict[str, Any]]:
         active = self.active_id()
@@ -136,7 +137,7 @@ class ProfileManager:
         if not self.root.exists():
             return profiles
         for path in sorted(self.root.glob("*.yaml")):
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            payload = read_yaml(path) or {}
             discovery = payload.get("discovery") or {}
             profiles.append(
                 {

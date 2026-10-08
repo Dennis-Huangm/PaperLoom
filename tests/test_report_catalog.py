@@ -183,3 +183,25 @@ def test_delete_report_without_paper_identity(tmp_path, batch):
         assert response.status_code == 303, response.text
         assert not orphan.exists()
         assert other_orphan.exists() and valid.exists()
+
+
+def test_catalog_profile_names_and_direction_guard_update_without_restart(tmp_path):
+    """Faster profile reads must not freeze names or accept an obsolete direction."""
+    from arxiv_ra.profiles import ProfileManager
+
+    config = tmp_path / 'config.yaml'
+    config.write_text('output_dir: run\n', encoding='utf-8')
+    manager = ProfileManager(tmp_path)
+    manager.save({'id': 'alpha', 'name': 'Alpha'})
+    manager.active_path.write_text('alpha', encoding='utf-8')
+    add_report(tmp_path / 'run', '2026-10-08', 'paper', profile_id='alpha')
+    with TestClient(create_app(config)) as client:
+        first = client.get('/api/reports').json()['reports'][0]
+        assert first['directions'] == [{'id': 'alpha', 'name': 'Alpha'}]
+        manager.save({'id': 'alpha', 'name': 'Renamed'})
+        updated = client.get('/api/reports').json()['reports'][0]
+        assert updated['directions'] == [{'id': 'alpha', 'name': 'Renamed'}]
+        manager.save({'id': 'beta', 'name': 'Beta'})
+        manager.active_path.write_text('beta', encoding='utf-8')
+        assert client.get('/api/reports', headers={'X-Paperloom-Profile': 'alpha'}).status_code == 409
+        assert client.get('/api/reports', headers={'X-Paperloom-Profile': 'beta'}).status_code == 200
