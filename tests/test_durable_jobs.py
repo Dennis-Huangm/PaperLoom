@@ -407,6 +407,49 @@ def test_api_restart_recovery_profile_guard_and_private_ledger(tmp_path, monkeyp
         assert client.post(f"/api/jobs/{old.id}/retry").json()["id"] == new.id
 
 
+@pytest.mark.parametrize("status", ["queued", "running", "cancelling", "interrupted", "failed", "cancelled", "succeeded"])
+def test_reading_turns_do_not_occupy_task_lists_or_pages(tmp_path, status):
+    manager = JobManager(tmp_path)
+    try:
+        report = manager.submit("report", "report", lambda: None)
+        wait_job(manager, report)
+        reading = manager.submit("reading", "question", lambda: None)
+        wait_job(manager, reading)
+        manager._update(reading.id, status=status)
+        assert [job.id for job in manager.recent(limit=1)] == [report.id]
+        history = manager.history(1, size=1)
+        assert history["pages"] == 1
+        assert [item["id"] for item in history["items"]] == [report.id]
+        assert manager.get(reading.id).status == status
+    finally:
+        stop(manager)
+
+    restored = JobManager(tmp_path)
+    try:
+        assert restored.get(reading.id) is not None
+        assert [job.id for job in restored.recent()] == [report.id]
+        assert [item["id"] for item in restored.history(1)["items"]] == [report.id]
+    finally:
+        stop(restored)
+
+
+def test_generate_page_excludes_reading_turns(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\ndiscovery:\n  interest_description: fixture\n", encoding="utf-8")
+    with TestClient(create_app(config)) as client:
+        manager = client.app.state.jobs
+        reading = manager.submit("reading", "question", lambda: None)
+        wait_job(manager, reading)
+        page = client.get("/generate").text
+        assert "当前没有后台任务" in page
+        assert f'data-job-id="{reading.id}"' not in page
+        report = manager.submit("report", "report", lambda: None)
+        wait_job(manager, report)
+        page = client.get("/generate").text
+        assert f'data-job-id="{report.id}"' in page
+        assert f'data-job-id="{reading.id}"' not in page
+
+
 def test_history_pages_retain_older_recoverable_failures_on_first_page(tmp_path):
     manager = JobManager(tmp_path)
     def fail(): raise RuntimeError("offline")

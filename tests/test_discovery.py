@@ -186,7 +186,7 @@ def test_profile_runs_ignore_shared_marker_and_keep_separate_artifacts(tmp_path)
     assert len(list(tmp_path.glob("discovery-*.json"))) == 2
 
 
-def test_no_new_papers_keeps_previous_digest(tmp_path):
+def test_same_day_papers_are_refreshed_in_digest(tmp_path, monkeypatch):
     p = pipeline(tmp_path)
     current = paper()
     p.clients.arxiv = SimpleNamespace(search=Mock(return_value=[current]))
@@ -197,8 +197,12 @@ def test_no_new_papers_keeps_previous_digest(tmp_path):
     old = [{"profile_id": "test", "paper": current.to_dict()}]
     write_json(target, old)
     write_json(p._state_path(), {"processed": [current.arxiv_id]})
+    from arxiv_ra.models import VerifiedMetadata
+    monkeypatch.setattr(p, "_verify_selected", lambda papers, demo: {x.arxiv_id: VerifiedMetadata() for x in papers})
+    monkeypatch.setattr("arxiv_ra.pipeline.localize_abstracts", lambda *args: None)
     result = p.run(deliver=False)
-    assert result.name == "no-new-test.html" and read_json(target) == old
+    assert result.name == "index-test.html"
+    assert [item["paper"]["arxiv_id"] for item in read_json(target)] == [current.arxiv_id]
 
 
 def test_stale_cache_is_refreshed_during_healthy_discovery(tmp_path):

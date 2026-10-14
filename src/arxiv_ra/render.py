@@ -37,7 +37,8 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.re
 .report-article table{border-collapse:collapse;width:100%;margin:18px 0 28px;font-size:14px;display:table}.report-article th,.report-article td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top;overflow-wrap:anywhere}.report-article th{background:#f7f7f5;font-weight:750}.report-article tr:nth-child(even) td{background:#fcfcfb}.report-article code{background:#f0f1f1;border-radius:3px;padding:2px 5px;font:90% Consolas,"SFMono-Regular",monospace}.report-article pre{overflow:auto;background:#242a30;color:#f1f3f4;padding:16px;border-radius:5px;font-size:13px}.report-article pre code{background:transparent;padding:0}.report-article img{display:block;max-width:100%;height:auto;margin:24px auto 12px;border:1px solid var(--line);border-radius:5px}.report-article img+em{display:block;text-align:center;color:var(--muted);font-size:13px}
 .report-article table{display:block;width:max-content;max-width:100%;margin-left:auto;margin-right:auto;overflow-x:auto}.report-article th,.report-article td{overflow-wrap:normal;word-break:normal}.report-article [align="right"]{text-align:right}.report-article [align="center"]{text-align:center}
 .report-table-details{margin:18px 0 26px;border:1px solid var(--line);border-radius:5px;padding:10px 14px}.report-table-details>summary{cursor:pointer;color:var(--accent);font-weight:600}.report-table-details[open]>summary{margin-bottom:12px}
-.math-block{margin:22px 0;overflow-x:auto;overflow-y:hidden;text-align:center;padding:12px 4px}.math-inline{white-space:nowrap}.katex{font-size:1.08em}.math-block .katex-display{margin:0}.math-error{color:#a33;background:#fff1f1;padding:8px;border-radius:4px}
+.math-block{margin:22px 0;overflow-x:auto;overflow-y:hidden;text-align:center;padding:12px 4px}.math-inline{white-space:nowrap}.katex{font-size:1.08em}.math-block .katex-display{margin:0}.math-with-citations{display:flex;align-items:center;justify-content:safe center;gap:.65em;max-width:100%;overflow-x:auto;margin:22px 0;padding:12px 4px}.math-with-citations>.math-block{flex:0 0 auto;margin:0;padding:0;overflow:visible}.math-with-citations .katex-display{margin:0}.math-citations{flex:0 0 auto;white-space:nowrap}
+.math-error{color:#a33;background:#fff1f1;padding:8px;border-radius:4px}
 @media(max-width:1050px){.report-shell{grid-template-columns:210px minmax(0,1fr);gap:16px;padding:34px 14px 60px}.report-article{padding:42px 38px}.report-article>h1:first-child{font-size:31px}}
 @media(max-width:760px){html{scroll-padding-top:16px}body{font-size:15px}.report-topbar{padding:0 12px}.report-actions>a{display:none}.toc-toggle{display:inline-flex!important}.report-shell{display:block;padding:22px 10px 48px}.report-sidebar{display:none;position:fixed;inset:58px 0 0 0;max-height:none;background:rgba(245,245,243,.98);padding:22px;z-index:25}.report-sidebar.open{display:block}.report-article{padding:34px 20px}.report-article h1,.report-article h2,.report-article h3,.report-article h4{scroll-margin-top:16px}.report-article>h1:first-child{font-size:27px;margin-bottom:28px}.report-article h2{font-size:21px;margin-top:38px}.report-article table{display:block;overflow-x:auto;white-space:normal}.report-article th,.report-article td{min-width:130px}}
 .report-article{position:relative;overflow-wrap:anywhere}
@@ -58,7 +59,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.re
 @media print{.report-topbar,.report-sidebar{display:none!important}.report-shell{display:block;padding:0}.report-article{border:0;padding:0}.report-article h2{break-after:avoid}.report-article img,.math-block{break-inside:avoid}}
 """
 
-def markdown_with_math(markdown_text: str) -> tuple[str, str]:
+def markdown_with_math(markdown_text: str, *, allow_html: bool = True) -> tuple[str, str]:
     # Generated/external Markdown is content, never application code. Allow
     # evidence formatting and escaped math elements, not active HTML.
     tags = {"p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote",
@@ -73,7 +74,7 @@ def markdown_with_math(markdown_text: str) -> tuple[str, str]:
     def clean(fragment):
         return nh3.clean(fragment, tags=tags, attributes=attributes,
                          url_schemes={"http", "https", "mailto"})
-    return render_markdown(markdown_text, clean)
+    return render_markdown(markdown_text, clean, allow_html=allow_html)
 
 
 def summary_html(text: str) -> str:

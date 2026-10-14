@@ -470,7 +470,8 @@ class JobManager:
             for job in self.jobs.values():
                 if self._dismiss_content_warning(job):
                     self._save(job)
-            ordered = list(reversed(list(self.jobs.values())))
+            # Reading turns expose their progress and history in the conversation.
+            ordered = [job for job in reversed(list(self.jobs.values())) if job.kind != "reading"]
             return [job for index, job in enumerate(ordered) if index < limit
                     or job.status in {"queued", "running", "cancelling", "interrupted"} and not job.retry_job_id]
 
@@ -479,7 +480,7 @@ class JobManager:
             for job in self.jobs.values():
                 if self._dismiss_content_warning(job):
                     self._save(job)
-            ordered = list(reversed(list(self.jobs.values())))
+            ordered = [job for job in reversed(list(self.jobs.values())) if job.kind != "reading"]
             pages = max(1, (len(ordered) + size - 1) // size)
             page = max(1, min(page, pages))
             selected = ordered[(page - 1) * size:page * size]

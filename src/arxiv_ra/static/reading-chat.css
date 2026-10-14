@@ -49,6 +49,9 @@
 @media print{#report-reading,.reading-tabs,.reading-open{display:none!important}}
 .reading-compose textarea:focus{box-shadow:none;border:0}.reading-chat .reading-settings-dialog:not([open]){display:none}
 /* Independent full-height reading dock; separate from the report catalog. */
+#report-reading .reading-toolbar #report-papers-toggle{position:static;border-radius:6px;padding:5px 8px;box-shadow:none;white-space:nowrap}
+#report-reading.reading-dock .reading-header{flex-wrap:wrap}
+#report-reading.reading-dock .reading-toolbar{flex-wrap:wrap;max-width:100%}
 #report-reading.reading-dock{position:fixed;inset:0 0 0 auto;height:100dvh;width:min(var(--reading-width,480px),100vw);z-index:55;border:0;border-left:1px solid var(--line,#d9dcdf);border-radius:0;box-shadow:-8px 0 28px #30261a0c;grid-template-rows:auto auto auto minmax(0,1fr) auto;background:var(--surface,#fff)}
 #report-reading .reading-header{padding:14px 16px;min-height:58px}#report-reading .reading-brand strong{font-size:14px}#report-reading .reading-paper{padding:10px 18px;background:#fafaf8}#report-reading .reading-messages{padding:22px 22px;gap:26px}#report-reading .reading-compose{padding:10px 16px 8px}#report-reading .reading-header .reading-toolbar{gap:7px}#report-reading .reading-history{inset:58px 0 0}#report-reading .reading-compose textarea{height:64px}
 .reading-dock-resize{display:none;position:fixed;top:0;bottom:0;right:calc(var(--reading-width,480px) - 4px);width:8px;z-index:56;cursor:col-resize;touch-action:none}.reading-dock-open .reading-dock-resize{display:block}.reading-dock-resize:hover,.reading-dock-resize:focus-visible{background:#c7650e33}.reading-resizing{user-select:none;cursor:col-resize}

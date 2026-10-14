@@ -2,6 +2,8 @@
   'use strict';
   let host = document.querySelector('#reading-panel');
   const papers = document.querySelector('#report-papers');
+  const papersToggle = document.querySelector('#report-papers-toggle');
+  const papersToggleHome = document.createComment('paper catalog toggle');
   const reportButton = document.querySelector('#report-library-add');
   if (!host && !papers) return;
   if (!['http:', 'https:'].includes(location.protocol)) {
@@ -167,12 +169,12 @@
   });
   selectionBox.querySelector('button').onclick = () => setSelection('');
   input.oninput = () => {requestToken = null; saveDraft();};
-  async function api(path, method = 'GET', data) {
+  async function api(path, method = 'GET', data, signal) {
     const headers = {'Content-Type': 'application/json'};
     if (profile) headers['x-paperloom-profile'] = profile;
-    const response = await fetch('/api/reading' + path, {method, headers, body: data === undefined ? undefined : JSON.stringify(data), cache: 'no-store'});
+    const response = await fetch('/api/reading' + path, {method, headers, body: data === undefined ? undefined : JSON.stringify(data), cache: 'no-store', signal});
     const value = await response.json();
-    if (!response.ok) throw new Error(typeof value.detail === 'string' ? value.detail : '请求未通过校验，请检查输入');
+    if (!response.ok) throw Object.assign(new Error(typeof value.detail === 'string' ? value.detail : '请求未通过校验，请检查输入'), {status:response.status});
     return value;
   }
   function error(e) {status.textContent = e.message; status.classList.add('reading-error');}
@@ -185,15 +187,21 @@
   }
   function openDock() {
     document.dispatchEvent(new Event('reading-dock-opening'));host.hidden=false;document.body.classList.add('reading-dock-open');
+    // Keep the catalog reachable even when the reading dock fills the viewport.
+    if (papersToggle) $('.reading-header .reading-toolbar').prepend(papersToggle);
     document.querySelector('.reading-open')?.setAttribute('aria-expanded','true');
+    watchSession(true);
   }
   function closeDock(restoreFocus=true) {
+    if (papersToggle && papersToggleHome.parentNode) papersToggleHome.after(papersToggle);
     host.hidden=true;document.body.classList.remove('reading-dock-open');
+    watchSession();
     const toggle=document.querySelector('.reading-open');toggle?.setAttribute('aria-expanded','false');
     if(restoreFocus)toggle?.focus();
   }
   function installDock() {
     host.classList.add('reading-dock');
+    papersToggle?.before(papersToggleHome);
     const close=iconButton('收起阅读助手','close');close.onclick=()=>closeDock();
     $('.reading-header .reading-toolbar').append(close);
     const resize=document.createElement('div');resize.className='reading-dock-resize';resize.tabIndex=0;resize.setAttribute('role','separator');resize.setAttribute('aria-label','调整阅读助手宽度');resize.setAttribute('aria-orientation','vertical');
@@ -207,18 +215,38 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
     document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>closeDock(false));
   }
-  let eventSource=null, eventSid='', eventTicket=-1;
-  function watchSession() {
-    if(eventSid===session?.id && eventTicket===generation && eventSource)return;
-    eventSource?.close();eventSource=null;eventSid=session?.id || '';eventTicket=generation;
-    if(!session)return;
-    const sid=session.id,ticket=generation;
-    const source=new EventSource('/api/reading/sessions/'+sid+'/events');eventSource=source;
-    const current=()=>session?.id===sid && generation===ticket;
-    source.addEventListener('snapshot',e=>{if(current())render(JSON.parse(e.data));});
-    source.addEventListener('update',e=>{if(!current())return;const update=JSON.parse(e.data),changed=new Map(update.messages.map(m=>[m.id,m]));render({...session,...update,messages:session.messages.map(m=>changed.get(m.id)||m)});});
-    source.addEventListener('deleted',()=>{source.close();if(current()){clearDeletedSession();}});
-    source.onerror=()=>{if(current())status.textContent='连接暂时中断，正在恢复实时更新…';};
+  let sessionWatch=null, pageSuspended=false;
+  function stopWatching() {
+    if(!sessionWatch)return;
+    clearTimeout(sessionWatch.timer);sessionWatch.controller?.abort();sessionWatch=null;
+  }
+  function watchSession(immediate=false) {
+    // HTTP/1.1 tabs share six connections. A permanent SSE per report starves
+    // navigation and API calls, even when its reading dock is never opened.
+    if(pageSuspended || document.hidden || host.hidden || !session){stopWatching();return;}
+    if(sessionWatch?.sid===session.id && sessionWatch.ticket===generation && !immediate)return;
+    stopWatching();
+    const watch={sid:session.id,ticket:generation,timer:null,controller:null};sessionWatch=watch;
+    const current=()=>sessionWatch===watch && session?.id===watch.sid && generation===watch.ticket;
+    const delay=()=>session?.messages.some(m=>['queued','running'].includes(m.status)) ? 1000 : 5000;
+    async function poll() {
+      if(!current())return;
+      watch.controller=new AbortController();
+      const timeout=setTimeout(()=>watch.controller.abort(),10000);
+      try {
+        const value=await api('/sessions/'+watch.sid,'GET',undefined,watch.controller.signal);
+        if(current())render(value);
+      } catch(e) {
+        if(current()) {
+          if(e.status===404){clearDeletedSession();return;}
+          status.textContent='连接暂时中断，正在恢复实时更新…';
+        }
+      } finally {
+        clearTimeout(timeout);
+        if(current())watch.timer=setTimeout(poll,delay());
+      }
+    }
+    watch.timer=setTimeout(poll,immediate ? 0 : delay());
   }
   function render(value) {
     if(session?.id===value.id && session.updated_at && value.updated_at && value.updated_at < session.updated_at)return;
@@ -275,7 +303,6 @@ ${f.text}`));row.append(pieces);}
         }
 
         if(!message.reasoning)trace.append(textNode('small','当前接口尚未返回思考内容；此处展示实际工具执行记录。'));
-        if(material?.source_note)trace.append(textNode('small',material.source_note));
         trace.ontoggle=()=>{if(trace.open)expanded.add(key);else expanded.delete(key);}; box.append(trace);
       }
       if(message.role === 'assistant' && message.reasoning) {
@@ -285,7 +312,7 @@ ${f.text}`));row.append(pieces);}
         for(const paragraph of message.reasoning.trim().split(/\n\s*\n/)) {
           if(paragraph.trim())content.append(textNode('p',paragraph.trim()));
         }
-        thinking.append(textNode('summary','思考过程 · 模型返回'),content);
+        thinking.append(textNode('summary','思考过程 · 最近一次模型返回'),content);
         thinking.ontoggle=()=>{if(thinking.open)expanded.add(message.id+':reasoning');else expanded.delete(message.id+':reasoning');};box.append(thinking);
       }
       if (message.selection) box.append(textNode('blockquote', message.selection + (message.report?.missing ? '（来源报告已删除）' : '')));
@@ -485,8 +512,9 @@ ${f.text}`));row.append(pieces);}
   }
   $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => {settingsDialog.showModal();if(!settingsLoaded)loadSettings();};
   loadSettings();
-  window.addEventListener('pagehide',()=>eventSource?.close());
-  window.addEventListener('pageshow',e=>{if(e.persisted){eventSource=null;watchSession();}});
+  document.addEventListener('visibilitychange',()=>watchSession(true));
+  window.addEventListener('pagehide',()=>{pageSuspended=true;stopWatching();});
+  window.addEventListener('pageshow',e=>{if(e.persisted){pageSuspended=false;watchSession(true);}});
   // An editor opening is a transaction: draft selection is committed only on Save.
   function createReferenceEditor({dialog, getContext, loadCatalog, save}) {
     const find=selector=>dialog.querySelector(selector);

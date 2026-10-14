@@ -101,7 +101,7 @@ def _math_block(state, start, end, silent):
             value = value[len(opening):]
         if closing in value:
             content, tail = value.split(closing, 1)
-            if tail.strip() and _FORMULA_CITATION.sub('', tail).strip():
+            if tail.strip() and _FORMULA_CITATION.sub('', tail).strip(' \t,，;；'):
                 return False
             parts.append(content)
             if silent:
@@ -123,7 +123,7 @@ def _math_block(state, start, end, silent):
 
 _FORMULA_CITATION = re.compile(
     r'\[((?:原文\s+\d+(?:\s*·\s*PDF\s*第\s*\d+\s*页)?)|\d+)\]\((paper\.pdf#page=\d+)'
-    r'(?:\s+"原文第\s+\d+\s+页")?\)')
+    r'(?:\s+"(原文第\s+\d+\s+页)")?\)')
 
 
 def _formula_citations(content):
@@ -137,7 +137,8 @@ def _formula_citations(content):
     links = []
 
     def take(match):
-        links.append(f'<a href="{html.escape(match[2], quote=True)}">{html.escape(match[1])}</a>')
+        title = f' title="{html.escape(match[3], quote=True)}"' if match[3] else ''
+        links.append(f'<a href="{html.escape(match[2], quote=True)}"{title}>{html.escape(match[1])}</a>')
         return ''
 
     repaired = _FORMULA_CITATION.sub(take, content)
@@ -154,7 +155,12 @@ def _render_math(renderer, tokens, index, options, env):
     block = token.type == 'math_block'
     tag, kind, display = ('div', 'block', 'true') if block else ('span', 'inline', 'false')
     content, citations = _formula_citations(token.content)
+    if token.meta.get('citations'):
+        _, following = _formula_citations(token.meta['citations'])
+        citations = ' '.join(filter(None, [citations, following]))
     rendered = f'<{tag} class="math-{kind}" data-display="{display}">{html.escape(content)}</{tag}>'
+    if block and citations:
+        return f'<div class="math-with-citations">{rendered}<span class="math-citations">{citations}</span></div>\n'
     return rendered + (' ' + citations if citations else '')
 
 
@@ -301,10 +307,23 @@ def _check_unparsed_blocks(tokens):
             raise ReportRenderError(f'报告 Markdown 第 {line} 行附近的列表或表格未正确解析，已停止发布 HTML；原始 Markdown 已保留。')
 
 
-def render_markdown(source, clean):
+def render_markdown(source, clean, *, allow_html=True):
     """Parse, sanitize, then validate before any caller publishes the HTML."""
     parser = _parser()
+    if not allow_html:
+        parser.options['html'] = False
+        parser.disable('autolink')
     tokens = parser.parse(source)
+    # Attach a citation-only paragraph to the preceding display formula. Prose
+    # containing citations remains a separate paragraph.
+    for i in range(len(tokens) - 4, -1, -1):
+        if (tokens[i].type == 'math_block'
+                and [t.type for t in tokens[i + 1:i + 4]]
+                == ['paragraph_open', 'inline', 'paragraph_close']):
+            following = tokens[i + 2].content
+            if _FORMULA_CITATION.search(following) and not _FORMULA_CITATION.sub('', following).strip(' \t\r\n,，;；'):
+                tokens[i].meta['citations'] = following
+                del tokens[i + 1:i + 4]
     _check_unparsed_blocks(tokens)
     toc = _headings(tokens)
     body = clean(parser.renderer.render(tokens, parser.options, {}))

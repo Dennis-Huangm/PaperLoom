@@ -23,7 +23,7 @@ def test_clear_allows_old_paper_to_be_selected_again(tmp_path, profile):
     write_json(state_path, {"processed": ["2407.05600", "unrelated"], "extra": "preserved"})
     pipeline = DailyPipeline.__new__(DailyPipeline)
     pipeline.output_root = tmp_path
-    pipeline.config = SimpleNamespace(profile_id=profile,
+    pipeline.config = SimpleNamespace(profile_id=profile, timezone="Asia/Shanghai",
         discovery=SimpleNamespace(min_score=0, recommendation_count=5),
         ranking=SimpleNamespace(llm_min_score=0))
     paper = SimpleNamespace(arxiv_id="2407.05600", final_score=1, llm_score=None)

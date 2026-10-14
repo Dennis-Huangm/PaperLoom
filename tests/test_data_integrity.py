@@ -150,7 +150,7 @@ def test_abstract_cache_does_not_reuse_another_revision(tmp_path, monkeypatch):
     assert newer["paper"]["abstract_zh"] == "V2 REPORT"
 
 
-def test_daily_publication_retains_earlier_batches_and_versions(tmp_path):
+def test_daily_publication_replaces_list_and_retains_batch_backups(tmp_path):
     cfg = config(tmp_path)
     pipeline = DailyPipeline(cfg, tmp_path, clients=SimpleNamespace())
     now = datetime(2026, 9, 23, tzinfo=timezone.utc)
@@ -162,9 +162,10 @@ def test_daily_publication_retains_earlier_batches_and_versions(tmp_path):
             {p.arxiv_id}, tmp_path / "run/state-a.json", now, demo=False, deliver=False)
     items = read_recommendations(tmp_path / "run", day.name, "a")
     assert {(item["paper"]["arxiv_id"], item["paper"]["version"]) for item in items} == {
-        ("2609.00001", 1), ("2609.00001", 2), ("2609.00002", 2)}
+        ("2609.00001", 2)}
     assert set(read_json(tmp_path / "run/state-a.json")["processed"]) == {"2609.00001", "2609.00002"}
-    assert "2609.00002" in (day / "index-a.html").read_text(encoding="utf-8")
+    assert "2609.00002" not in (day / "index-a.html").read_text(encoding="utf-8")
+    assert len(list(day.glob("batches/a/*/recommendations.json"))) == 3
     weekly = WeeklySynthesizer(cfg, tmp_path, clients=SimpleNamespace())
     collected = weekly._collect(now)
     assert next(item for item in collected if item["paper"]["arxiv_id"] == "2609.00001")["paper"]["version"] == 2
@@ -369,10 +370,10 @@ def test_daily_publication_keeps_immutable_batches_on_delivery_failure(tmp_path,
     with pytest.raises(ConnectionError):
         publish(paper(2, "2609.00002"), True)
     assert batch.read_bytes() == original
-    assert len(read_recommendations(tmp_path / "run", day.name, "a")) == 2
+    assert len(read_recommendations(tmp_path / "run", day.name, "a")) == 1
     assert read_json(state)["processed"] == ["2609.00001"]
     publish(paper(2, "2609.00002"), False)
-    assert len(read_recommendations(tmp_path / "run", day.name, "a")) == 2
+    assert len(read_recommendations(tmp_path / "run", day.name, "a")) == 1
 
 
 def test_obsidian_daily_aggregate_keeps_latest_revision(tmp_path):

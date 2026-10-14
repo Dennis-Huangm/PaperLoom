@@ -13,7 +13,7 @@ from .report_citations import strip_tokens
 from .quality import QUALITY_GUIDANCE
 from .source_spans import (source_spans, span_batches, span_material, cited_span_material,
                            ground_note_quotes, normalize_grouped_source_ids, ID_GUIDANCE, SYNTHESIS_ID_GUIDANCE)
-from .report_metadata import protect_metadata
+from .report_metadata import metadata_link, protect_metadata
 from .report_completeness import normalize_table_titles
 from .report_tables import ReportTables, GeneratedReport
 
@@ -612,7 +612,7 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 | 状态 | {metadata.venue_status} |
 | 正式发表日期 | {metadata.publication_date or '未核实'} |
 | DOI | {metadata.doi or '未核实'} |
-| 链接 | {paper.abs_url} |
+| 链接 | {metadata_link(paper.abs_url)} |
 | 元数据来源 | {', '.join(metadata.sources)} |
 
 ## 摘要级主要内容

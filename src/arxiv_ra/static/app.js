@@ -929,6 +929,8 @@ if (dataNode) {
       }
     }
     if (arxiv) arxiv.href = paper.abs_url;
+    const arxivDetailLink = document.querySelector('#inspector-arxiv-link');
+    if (arxivDetailLink) arxivDetailLink.href = paper.abs_url;
     if (pdf) pdf.href = paper.pdf_url;
     if (reportId) reportId.value = selectedId;
     if (reportForm) reportForm.hidden = Boolean(item.has_report);

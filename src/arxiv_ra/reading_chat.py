@@ -21,6 +21,20 @@ from .reading_model import run_reading, create_completion, failure_message
 
 
 SOURCE_MARKER = re.compile(r'\[\[来源:([^\]\r\n]*)\]\]')
+SOURCE_GROUP = re.compile(r'\[(\[来源:[^\[\]\r\n]+\](?:\s*[,，、]\s*\[(?:来源:)?[^\[\]\r\n]+\])+)\]')
+SINGLE_SOURCE_MARKER = re.compile(r'(?<!\[)\[来源:([^\[\]\r\n]+)\](?!\])')
+
+
+def normalize_source_markers(text):
+    """Accept grouped model citations before validation and evidence selection."""
+    def expand_group(match):
+        # Only inherit the prefix inside an explicitly source-labelled group.
+        # Bare brackets elsewhere may be ordinary prose or Markdown links.
+        return re.sub(r'\[(?:来源:)?([^\[\]\r\n]+)\]',
+                      lambda item: '[[来源:' + item[1].strip() + ']]', match[1])
+
+    text = SOURCE_GROUP.sub(expand_group, text)
+    return SINGLE_SOURCE_MARKER.sub(lambda match: '[[来源:' + match[1] + ']]', text)
 
 
 def timestamp():
@@ -148,10 +162,9 @@ class ReadingService:
                 message['elapsed_seconds'] = max(0, (datetime.now(timezone.utc) -
                     datetime.fromisoformat(message['started_at'])).total_seconds())
             citations = {c['id']: c for c in message.get('citations', [])}
-            text = message['text']
+            text = normalize_source_markers(message['text'])
             # Do not render provider-generated URLs as trustworthy source links.
             text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', text)
-            text = re.sub(r'<[^>]*>', '', text)
             def citation(match):
                 item = citations.get(match[1])
                 if not item:
@@ -164,7 +177,9 @@ class ReadingService:
             text = SOURCE_MARKER.sub(citation, text)
             for item in citations.values():
                 item['available'] = (self.folder / 'sources' / f"{item['source_id']}.pdf").exists()
-            message['html'] = markdown_with_math(text)[0]
+            # Treat tag examples as literal text, including inside code spans.
+            # Deleting angle-bracket content loses SVG names and comparisons.
+            message['html'] = markdown_with_math(text, allow_html=False)[0]
         return value
 
     def list(self, aid='', q='', *, include_empty=True, mode=''):
@@ -433,6 +448,7 @@ class ReadingService:
                 answer, limited = run_reading(client, model, messages, sources, update, checkpoint,
                     max_tools=settings['max_tools'], max_tokens=output_budget,
                     reasoning_effort=settings['reasoning_effort'])
+                answer = normalize_source_markers(answer)
                 known = {c['id'] for c in sources.citations}
                 # A paper ID or invented marker cannot be repaired by guessing which
                 # excerpt supports a claim. Keep the limitation visible in saved text.

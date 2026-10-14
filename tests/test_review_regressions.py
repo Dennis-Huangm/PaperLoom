@@ -56,14 +56,14 @@ def test_empty_fulltext_does_not_call_model(text):
     llm.chat.assert_not_called()
 
 
-def test_no_new_papers_still_runs_optional_tasks_without_sending_old_email(tmp_path, monkeypatch):
+def test_empty_replacement_runs_optional_tasks_without_sending_old_papers(tmp_path, monkeypatch):
     config = AppConfig(output_dir=str(tmp_path), profile_id='a')
     pipeline = DailyPipeline(config, tmp_path, clients=SimpleNamespace())
     day = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
     previous = [{'paper': paper().to_dict()}]
     write_json(tmp_path / day / 'recommendations-a.json', previous)
     monkeypatch.setattr(pipeline, '_rank_candidates', lambda *a, **k: [])
-    monkeypatch.setattr(pipeline, '_select_candidates', lambda *a: ([], [], tmp_path / 'state-a.json'))
+    monkeypatch.setattr(pipeline, '_select_candidates', lambda *a: ([], set(), tmp_path / 'state-a.json'))
     integrations = Mock()
     monkeypatch.setattr(pipeline, '_run_optional_integrations', integrations)
     delivery = Mock()
@@ -71,9 +71,12 @@ def test_no_new_papers_still_runs_optional_tasks_without_sending_old_email(tmp_p
     result = pipeline.run(deliver=True)
     assert result.is_file()
     integrations.assert_called_once()
-    assert integrations.call_args.args[3] == previous
-    delivery.assert_not_called()
-    assert read_json(tmp_path / day / 'recommendations-a.json') == previous
+    assert integrations.call_args.args[3] == []
+    delivery.assert_called_once()
+    assert paper().arxiv_id not in delivery.call_args.args[2]
+    assert read_json(tmp_path / day / 'recommendations-a.json') == []
+    backups = list((tmp_path / day / 'batches/a').glob('*/previous.json'))
+    assert len(backups) == 1 and read_json(backups[0]) == previous
 
 
 def test_fallback_abstract_retries_only_on_explicit_generation(tmp_path, monkeypatch):

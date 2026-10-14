@@ -1,0 +1,159 @@
+/* Keep direction management on one continuous surface. */
+.profile-workspace .profile-heading {
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.profile-heading > div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.profile-workspace .profile-section-nav {
+  gap: 6px;
+  margin: 0;
+  padding: 12px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+}
+.profile-section-nav a {
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.profile-section-nav a:hover,
+.profile-section-nav a:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.profile-section-nav a:last-child {
+  margin-left: auto;
+  color: var(--accent);
+}
+.profile-workspace .profile-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: 0;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0 0 12px 12px;
+}
+.profile-workspace .profile-library {
+  padding: 0 28px;
+  border-radius: 0 0 0 12px;
+}
+.profile-workspace .profile-group {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+  background: transparent;
+}
+.profile-workspace .profile-group + .profile-group {
+  border-top: 1px solid var(--line);
+}
+.profile-workspace .profile-group-heading {
+  padding: 24px 0 16px;
+  border-bottom: 0;
+}
+.profile-workspace .profile-group-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.profile-group-heading > span {
+  background: var(--surface-subtle);
+  border-radius: 20px;
+  padding: 4px 10px;
+}
+.profile-workspace .draft-card-list {
+  padding: 0;
+}
+.profile-workspace .profile-empty {
+  padding: 0 0 22px;
+  font-size: 12px;
+}
+.profile-empty strong {
+  font-weight: 500;
+  color: var(--muted);
+}
+.profile-empty p {
+  margin: 6px 0 10px;
+}
+.profile-empty a {
+  color: var(--accent);
+}
+.profile-workspace .profile-list {
+  gap: 16px;
+  padding-bottom: 24px;
+}
+.profile-workspace .profile-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.profile-workspace .profile-card.active {
+  border-color: #e6d5c1;
+}
+.profile-workspace .profile-trash {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 18px 0;
+  background: transparent;
+}
+.profile-workspace .profile-create-card {
+  padding: 26px 24px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 0 12px 0;
+  background: var(--surface-subtle);
+}
+.profile-create-card .section-kicker {
+  margin-top: 0;
+}
+.profile-create-card input,
+.profile-create-card textarea {
+  background: var(--surface);
+}
+@media (max-width: 940px) {
+  .profile-workspace .profile-library {
+    padding: 0 24px;
+  }
+  .profile-workspace .profile-create-card {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0 0 12px 12px;
+    padding: 24px;
+  }
+}
+@media (max-width: 600px) {
+  .profile-heading > div:last-child {
+    justify-content: flex-start;
+  }
+  .profile-workspace .profile-section-nav {
+    padding: 10px 8px;
+    gap: 2px;
+  }
+  .profile-section-nav a {
+    padding: 8px;
+  }
+  .profile-workspace .profile-library {
+    padding: 0 16px;
+  }
+  .profile-workspace .profile-group-heading {
+    padding-top: 20px;
+  }
+  .profile-workspace .profile-card {
+    padding: 16px;
+  }
+  .profile-workspace .profile-card-top {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .profile-workspace .profile-create-card {
+    padding: 22px 16px;
+  }
+}

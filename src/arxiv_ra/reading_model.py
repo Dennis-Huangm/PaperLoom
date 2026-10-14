@@ -71,7 +71,6 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
     calls_used, remaining = 0, max_tokens
     full = ''
     steps = []
-    reasoning = ''
     stalled_citations = 0
     reserve = min(1000, max_tokens // 3)
     while remaining > 0:
@@ -100,6 +99,9 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
             stream=True, max_tokens=allowance,
             **({'reasoning_effort': reasoning_effort} if reasoning_effort else {}))
         text = ''
+        # Replace the previous completion's thoughts when new reasoning arrives.
+        # Chunks within this completion still form one continuous passage.
+        reasoning = ''
         calls: dict[int, dict[str, Any]] = {}
         reason = None
         try:
@@ -112,7 +114,7 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
                 delta = choice.delta
                 thought = getattr(delta, 'reasoning_content', None) or getattr(delta, 'reasoning', None)
                 if isinstance(thought, str) and thought:
-                    reasoning = (reasoning + thought)[:24000]
+                    reasoning = (reasoning + thought)[-24000:]
                     update(reasoning=reasoning, detail='模型正在思考')
                 if delta.content:
                     text += delta.content

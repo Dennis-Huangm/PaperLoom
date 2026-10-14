@@ -1,7 +1,9 @@
 """Protect structured report front matter from model re-spelling."""
 from __future__ import annotations
 
+import html
 import re
+from urllib.parse import quote, urlsplit
 
 from .activity import literal
 from .models import Paper, VerifiedMetadata
@@ -11,6 +13,22 @@ from .table_quality import cells
 _FIELDS = {'中文标题', '标题', '作者', '作者及机构', '作者来源', 'arXiv ID', 'arXiv 修订版',
            'arXiv类别', 'arXiv 类别', '首次公开日期', '修订日期', '正式发表日期',
            '会议或期刊', '会议/期刊', '状态', '会议状态', 'DOI', '链接', '元数据来源'}
+
+
+def metadata_link(value: str) -> str:
+    """Keep the URL visible while emitting a table-safe Markdown link."""
+    value = ' '.join((value or '未核实').split())
+    label = literal(value)
+    try:
+        url = urlsplit(value)
+    except ValueError:
+        return label
+    if url.scheme.lower() not in {'http', 'https'} or not url.netloc:
+        return label
+    # Angle destinations handle parentheses; encode table delimiters and escape
+    # entities so the Markdown parser preserves the actual URL query string.
+    destination = html.escape(quote(value, safe=":/?#[]@!$&'()*+,;=%-._~"), quote=False)
+    return f'[{label}](<{destination}>)'
 
 
 def _field(label):
@@ -84,7 +102,9 @@ def protect_metadata(report: str, paper: Paper, metadata: VerifiedMetadata) -> s
     # safe. Entity encoding is idempotent across the two publication passes.
     safe_cell = lambda value: re.sub(r'(?<!\\)\|', '&#124;', value)
     table.append(f"| 中文标题 | {safe_cell(translated) or '未提供'} |")
-    table.extend(f"| {label} | {literal(' '.join(str(value).split()))} |" for label, value in fields)
+    for label, value in fields:
+        content = metadata_link(value) if label == '链接' else literal(' '.join(str(value).split()))
+        table.append(f"| {label} | {content} |")
     table.append(f"| 机构（论文摘录，未核实） | {safe_cell(institutions) or '未核实'} |")
     # Retain front-matter notices, but replace all model front-matter tables,
     # headings and H1 titles so duplicate author rows cannot survive.

@@ -57,6 +57,7 @@ class DailyPipeline:
         task_progress("正在检索候选论文…", 5)
         now = datetime.now(ZoneInfo(self.config.timezone))
         date_label = now.date().isoformat()
+        self._run_date = date_label
         run_dir = self.output_root / date_label
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -75,14 +76,6 @@ class DailyPipeline:
             raise RuntimeError(
                 "arXiv 不可用，alphaXiv 无符合日期、评分与历史过滤条件的候选，已阻止发布重复的空日报并保留已有结果"
             )
-        if not selected and read_recommendations(self.output_root, date_label, self.config.profile_id):
-            task_progress("没有新论文，正在生成本次结果…", 85)
-            unchanged = run_dir / f"no-new-{self.config.profile_id or 'default'}.html"
-            render_recommendations([], {}, unchanged, date_label)
-            self._run_optional_integrations(
-                now, date_label, run_dir,
-                read_recommendations(self.output_root, date_label, self.config.profile_id), demo)
-            return unchanged
         task_progress(f"已选出 {len(selected)} 篇论文，正在核验元数据…", 42)
         verified_metadata = self._verify_selected(selected, demo)
         recommendations = self._recommendation_payload(selected, verified_metadata)
@@ -257,11 +250,12 @@ class DailyPipeline:
         state_path = self._state_path()
         state = read_json(state_path, {"processed": []}) or {"processed": []}
         processed = set(state.get("processed", []))
+        excluded = self._processed_ids()
         selected = [
             paper
             for paper in candidates
             if selectable(paper, self.config)
-            and (force or paper.arxiv_id not in processed)
+            and (force or paper.arxiv_id not in excluded)
         ][: self.config.discovery.recommendation_count]
         processed.update(paper.arxiv_id for paper in selected)
         return selected, processed, state_path
@@ -272,7 +266,26 @@ class DailyPipeline:
 
     def _processed_ids(self) -> set[str]:
         state = read_json(self._state_path(), {"processed": []}) or {"processed": []}
-        return {str(item) for item in state.get("processed", []) if item}
+        processed = {str(item) for item in state.get("processed", []) if item}
+        date_label = getattr(self, "_run_date", None) or datetime.now(
+            ZoneInfo(self.config.timezone)).date().isoformat()
+        # Retry all papers from today's runs, including superseded batches.
+        today = read_recommendations(self.output_root, date_label, self.config.profile_id)
+        batch_root = self.output_root / date_label / "batches" / (self.config.profile_id or "default")
+        today_ids = {item.get("paper", {}).get("arxiv_id") for item in today}
+        for path in batch_root.glob("*/recommendations.json"):
+            today_ids.update(item.get("paper", {}).get("arxiv_id") for item in read_json(path, []))
+        # Force runs may have included an older recommendation: keep its history filter.
+        for directory in self.output_root.glob("????-??-??"):
+            if directory.name < date_label:
+                today_ids.difference_update(
+                    item.get("paper", {}).get("arxiv_id")
+                    for item in read_recommendations(self.output_root, directory.name, self.config.profile_id))
+                older_batches = directory / "batches" / (self.config.profile_id or "default")
+                for path in older_batches.glob("*/recommendations.json"):
+                    today_ids.difference_update(
+                        item.get("paper", {}).get("arxiv_id") for item in read_json(path, []))
+        return processed - today_ids
 
     def _verify_selected(self, selected, demo: bool) -> dict[str, VerifiedMetadata]:
         verified: dict[str, VerifiedMetadata] = {}
@@ -332,7 +345,7 @@ class DailyPipeline:
             self.output_root, date_label, self.config.profile_id
         )
         digest_path = run_dir / (f"index-{self.config.profile_id}.html" if self.config.profile_id else "index.html")
-        # The lock spans read/merge/publication, including independent GUI/CLI runs.
+        # The lock spans read/backup/publication, including independent GUI/CLI runs.
         lock_path = self.output_root / f"publication-{self.config.profile_id or 'default'}.lock"
         batch_dir = run_dir / "batches" / (self.config.profile_id or "default") / uuid.uuid4().hex
         batch_dir.mkdir(parents=True, exist_ok=True)
@@ -343,12 +356,7 @@ class DailyPipeline:
             previous = read_recommendations(self.output_root, date_label, self.config.profile_id)
             write_json(batch_dir / "recommendations.json", recommendations)
             write_json(batch_dir / "previous.json", previous)
-            merged = {}
-            for item in [*recommendations, *previous]:
-                raw = item.get("paper") or {}
-                if raw.get("arxiv_id"):
-                    merged.setdefault((raw["arxiv_id"], raw.get("version")), item)
-            daily = list(merged.values())
+            daily = recommendations
             write_json(profile_path, daily)
             legacy_path = run_dir / "recommendations.json"
             if profile_path != legacy_path:
@@ -362,7 +370,7 @@ class DailyPipeline:
             render_recommendations(daily_papers, daily_metadata, digest_path, date_label)
             if digest_path.name != "index.html":
                 shutil.copyfile(digest_path, run_dir / "index.html")
-        # Email only the current batch; the daily page contains the full history.
+        # Email and the daily page both contain the latest batch.
         html_body = render_recommendations(selected, verified, batch_dir / "index.html", date_label)
         if not demo and deliver:
             send_digest(

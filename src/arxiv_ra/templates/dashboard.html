@@ -150,7 +150,7 @@
       <section class="inspector-section metadata-section">
         <h2><i class="far fa-clock" aria-hidden="true"></i>快速信息</h2>
         <dl class="metadata-grid">
-          <div><dt>arXiv ID</dt><dd id="inspector-id">{{ selected.paper.arxiv_id }}</dd></div>
+          <div><dt>arXiv ID</dt><dd><a id="inspector-arxiv-link" class="arxiv-detail-link" href="{{ selected.paper.abs_url }}" target="_blank" rel="noopener noreferrer" title="在新标签页打开 arXiv 论文页面"><span id="inspector-id">{{ selected.paper.arxiv_id }}</span> <i class="fas fa-external-link-alt" aria-hidden="true"></i></a></dd></div>
           <div><dt>提交日期</dt><dd id="inspector-published">{{ (selected.paper.published or '')[:10] or '待核实' }}</dd></div>
           <div><dt>类别</dt><dd id="inspector-category">{{ selected.paper.primary_category }}</dd></div>
           <div><dt>更新日期</dt><dd id="inspector-updated">{{ (selected.paper.updated or '')[:10] or '待核实' }}</dd></div>

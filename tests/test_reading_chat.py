@@ -122,6 +122,45 @@ def test_sse_delivers_partial_answer_and_reconnects_without_replay(config_path, 
         gate.set();server.should_exit=True;thread.join(10);sock.close()
 
 
+@pytest.mark.parametrize('latest_thoughts', [True, False])
+def test_reasoning_keeps_latest_completion_after_restart(config_path, monkeypatch, latest_thoughts):
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY', 'fixture')
+    requests = []
+
+    def chunk(thought=None, text=None, calls=None):
+        return NS(choices=[NS(delta=NS(content=text, reasoning_content=thought,
+                                      tool_calls=calls), finish_reason=None)])
+
+    def complete(_self, **kwargs):
+        requests.append(1)
+        if len(requests) == 1:
+            yield chunk(thought='先查看论文信息。')
+            yield chunk(calls=[NS(index=0, id='metadata-1',
+                                 function=NS(name='metadata', arguments='{}'))])
+        else:
+            if latest_thoughts:
+                yield chunk(thought='根据最新材料，')
+                yield chunk(thought='组织回答。')
+            yield chunk(text='解释完成')
+
+    monkeypatch.setattr(Completions, 'create', complete)
+    expected = '根据最新材料，组织回答。' if latest_thoughts else '先查看论文信息。'
+    with TestClient(create_app(config_path)) as client:
+        sid = new_chat(client)['id']
+        client.post(f'/api/reading/sessions/{sid}/messages',
+                    json={'text': '解释', 'request_id': 'latest-reasoning'})
+        answer = wait_answer(client, sid)['messages'][-1]
+        assert answer['status'] == 'completed'
+        assert answer['reasoning'] == expected
+        assert answer['text'] == '解释完成'
+        assert len(requests) == 2
+    with TestClient(create_app(config_path)) as client:
+        restored = client.get(f'/api/reading/sessions/{sid}').json()
+        assert restored['messages'][-1]['reasoning'] == expected
+
+
 def test_rollback_archives_and_clears_future_context(config_path, monkeypatch):
     from types import SimpleNamespace as NS
     from openai.resources.chat.completions import Completions
