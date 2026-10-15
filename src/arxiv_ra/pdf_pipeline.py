@@ -8,7 +8,7 @@ import pymupdf as fitz
 from .config import PDFConfig
 from .models import FigureCandidate, ParsedPaper
 from .utils import normalize_space
-from .figure_sections import EXPERIMENT_HEADING_RE, END_BODY_RE, END_EXPERIMENT_RE
+from .figure_sections import EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE, is_body_end
 
 CAPTION_RE = re.compile(r"^(?:figure|fig\.?|图)\s*\d+[.:：\s]", re.I)
 FIGURE_CAPTION_RE = re.compile(r"^(?:figure|fig\.?)\s*(\d+)\s*[:.]", re.I)
@@ -105,19 +105,39 @@ def _extract_report_figures(
     for page_index in range(max_pages):
         page = document[page_index]
         headings = []
-        for block in page.get_text("dict").get("blocks", []):
+        text_blocks = page.get_text("dict").get("blocks", [])
+        midpoint = page.rect.width / 2
+        two_columns = (
+            any(block.get("lines") and block["bbox"][2] < midpoint + 12 for block in text_blocks)
+            and any(block.get("lines") and block["bbox"][0] > midpoint - 12 for block in text_blocks)
+        )
+        for block in text_blocks:
             for line in block.get("lines", []):
                 text = normalize_space("".join(span.get("text", "") for span in line.get("spans", [])))
-                if any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_BODY_RE, END_EXPERIMENT_RE)):
-                    headings.append((fitz.Rect(line["bbox"]).y0, text))
-        events: list[tuple[float, str, str | tuple[int, str, fitz.Rect]]] = [(y, "heading", text) for y, text in headings]
-        events.extend((rect.y0, "figure", (number, caption, rect))
+                if is_body_end(text) or any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE)):
+                    headings.append((fitz.Rect(line["bbox"]), text))
+        events: list[tuple[fitz.Rect, str | tuple[int, str, fitz.Rect]]] = list(headings)
+        events.extend((rect, (number, caption, rect))
                       for number, caption, rect in _figure_caption_blocks(page))
+        events.sort(key=lambda item: item[0].y0)
+        if two_columns:
+            ordered = []
+            band = []
+            for event in events:
+                rect = event[0]
+                if rect.x0 < midpoint - 12 and rect.x1 > midpoint + 12:
+                    ordered.extend(sorted(band, key=lambda item: (item[0].x0 >= midpoint - 12, item[0].y0)))
+                    ordered.append(event)
+                    band = []
+                else:
+                    band.append(event)
+            ordered.extend(sorted(band, key=lambda item: (item[0].x0 >= midpoint - 12, item[0].y0)))
+            events = ordered
         previous_captions: list[fitz.Rect] = []
-        for _, event, value in sorted(events, key=lambda item: item[0]):
+        for _, value in events:
             if isinstance(value, str):
                 section = value
-                if END_BODY_RE.match(section):
+                if is_body_end(section):
                     return extracted
                 if EXPERIMENT_HEADING_RE.match(section):
                     role = "experiment"

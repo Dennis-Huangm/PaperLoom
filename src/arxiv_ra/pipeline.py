@@ -25,6 +25,7 @@ from .ranker import matched_concept_groups, rank_papers, finish_explanation
 from .plan_selection import evaluate_plan, selectable
 from .render import render_recommendations, render_report
 from .report import finalize_report_structure
+from .report_figures import figure_number
 from .report_publication import prepare_publication, present_source_pages
 from .research_clients import ResearchClients
 from .utils import read_json, slugify, write_json
@@ -519,10 +520,6 @@ class DailyPipeline:
                         f"HTML 图片提取失败，已仅使用 PDF 图片：{type(exc).__name__}: {exc}",
                     )
                     html_figures = []
-
-                def figure_number(figure):
-                    match = re.match(r"(?:Figure|Fig\.?)\s*(\d+)", figure.caption, re.I)
-                    return int(match.group(1)) if match else 10_000 + figure.page
 
                 by_number = {figure_number(figure): figure for figure in pdf_figures}
                 for figure in html_figures:

@@ -44,3 +44,15 @@ def test_parse_html_figures_uses_single_complete_image_from_nested_panels() -> N
     specs = parse_html_figure_specs(html, "https://arxiv.org/html/1234.56789")
 
     assert [spec.number for spec in specs] == [1]
+
+
+def test_lettered_and_structural_appendices_are_excluded() -> None:
+    for appendix in (
+        '<h2>A Additional Results</h2>',
+        '<section class="ltx_appendix"><h2>More cases</h2>',
+    ):
+        html = ('<h2>4 Experiments</h2><figure class="ltx_figure"><img src="f5.png">'
+                '<figcaption>Figure 5: Results.</figcaption></figure>' + appendix
+                + '<figure class="ltx_figure"><img src="f6.png">'
+                '<figcaption>Figure 6: Supplement.</figcaption></figure>')
+        assert [s.number for s in parse_html_figure_specs(html, "https://arxiv.org/html/example")] == [5]

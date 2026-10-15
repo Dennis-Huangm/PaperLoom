@@ -74,7 +74,7 @@ def test_report_figures_include_experiment_on_boundary_page_but_not_appendix(tmp
         page.draw_rect(fitz.Rect(70, 300, 400, 420))
         page.insert_text((70, 440), "Figure 5: Revision budget results.")
         page = doc.new_page()
-        page.insert_text((70, 65), "Appendix A")
+        page.insert_text((70, 65), "A Additional Results")
         page.draw_rect(fitz.Rect(70, 100, 400, 200))
         page.insert_text((70, 230), "Figure 6: Supplementary results.")
         doc.save(pdf)
@@ -99,3 +99,15 @@ def test_plot_labels_do_not_start_experiments_and_columns_keep_complete_figures(
     figures = extract_report_figures(pdf, tmp_path / "out")
     assert [f.role for f in figures] == ["method", "method"]
     assert all(f.image_available for f in figures)
+
+
+def test_pdf_experiment_boundary_follows_columns_before_vertical_position(tmp_path: Path) -> None:
+    pdf = tmp_path / "column-transition.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.insert_text((70, 400), "4 Experiments")
+        page.draw_rect(fitz.Rect(320, 80, 520, 210))
+        page.insert_text((320, 235), "Figure 5: Experiment results.")
+        doc.save(pdf)
+    figures = extract_report_figures(pdf, tmp_path / "out")
+    assert [(f.role, f.image_available) for f in figures] == [("experiment", True)]

@@ -15,3 +15,10 @@ END_EXPERIMENT_RE = re.compile(
     r"^(?:\d+[.\s]+)?(?:conclusions?(?:\s+and\s+.*)?|limitations?|acknowledg(?:e)?ments?)\s*$",
     re.I,
 )
+
+# LaTeX often prints only the appendix letter and title, without “Appendix”.
+LETTERED_APPENDIX_RE = re.compile(r"^[A-Z](?:\.\d+)*\.?\s+[A-Z][^.!?\n]{0,100}$")
+
+
+def is_body_end(heading: str) -> bool:
+    return bool(END_BODY_RE.match(heading) or LETTERED_APPENDIX_RE.match(heading))
