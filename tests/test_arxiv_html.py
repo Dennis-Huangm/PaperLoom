@@ -56,3 +56,10 @@ def test_lettered_and_structural_appendices_are_excluded() -> None:
                 + '<figure class="ltx_figure"><img src="f6.png">'
                 '<figcaption>Figure 6: Supplement.</figcaption></figure>')
         assert [s.number for s in parse_html_figure_specs(html, "https://arxiv.org/html/example")] == [5]
+
+
+def test_document_title_starting_with_a_is_not_an_appendix() -> None:
+    html = ('<h1 class="ltx_title_document">A Unified Framework for Editing</h1>'
+            '<h2>3 Experiments</h2><figure class="ltx_figure"><img src="f5.png">'
+            '<figcaption>Figure 5: Results.</figcaption></figure>')
+    assert [s.number for s in parse_html_figure_specs(html, "https://arxiv.org/html/example")] == [5]

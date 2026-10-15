@@ -36,8 +36,10 @@ def parse_html_figure_specs(html_text: str, base_url: str) -> list[HtmlFigureSpe
         if node.find_parent(class_="ltx_appendix") is not None:
             break
         if node.name != "figure":
+            if "ltx_title_document" in (node.get("class") or []):
+                continue
             section = normalize_space(node.get_text(" ", strip=True))
-            if is_body_end(section):
+            if is_body_end(section, allow_lettered=role != "method"):
                 break
             if EXPERIMENT_HEADING_RE.match(section):
                 role = "experiment"

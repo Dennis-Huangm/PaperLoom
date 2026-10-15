@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 
 import pymupdf as fitz
@@ -106,6 +107,12 @@ def _extract_report_figures(
         page = document[page_index]
         headings = []
         text_blocks = page.get_text("dict").get("blocks", [])
+        font_sizes: Counter[float] = Counter()
+        for block in text_blocks:
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    font_sizes[round(span.get("size", 0), 1)] += len(span.get("text", ""))
+        body_size = font_sizes.most_common(1)[0][0] if font_sizes else 11.0
         midpoint = page.rect.width / 2
         two_columns = (
             any(block.get("lines") and block["bbox"][2] < midpoint + 12 for block in text_blocks)
@@ -114,7 +121,9 @@ def _extract_report_figures(
         for block in text_blocks:
             for line in block.get("lines", []):
                 text = normalize_space("".join(span.get("text", "") for span in line.get("spans", [])))
-                if is_body_end(text) or any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE)):
+                spans = line.get("spans", [])
+                heading_style = any(span.get("size", 0) > body_size * 1.1 or span.get("flags", 0) & 16 for span in spans)
+                if is_body_end(text, allow_lettered=heading_style) or any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE)):
                     headings.append((fitz.Rect(line["bbox"]), text))
         events: list[tuple[fitz.Rect, str | tuple[int, str, fitz.Rect]]] = list(headings)
         events.extend((rect, (number, caption, rect))
@@ -137,7 +146,7 @@ def _extract_report_figures(
         for _, value in events:
             if isinstance(value, str):
                 section = value
-                if is_body_end(section):
+                if is_body_end(section, allow_lettered=role != "method"):
                     return extracted
                 if EXPERIMENT_HEADING_RE.match(section):
                     role = "experiment"

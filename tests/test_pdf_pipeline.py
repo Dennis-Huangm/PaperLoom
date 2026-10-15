@@ -74,7 +74,7 @@ def test_report_figures_include_experiment_on_boundary_page_but_not_appendix(tmp
         page.draw_rect(fitz.Rect(70, 300, 400, 420))
         page.insert_text((70, 440), "Figure 5: Revision budget results.")
         page = doc.new_page()
-        page.insert_text((70, 65), "A Additional Results")
+        page.insert_text((70, 65), "A Additional Results", fontsize=14)
         page.draw_rect(fitz.Rect(70, 100, 400, 200))
         page.insert_text((70, 230), "Figure 6: Supplementary results.")
         doc.save(pdf)
@@ -111,3 +111,16 @@ def test_pdf_experiment_boundary_follows_columns_before_vertical_position(tmp_pa
         doc.save(pdf)
     figures = extract_report_figures(pdf, tmp_path / "out")
     assert [(f.role, f.image_available) for f in figures] == [("experiment", True)]
+
+
+def test_pdf_title_and_plot_label_are_not_lettered_appendix_headings(tmp_path: Path) -> None:
+    pdf = tmp_path / "title-label.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.insert_text((70, 65), "A Unified Framework for Editing", fontsize=18)
+        page.insert_text((70, 100), "3 Experiments", fontsize=14)
+        page.draw_rect(fitz.Rect(70, 130, 400, 270))
+        page.insert_text((90, 180), "A Strong Baseline")
+        page.insert_text((70, 295), "Figure 5: Results on benchmark A.")
+        doc.save(pdf)
+    assert [f.role for f in extract_report_figures(pdf, tmp_path / "out")] == ["experiment"]
