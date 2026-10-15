@@ -8,13 +8,10 @@ import pymupdf as fitz
 from .config import PDFConfig
 from .models import FigureCandidate, ParsedPaper
 from .utils import normalize_space
+from .figure_sections import EXPERIMENT_HEADING_RE, END_BODY_RE, END_EXPERIMENT_RE
 
 CAPTION_RE = re.compile(r"^(?:figure|fig\.?|图)\s*\d+[.:：\s]", re.I)
 FIGURE_CAPTION_RE = re.compile(r"^(?:figure|fig\.?)\s*(\d+)\s*[:.]", re.I)
-EXPERIMENT_HEADING_RE = re.compile(
-    r"^(?:(?:\d+(?:\.\d+)*)\s+)?(?:experiments?|experimental\s+(?:results?|setup))\s*$",
-    re.I,
-)
 MAIN_FIGURE_TERMS = {
     "overview": 6,
     "framework": 6,
@@ -59,13 +56,6 @@ def _overlaps_horizontally(rect: fitz.Rect, region: fitz.Rect) -> bool:
     return min(rect.x1, region.x1) - max(rect.x0, region.x0) > 4
 
 
-def _experiment_start_page(page_texts: list[str], max_pages: int) -> int:
-    for page_index, text in enumerate(page_texts[:max_pages]):
-        if any(EXPERIMENT_HEADING_RE.match(normalize_space(line)) for line in text.splitlines()):
-            return page_index
-    return max_pages
-
-
 def _figure_caption_blocks(page: fitz.Page) -> list[tuple[int, str, fitz.Rect]]:
     captions: list[tuple[int, str, fitz.Rect]] = []
     for block in page.get_text("dict").get("blocks", []):
@@ -101,7 +91,7 @@ def _figure_caption_blocks(page: fitz.Page) -> list[tuple[int, str, fitz.Rect]]:
     return captions
 
 
-def _extract_pre_experiment_figures(
+def _extract_report_figures(
     document: fitz.Document,
     output_dir: Path,
     page_texts: list[str],
@@ -109,14 +99,40 @@ def _extract_pre_experiment_figures(
 ) -> list[FigureCandidate]:
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    cutoff = _experiment_start_page(page_texts, max_pages)
+    role, section = "method", ""
     extracted: list[FigureCandidate] = []
     seen_numbers: set[int] = set()
-    for page_index in range(min(cutoff, max_pages)):
+    for page_index in range(max_pages):
         page = document[page_index]
-        for figure_number, caption, caption_rect in _figure_caption_blocks(page):
+        headings = []
+        for block in page.get_text("dict").get("blocks", []):
+            for line in block.get("lines", []):
+                text = normalize_space("".join(span.get("text", "") for span in line.get("spans", [])))
+                if any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_BODY_RE, END_EXPERIMENT_RE)):
+                    headings.append((fitz.Rect(line["bbox"]).y0, text))
+        events: list[tuple[float, str, str | tuple[int, str, fitz.Rect]]] = [(y, "heading", text) for y, text in headings]
+        events.extend((rect.y0, "figure", (number, caption, rect))
+                      for number, caption, rect in _figure_caption_blocks(page))
+        previous_captions: list[fitz.Rect] = []
+        for _, event, value in sorted(events, key=lambda item: item[0]):
+            if isinstance(value, str):
+                section = value
+                if END_BODY_RE.match(section):
+                    return extracted
+                if EXPERIMENT_HEADING_RE.match(section):
+                    role = "experiment"
+                elif END_EXPERIMENT_RE.match(section):
+                    role = "other"
+                continue
+            figure_number, caption, caption_rect = value
+            if role == "other":
+                continue
             if figure_number in seen_numbers:
                 continue
+            previous_caption_bottom = max(
+                (rect.y1 + 4 for rect in previous_captions if _overlaps_horizontally(rect, caption_rect)),
+                default=50.0,
+            )
             horizontal_region = fitz.Rect(
                 max(page.rect.x0, caption_rect.x0 - 3),
                 page.rect.y0,
@@ -127,7 +143,7 @@ def _extract_pre_experiment_figures(
             for info in page.get_images(full=True):
                 for image_rect in page.get_image_rects(int(info[0])):
                     if (
-                        image_rect.y0 >= 50
+                        image_rect.y0 >= previous_caption_bottom
                         and image_rect.y1 <= caption_rect.y0 + 4
                         and _overlaps_horizontally(image_rect, horizontal_region)
                     ):
@@ -136,27 +152,31 @@ def _extract_pre_experiment_figures(
                 drawing_rect = drawing.get("rect")
                 if (
                     drawing_rect
-                    and drawing_rect.y0 >= 50
+                    and drawing_rect.y0 >= previous_caption_bottom
                     and drawing_rect.y1 <= caption_rect.y0 + 4
                     and _overlaps_horizontally(drawing_rect, horizontal_region)
                 ):
                     visual_rects.append(drawing_rect)
-            if visual_rects:
-                top = max(50, min(rect.y0 for rect in visual_rects) - 5)
-            else:
-                top = max(50, caption_rect.y0 - page.rect.height * 0.45)
+            # Keep the nearest vertical cluster. Earlier tables/figures in the
+            # same column must not become part of this figure's illustration.
+            cluster_top = caption_rect.y0
+            for rect in sorted(visual_rects, key=lambda r: r.y1, reverse=True):
+                if cluster_top - rect.y1 > 35:
+                    break
+                cluster_top = min(cluster_top, rect.y0)
+            top = max(previous_caption_bottom, cluster_top - 5)
             bottom = caption_rect.y0 - 4
-            if bottom - top < 70:
-                continue
+            previous_captions.append(caption_rect)
+            available = cluster_top < caption_rect.y0 and bottom - top >= 70
             clip = fitz.Rect(horizontal_region.x0, top, horizontal_region.x1, bottom)
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(2.2, 2.2), clip=clip, alpha=False)
             path = figures_dir / f"page-figure-{figure_number:02d}-page-{page_index + 1:02d}.png"
-            pixmap.save(path)
+            if available:
+                page.get_pixmap(matrix=fitz.Matrix(2.2, 2.2), clip=clip, alpha=False).save(path)
             candidate = FigureCandidate(
                 path=path,
                 page=page_index + 1,
                 caption=caption,
-                kind="page_figure",
+                kind="page_figure", role=role, section=section, image_available=available,
             )
             candidate.score = score_figure(candidate) + 5
             extracted.append(candidate)
@@ -164,7 +184,7 @@ def _extract_pre_experiment_figures(
     return extracted
 
 
-def extract_pre_experiment_figures(
+def extract_report_figures(
     pdf_path: Path,
     output_dir: Path,
     max_pages: int = 60,
@@ -173,9 +193,15 @@ def extract_pre_experiment_figures(
     try:
         page_count = min(len(document), max_pages)
         page_texts = [document[index].get_text("text") for index in range(page_count)]
-        return _extract_pre_experiment_figures(document, output_dir, page_texts, page_count)
+        return _extract_report_figures(document, output_dir, page_texts, page_count)
     finally:
         document.close()
+
+
+def extract_pre_experiment_figures(pdf_path: Path, output_dir: Path, max_pages: int = 60) -> list[FigureCandidate]:
+    """Compatibility entry point for callers requesting method figures only."""
+    return [figure for figure in extract_report_figures(pdf_path, output_dir, max_pages)
+            if figure.role == "method" and figure.image_available]
 
 
 class PDFParser:
@@ -186,7 +212,7 @@ class PDFParser:
         if self.config.use_docling_if_available:
             try:
                 parsed = self._parse_docling(pdf_path, output_dir)
-                parsed.figures = extract_pre_experiment_figures(
+                parsed.figures = extract_report_figures(
                     pdf_path, output_dir, self.config.max_pages
                 ) + parsed.figures
                 return parsed
@@ -278,7 +304,7 @@ class PDFParser:
                     figures.append(candidate)
                 except RuntimeError:
                     continue
-        page_figures = _extract_pre_experiment_figures(
+        page_figures = _extract_report_figures(
             document, output_dir, page_texts, max_pages
         )
         document.close()

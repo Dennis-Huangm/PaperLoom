@@ -7,7 +7,7 @@
 
   <section class="task-layout">
     <article class="task-pane primary-task">
-      <header><span class="task-icon"><i class="far fa-file-alt" aria-hidden="true"></i></span><div><h2>生成完整阅读报告</h2><p>下载全文、核验元数据、提取实验前方法图并阅读全文。</p></div></header>
+      <header><span class="task-icon"><i class="far fa-file-alt" aria-hidden="true"></i></span><div><h2>生成完整阅读报告</h2><p>下载全文、核验元数据、解读方法图与正文实验图并阅读全文。</p></div></header>
       <form class="job-form task-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
         <label for="arxiv-id">arXiv ID</label>
         <div class="joined-control"><input id="arxiv-id" name="arxiv_id" placeholder="例如：2407.05600" required><button class="button primary" type="submit"><i class="fas fa-play" aria-hidden="true"></i>开始生成</button></div>

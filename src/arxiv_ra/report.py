@@ -16,6 +16,7 @@ from .source_spans import (source_spans, span_batches, span_material, cited_span
 from .report_metadata import metadata_link, protect_metadata
 from .report_completeness import normalize_table_titles
 from .report_tables import ReportTables, GeneratedReport
+from .report_figures import experiment_material, render_experiment_figures
 
 
 CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论文片段抽取信息，不得补写不存在的结论。
@@ -27,6 +28,7 @@ CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论�
 数学表头及数值必须保留上下标和数量级，用 LaTeX 或 Unicode 上下标表达。例如参数量单位 ×10⁶ 不能平铺成 ×106，FLOPs 的 10¹⁸ 不能写成 1018；对照解析正文中的数学标记与原文上下文，不能因 PDF 文本平铺而丢失幂次。
 表格说明与脚注用自然中文解释具体含义，明确规模、单位、指标方向和比较条件；保留必要英文列名，不能只贴英文表注或生硬逐词翻译。
 每张表只写一个带原表号的标题和一段中文表注；不另写“原文标题”“表注说明”等重复包装，不把标题再复制到表注。中文表注完整保留单位、条件、符号和脚注，但同一含义只解释一次；结果趋势分析放在正文，不在表注中重复。
+逐图保留正文实验图的原 Figure 编号、实验条件、比较对象、结果趋势及作者分析，不因图像无法解析而省略正文支持的结果。
 片段编号是内部处理顺序，不是 PDF 页码，也不是可引用的原文位置。"""
 
 
@@ -184,11 +186,13 @@ def finalize_report_structure(
     markdown_text = normalize_table_separators(markdown_text, TOKEN)
     markdown_text = normalize_table_titles(markdown_text)
     markdown_text = _repair_inline_canonical_headings(markdown_text)
-    method_figures = (
+    figures = (
         main_figure
         if isinstance(main_figure, list)
         else ([main_figure] if main_figure is not None else [])
     )
+    method_figures = [f for f in figures if f.role == "method" and f.image_available]
+    markdown_text = re.sub(r"(?s)<!-- method-figures -->.*?<!-- /method-figures -->", "", markdown_text)
     figure_analysis = ""
     for heading in ("主图说明", "主图"):
         content, markdown_text = _pop_section(markdown_text, heading)
@@ -248,14 +252,15 @@ def finalize_report_structure(
             )
         if clean_analysis and not all(figure.explanation for figure in method_figures):
             blocks.extend(["#### 图示解读", clean_analysis])
-        figure_block = "\n\n".join(part for part in blocks if part).strip()
+        figure_block = "<!-- method-figures -->\n\n" + "\n\n".join(part for part in blocks if part).strip() + "\n\n<!-- /method-figures -->"
         if re.search(r"(?m)^##\s+核心方法\s*$", markdown_text):
             markdown_text = re.sub(
                 r"(?m)^(##\s+核心方法\s*)$",
-                lambda match: f"{match.group(1)}\n\n{figure_block.rstrip()}",
+                lambda match: f"{match.group(1)}\n\n{figure_block.rstrip()}\n\n",
                 markdown_text,
                 count=1,
             )
+    markdown_text = render_experiment_figures(markdown_text, figures)
     markdown_text = _normalize_top_level_sections(markdown_text)
     markdown_text = re.sub(r"\n{3,}", "\n\n", markdown_text).strip() + "\n"
     return markdown_text
@@ -292,13 +297,13 @@ class ReportGenerator:
             return self._extractive_report(paper, metadata, main_figure)
         if not parsed or not parsed.text.strip():
             return self._extractive_report(paper, metadata, main_figure)
-        method_figures = (
+        report_figures = (
             main_figure if isinstance(main_figure, list) else ([main_figure] if main_figure else [])
         )
         checkpoint = current_report_checkpoint()
         if checkpoint:
             checkpoint.configure_model(self.config, self.llm)
-        self._explain_figures(paper, method_figures)
+        self._explain_figures(paper, report_figures, parsed)
         chunks, banks, spans = self.analysis_inputs(parsed)
         evidence_notes: list[str] = []
         if checkpoint:
@@ -356,10 +361,10 @@ class ReportGenerator:
             "实验章节之前的可靠方法图：\n"
             + "\n".join(
                 f"- {figure.caption or '图注未提取到'}；AI 图示解读：{figure.explanation or '未生成'}"
-                for figure in method_figures
+                for figure in report_figures if figure.role == "method"
             )
-            if method_figures
-            else "没有可靠方法图；不得生成任何图示相关标题、说明或占位文本。"
+            if any(figure.role == "method" for figure in report_figures)
+            else "没有可靠方法图；跳过方法图解析。"
         )
         task_progress("正文分片已完成，正在整合或复用完整报告…", 84)
         report = self._chat(
@@ -377,6 +382,16 @@ class ReportGenerator:
 
 ## 方法图证据（仅供理解方法；不要在报告中复述或创建图示小节）
 {figure_text}
+
+## 实验图材料（按原文顺序，全部保留）
+{experiment_material(report_figures)}
+
+逐张使用独立一行的 `[[实验图:figure-N]]` 在对应实验讨论中选择展示位置，N 必须来自上面的材料。
+每张图只展示一次，其他地方用原 Figure 编号引用。混合设置与结果的图保留完整图，按主要用途放置。
+设置、数据与评测流程图放“实验设置”，结果对比、定性案例、消融图放“关键结果”。各章节内实验主题沿用原论文顺序。
+图的位置紧邻对应分析，解释实验条件、比较对象、趋势、结论及限制，不要只有图而没有实验分析。
+程序负责插入原图及图示解读，不要重复生成图片链接或复述已有图示解读；正文负责解释实验意义。
+即使图片提取或视觉解读失败，也保留原文图注与正文支持的实验分析，不猜测视觉细节。
 
 ## 分片证据笔记
 {evidence_text}
@@ -422,8 +437,8 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 3. 关键实验数值必须保留支持它的原文片段 ID；不要重新抄写摘录或自行生成页码。
 4. 不得将 arXiv 首发日期写成正式发表日期。
 5. 所有数学公式必须使用标准 LaTeX：行内公式用 `\\(...\\)`，独立公式用 `\\[...\\]`；不得用普通方括号代替公式定界符。
-6. 图示内容由后续定稿器统一插入。你不得输出“方法图解析”“主图说明”或任何以 Figure/Fig. 编号开头的小节，也不得逐图复述图注；只需在普通方法叙述中准确说明机制。
-7. 如果没有可靠方法图，完全跳过图示内容，不得写“未提取到主图”等提示。
+6. 方法图由后续定稿器统一插入；不得输出“方法图解析”“主图说明”或在核心方法中创建 Figure/Fig. 编号小节。实验图使用上面的实验图位置指令，按实验主题组织分析。
+7. 如果没有可靠方法图，跳过方法图内容，不得写“未提取到主图”等提示；不影响实验图及实验分析。
 8. 不得生成“阅读建议”或“核验备注”小节。
 9. {CORE_METHOD_GUIDANCE}
 10. {SYNTHESIS_ID_GUIDANCE}
@@ -451,41 +466,55 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         report = protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
         return GeneratedReport(report, table_catalogue, raw_draft)
 
-    def _explain_figures(self, paper: Paper, figures: list[FigureCandidate]) -> None:
+    def _explain_figures(self, paper: Paper, figures: list[FigureCandidate], parsed: ParsedPaper | None = None) -> None:
         checkpoint = current_report_checkpoint()
         for index, figure in enumerate(figures):
             if figure.explanation:
                 continue
-            inputs = ["figure-explanation-v1", file_digest(figure.path), paper.title, paper.abstract, figure.caption] if checkpoint else None
+            context = ""
+            if parsed and figure.role == "experiment":
+                if 0 < figure.page <= len(parsed.page_texts):
+                    context = parsed.page_texts[figure.page - 1][:10000]
+                else:
+                    context = "\n".join(page for page in parsed.page_texts if figure.caption[:30] in normalize_space(page))[:10000]
+            inputs = ["figure-explanation-v2", file_digest(figure.path) if figure.image_available else "missing",
+                      paper.title, paper.abstract, figure.caption, figure.role, context] if checkpoint else None
             cached = checkpoint.get(f"figure-{index}", inputs) if checkpoint else None
             if cached:
                 figure.explanation = cached
                 continue
             task_checkpoint()
             try:
+                if not figure.image_available:
+                    raise ValueError("image unavailable")
+                options = {"role": "experiment", "context": context} if figure.role == "experiment" else {}
                 figure.explanation = self.llm.describe_figure(
-                    figure.path,
-                    paper.title,
-                    paper.abstract,
-                    figure.caption,
+                    figure.path, paper.title, paper.abstract, figure.caption, **options,
                 )
+                if not figure.explanation.strip():
+                    raise ValueError("empty figure explanation")
             except Exception as vision_exc:
                 try:
+                    guidance = ("解释实验条件、坐标或子图含义、比较对象、趋势和结论边界。只依据图注和正文，不猜测视觉细节。"
+                                if figure.role == "experiment" else "解释图的输入、关键步骤、输出和核心含义。")
                     figure.explanation = self.llm.chat(
-                        "你是论文图示讲解助手。不得照抄或逐字翻译原始 caption。",
+                        "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
                         f"""论文：{paper.title}
 摘要：{paper.abstract[:1200]}
 原始 caption：{figure.caption}
 
-请用 2-4 句通俗中文重新解释图的输入、关键步骤、输出和核心含义。不要使用“图注写道”等措辞。""",
+原文上下文：{context}
+请用 2-4 句通俗中文{guidance}""",
                     ).strip()
+                    if figure.role == "experiment":
+                        figure.explanation = "（依据原文图注与正文，未作视觉解读。）" + (figure.explanation or figure.caption)
                 except Exception as text_exc:
                     task_warning(
                         "LLM 图片解读",
-                        "方法图的视觉与文本解读均失败，报告将保留原始图注。"
+                        "图示的视觉与文本解读均失败，报告将保留原始图注。"
                         f"请检查模型是否支持图片输入（{type(vision_exc).__name__}; {type(text_exc).__name__}）。",
                     )
-                    figure.explanation = ""
+                    figure.explanation = ("（保留原文图注，未作视觉解读。）" if figure.role == "experiment" else "") + figure.caption
             if checkpoint and figure.explanation:
                 checkpoint.put(f"figure-{index}", inputs, figure.explanation)
 

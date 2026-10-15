@@ -155,6 +155,9 @@ class FigureCandidate:
     score: float = 0.0
     kind: str = "embedded"
     explanation: str = ""
+    role: str = "method"
+    section: str = ""
+    image_available: bool = True
 
 
 @dataclass(slots=True)

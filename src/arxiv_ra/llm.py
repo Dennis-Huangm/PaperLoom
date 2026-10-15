@@ -100,6 +100,7 @@ class LLMClient:
         paper_title: str,
         paper_abstract: str,
         caption: str,
+        *, role: str = "method", context: str = "",
     ) -> str:
         if not self.client:
             return ""
@@ -115,6 +116,13 @@ class LLMClient:
 3. 读者应从图中抓住的核心方法思想是什么。
 
 只输出 3-5 句连贯说明，不要标题，不要逐字复述图注，不要声称看到了无法确认的细节。"""
+        if role == "experiment":
+            prompt = f"""论文标题：{paper_title}
+原图注：{caption}
+原文上下文：{context}
+请观察完整实验图，用 3-5 句连贯中文解释实验条件、坐标轴或各子图、比较对象、主要趋势及支持的结论。
+区分图中可见事实与作者正文解释，保留关键单位和指标方向，不能从曲线目测编造精确数值或因果结论。
+混合流程和结果的图须解释各部分。只输出解读正文，不输出标题，不猜测无法确认的细节。"""
         kwargs: dict[str, Any] = {
             "model": self.config.model,
             "messages": [

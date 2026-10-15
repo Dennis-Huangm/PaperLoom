@@ -18,7 +18,7 @@ from .recent_interest import (RecentInterest, build_recent_interest, direction_d
                               prefilter_candidates, RECENT_LIBRARY_LIMIT)
 from .evidence import attach_evidence
 from .library import PaperLibraryStore
-from .models import Paper, ReportArtifact, VerifiedMetadata
+from .models import FigureCandidate, Paper, ReportArtifact, VerifiedMetadata
 from .reading_state import _locked
 from .obsidian import ObsidianExporter
 from .ranker import matched_concept_groups, rank_papers, finish_explanation
@@ -476,7 +476,8 @@ class DailyPipeline:
         metadata = VerifiedMetadata(title=paper.title, authors=paper.authors, sources=[paper.metadata_label])
         parsed = None
         main_figure = None
-        method_figures = []
+        method_figures: list[FigureCandidate] = []
+        report_figures: list[FigureCandidate] = []
         checkpoint = current_report_checkpoint()
         errors: list[str] = [paper.resolution_note] if paper.resolution_note else []
         if not demo:
@@ -510,12 +511,12 @@ class DailyPipeline:
                     figure for figure in parsed.figures if figure.kind == "page_figure"
                 ]
                 try:
-                    task_progress("正在补充提取论文方法图…", 54)
+                    task_progress("正在补充提取论文方法图与实验图…", 54)
                     html_figures = self.clients.arxiv_html.fetch(f"{paper.arxiv_id}{revision}", paper_dir)
                 except Exception as exc:
                     task_warning(
                         "arXiv HTML",
-                        f"HTML 方法图提取失败，已仅使用 PDF 图片：{type(exc).__name__}: {exc}",
+                        f"HTML 图片提取失败，已仅使用 PDF 图片：{type(exc).__name__}: {exc}",
                     )
                     html_figures = []
 
@@ -525,15 +526,26 @@ class DailyPipeline:
 
                 by_number = {figure_number(figure): figure for figure in pdf_figures}
                 for figure in html_figures:
-                    by_number[figure_number(figure)] = figure
-                selected_figures = [by_number[number] for number in sorted(by_number)][:8]
+                    number = figure_number(figure)
+                    existing = by_number.get(number)
+                    if existing:
+                        figure.page = existing.page
+                        existing.role, existing.section = figure.role, figure.section
+                    if figure.image_available or not existing or not existing.image_available:
+                        by_number[number] = figure
+                selected_figures = [by_number[number] for number in sorted(by_number)]
                 for index, figure in enumerate(selected_figures, start=1):
+                    if figure.role == "method" and (not figure.image_available or len(method_figures) >= 8):
+                        continue
                     suffix = figure.path.suffix or ".png"
-                    figure_copy = paper_dir / f"method-figure-{index:02d}{suffix}"
-                    if figure_copy.resolve() != figure.path.resolve():
+                    prefix = "experiment" if figure.role == "experiment" else "method"
+                    figure_copy = paper_dir / f"{prefix}-figure-{index:02d}{suffix}"
+                    if figure.image_available and figure_copy.resolve() != figure.path.resolve():
                         shutil.copy2(figure.path, figure_copy)
                     figure.path = figure_copy
-                    method_figures.append(figure)
+                    report_figures.append(figure)
+                    if figure.role == "method":
+                        method_figures.append(figure)
                 main_figure = method_figures[0] if method_figures else None
             except CheckpointWriteError:
                 raise
@@ -546,7 +558,7 @@ class DailyPipeline:
         task_progress("正在调用模型阅读全文并撰写报告…", 65)
         report_quality = "full" if parsed and parsed.text.strip() and self.clients.llm.enabled else "abstract"
         try:
-            report = self.clients.reporter.generate(paper, metadata, parsed, method_figures)
+            report = self.clients.reporter.generate(paper, metadata, parsed, report_figures)
         except CheckpointWriteError:
             raise
         except Exception as exc:
@@ -557,14 +569,14 @@ class DailyPipeline:
                 "模型调用失败，已生成摘要级回退报告。"
                 f"请检查 LLM Base URL、模型名和服务状态（{type(exc).__name__}: {exc}）。",
             )
-            report = self.clients.reporter._extractive_report(paper, metadata, method_figures)
+            report = self.clients.reporter._extractive_report(paper, metadata, report_figures)
         table_catalogue = getattr(report, 'tables', None)
         if table_catalogue is not None:
             write_json(paper_dir / 'tables.json', table_catalogue.to_dict())
             (paper_dir / 'report-draft.md').write_text(report.draft, encoding='utf-8')
         if errors:
             report += "\n\n## 运行警告\n\n" + "\n".join(f"- {error}" for error in errors)
-        report = prepare_publication(report, paper, metadata, method_figures, table_catalogue,
+        report = prepare_publication(report, paper, metadata, report_figures, table_catalogue,
                                      finalize_report_structure)
         from .report_citations import strip_tokens, unavailable_citations
         unlinked_report = report
@@ -609,6 +621,13 @@ class DailyPipeline:
                 for figure in method_figures
             ],
         )
+        write_json(paper_dir / "experiment-figures.json", [
+            {"filename": figure.path.name if figure.image_available else None,
+             "page": figure.page, "caption": figure.caption, "source": figure.kind,
+             "section": figure.section, "image_available": figure.image_available,
+             "explanation": figure.explanation}
+            for figure in report_figures if figure.role == "experiment"
+        ])
         write_json(paper_dir / "metadata.json", {"profile_id": profile, "profile_name": self.config.profile_name,
                    "paper": paper.to_dict(), "verified": metadata.to_dict(), "parser": parsed.parser if parsed else None,
                    "report_quality": report_quality, "errors": errors,

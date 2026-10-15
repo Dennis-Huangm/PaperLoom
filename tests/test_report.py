@@ -4,6 +4,68 @@ from arxiv_ra.models import FigureCandidate
 from arxiv_ra.report import CORE_METHOD_GUIDANCE, ReportGenerator, finalize_report_structure
 
 
+def test_experiment_figures_stay_with_discussion_and_survive_repeated_finalization() -> None:
+    report = """# Paper
+## 核心方法
+方法。
+## 实验设置
+评测流程。
+[[实验图:figure-4]]
+## 关键结果
+### 修订预算
+[[实验图:figure-5]]
+9B 前两轮改善明显，4B 改善有限。
+再次参见 [[实验图:figure-5]]。
+"""
+    figures = [
+        FigureCandidate(Path("method-figure-01.png"), 2, "Figure 1: Method."),
+        FigureCandidate(Path("experiment-figure-04.png"), 5, "Figure 4: Evaluation setup.",
+                        role="experiment", explanation="展示评测设置。"),
+        FigureCandidate(Path("experiment-figure-05.png"), 6, "Figure 5: Revision results.",
+                        role="experiment", explanation="修订预算增加后的趋势。"),
+        FigureCandidate(Path("missing.png"), 7, "Figure 6: Ablation results.",
+                        role="experiment", image_available=False),
+    ]
+    once = finalize_report_structure(report, figures)
+    final = finalize_report_structure(once, figures)
+    assert final == once
+    assert final.count("![论文实验图 Figure 5]") == 1
+    assert final.index("## 实验设置") < final.index("experiment-figure-04.png") < final.index("## 关键结果")
+    assert final.index("### 修订预算") < final.index("experiment-figure-05.png") < final.index("9B 前两轮")
+    assert "原图未能提取" in final and "Figure 6" in final
+    assert "missing.png" not in final
+    assert "[[实验图:" not in final
+
+
+def test_experiment_image_follows_its_discussion_when_model_omits_slot() -> None:
+    report = "# Paper\n\n## 关键结果\n\n### 修订预算\n\nFigure 5 显示收益趋缓。\n\n### 消融\n\n其他实验。\n"
+    figure = FigureCandidate(Path("experiment-figure-05.png"), 6, "Figure 5: Revision budget.", role="experiment")
+    final = finalize_report_structure(report, [figure])
+    assert final.index("收益趋缓") < final.index("experiment-figure-05.png") < final.index("### 消融")
+
+
+def test_generation_keeps_text_evidence_when_both_figure_interpretations_fail() -> None:
+    from types import SimpleNamespace
+    from arxiv_ra.config import LLMConfig
+    from arxiv_ra.models import Paper, ParsedPaper, VerifiedMetadata
+
+    def chat(system, prompt):
+        if "你是论文图示讲解助手" in system:
+            raise RuntimeError("text service unavailable")
+        return "# Paper\n\n## 关键结果\n\n[[实验图:figure-5]]\n\n9B 前两轮提升，4B 改善有限。"
+
+    def vision(*args, **kwargs):
+        raise RuntimeError("vision unavailable")
+
+    figure = FigureCandidate(Path("figure.png"), 1, "Figure 5: Revision budget results.", role="experiment")
+    generator = ReportGenerator(SimpleNamespace(enabled=True, chat=chat, describe_figure=vision), LLMConfig())
+    paper = Paper.from_dict({"arxiv_id": "2501.00001", "title": "Paper"})
+    report = generator.generate(paper, VerifiedMetadata(), ParsedPaper("Revision results", ["Revision results"]), [figure])
+    final = finalize_report_structure(report, [figure])
+    assert "9B 前两轮提升，4B 改善有限" in final
+    assert "Revision budget results" in final and "未作视觉解读" in final
+
+
 def test_normalize_title_replaces_literal_prompt_placeholder() -> None:
     report = "# 原始英文标题\n\n## 一句话总结\n内容"
 
@@ -47,7 +109,7 @@ def test_finalize_report_moves_figure_into_core_method_and_removes_unwanted_sect
     assert "## 主图说明" not in final
     assert "## 阅读建议" not in final
     assert "## 核验备注" not in final
-    assert "## 核心方法\n\n### 方法图解析" in final
+    assert "## 核心方法\n\n<!-- method-figures -->\n\n### 方法图解析" in final
     assert "![论文方法图 Figure 1](main-figure.png)" in final
     assert "该图展示规划、工具调用与视觉反馈之间的信息流。" in final
 

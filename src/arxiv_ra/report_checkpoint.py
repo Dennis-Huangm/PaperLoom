@@ -101,7 +101,7 @@ class ReportCheckpoint:
             return None
         try:
             data = read_json(path)
-            if data["config"] != self.pdf_config or data["version"] != 1:
+            if data["config"] != self.pdf_config or data["version"] != 2:
                 raise ValueError("parser settings changed")
             for name, digest in data["files"].items():
                 if file_digest(self._file(name)) != digest:
@@ -116,7 +116,7 @@ class ReportCheckpoint:
             figures = [FigureCandidate(path=target / item["path"], **{k: v for k, v in item.items() if k != "path"})
                        for item in raw["figures"]]
             for item in raw["figures"]:
-                if item["path"] not in data["files"]:
+                if item.get("image_available", True) and item["path"] not in data["files"]:
                     raise ValueError("unverified figure")
             parsed = ParsedPaper(text=raw["text"], page_texts=raw["page_texts"],
                                  parser=raw["parser"], total_pages=raw["total_pages"], figures=figures)
@@ -146,10 +146,11 @@ class ReportCheckpoint:
             name = f"figures/{index}{figure.path.suffix}"
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(figure.path, destination)
-            files[name] = file_digest(destination)
+            if figure.image_available:
+                shutil.copy2(figure.path, destination)
+                files[name] = file_digest(destination)
             raw["figures"][index]["path"] = name
-        self._write(self.root / "parsed.json", {"version": 1, "config": self.pdf_config,
+        self._write(self.root / "parsed.json", {"version": 2, "config": self.pdf_config,
                     "files": files, "parsed": raw, "parsed_hash": fingerprint(raw)})
         self.source = fingerprint([self.pdf_config, files["paper.pdf"], fingerprint(raw)])
         self.publish(parsed=True)

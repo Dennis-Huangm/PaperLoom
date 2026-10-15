@@ -1,7 +1,7 @@
 from arxiv_ra.arxiv_html import parse_html_figure_specs
 
 
-def test_parse_html_figures_stops_before_experiments_and_skips_split_images() -> None:
+def test_parse_html_figures_preserves_experiments_and_split_caption_before_appendix() -> None:
     html = """
     <html><body>
       <h2>1 Introduction</h2>
@@ -16,12 +16,16 @@ def test_parse_html_figures_stops_before_experiments_and_skips_split_images() ->
       </figure>
       <h2>3 Experiments</h2>
       <figure class="ltx_figure"><img src="paper/result.png"><figcaption>Figure 3: Results.</figcaption></figure>
+      <h2>Appendix A</h2>
+      <figure class="ltx_figure"><img src="extra.png"><figcaption>Figure 4: Supplement.</figcaption></figure>
     </body></html>
     """
 
     specs = parse_html_figure_specs(html, "https://arxiv.org/html/1234.56789")
 
-    assert len(specs) == 1
+    assert [spec.number for spec in specs] == [1, 2, 3]
+    assert [spec.role for spec in specs] == ["method", "method", "experiment"]
+    assert specs[1].image_url == ""
     assert specs[0].number == 1
     assert specs[0].image_url == "https://arxiv.org/html/paper/figure1.png"
 

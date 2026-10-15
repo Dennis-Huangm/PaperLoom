@@ -9,6 +9,42 @@ from arxiv_ra.pipeline import DailyPipeline
 from arxiv_ra.utils import read_json, write_json
 
 
+def test_report_artifact_keeps_all_experiment_images_beyond_eight(tmp_path: Path) -> None:
+    import fitz
+
+    pdf = tmp_path / "input.pdf"
+    with fitz.open() as doc:
+        for number in range(1, 12):
+            page = doc.new_page()
+            if number == 2:
+                page.insert_text((70, 65), "3 Experiments")
+            page.draw_rect(fitz.Rect(70, 100, 400, 220))
+            page.insert_text((70, 245), f"Figure {number}: Result comparison.")
+        doc.save(pdf)
+    paper = Paper(
+        arxiv_id="2501.00001", title="Figure coverage", authors=[Author("Researcher")],
+        abstract="Experiment results", categories=["cs.AI"], primary_category="cs.AI",
+        published=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        updated=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        abs_url="https://arxiv.org/abs/2501.00001v1", pdf_url="", version=1,
+    )
+    config = AppConfig(output_dir=str(tmp_path / "run"))
+    config.pdf.use_docling_if_available = False
+    config.llm.api_key_env = "PAPERLOOM_TEST_NO_KEY"
+    config.llm.base_url_env = "PAPERLOOM_TEST_NO_URL"
+    pipeline = DailyPipeline(config, tmp_path)
+    pipeline.clients.verifier = SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))
+    pipeline.clients.arxiv_html = SimpleNamespace(fetch=lambda *_args: [])
+    result = pipeline.report_arxiv_id("2501.00001v1", snapshot=paper, local_pdf=pdf)
+    report = result.read_text(encoding="utf-8")
+    assert report.count("![论文实验图") == 10
+    assert report.count("![论文方法图") == 1
+    assert "Figure 11" in report
+    inventory = read_json(result.parent / "experiment-figures.json", [])
+    assert len(inventory) == 10
+    assert all((result.parent / item["filename"]).is_file() for item in inventory)
+
+
 def test_report_generation_does_not_overwrite_daily_digest(tmp_path: Path) -> None:
     paper = Paper(
         arxiv_id="2501.00001",

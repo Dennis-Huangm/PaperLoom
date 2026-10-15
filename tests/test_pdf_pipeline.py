@@ -4,6 +4,7 @@ import fitz
 
 from arxiv_ra.models import FigureCandidate
 from arxiv_ra.pdf_pipeline import (
+    extract_report_figures,
     extract_pre_experiment_figures,
     is_reliable_main_figure,
     score_figure,
@@ -61,3 +62,40 @@ def test_extracts_complete_figures_before_experiments_only(tmp_path: Path) -> No
     assert [figure.page for figure in figures] == [1, 2]
     assert all(figure.kind == "page_figure" for figure in figures)
     assert all(figure.path.exists() for figure in figures)
+
+
+def test_report_figures_include_experiment_on_boundary_page_but_not_appendix(tmp_path: Path) -> None:
+    pdf = tmp_path / "mixed.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.draw_rect(fitz.Rect(70, 65, 400, 160))
+        page.insert_text((70, 180), "Figure 1: Method overview.")
+        page.insert_text((70, 260), "3 Experiments")
+        page.draw_rect(fitz.Rect(70, 300, 400, 420))
+        page.insert_text((70, 440), "Figure 5: Revision budget results.")
+        page = doc.new_page()
+        page.insert_text((70, 65), "Appendix A")
+        page.draw_rect(fitz.Rect(70, 100, 400, 200))
+        page.insert_text((70, 230), "Figure 6: Supplementary results.")
+        doc.save(pdf)
+    figures = extract_report_figures(pdf, tmp_path / "out")
+    assert [(f.caption, f.role) for f in figures] == [
+        ("Figure 1: Method overview.", "method"),
+        ("Figure 5: Revision budget results.", "experiment"),
+    ]
+    assert all(f.path.is_file() for f in figures)
+
+
+def test_plot_labels_do_not_start_experiments_and_columns_keep_complete_figures(tmp_path: Path) -> None:
+    pdf = tmp_path / "columns.pdf"
+    with fitz.open() as doc:
+        page = doc.new_page()
+        page.insert_text((70, 100), "Result")
+        page.draw_rect(fitz.Rect(70, 120, 260, 220))
+        page.insert_text((70, 245), "Figure 1: Overview.")
+        page.draw_rect(fitz.Rect(320, 120, 520, 280))
+        page.insert_text((320, 305), "Figure 2: Method details.")
+        doc.save(pdf)
+    figures = extract_report_figures(pdf, tmp_path / "out")
+    assert [f.role for f in figures] == ["method", "method"]
+    assert all(f.image_available for f in figures)
