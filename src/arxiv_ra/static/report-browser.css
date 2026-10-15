@@ -18,7 +18,7 @@
 /* One reading surface: navigation sits beside the document without card frames. */
 @media screen{
   body:has(.report-shell){background:#fff}
-  .report-shell{max-width:1920px;gap:0;padding:0 0 64px;background:#fff}
+  .report-shell{max-width:none;width:100%;gap:0;padding:0 0 64px;background:#fff}
   .report-article{border:0;border-radius:0;background:transparent;padding:44px clamp(28px,4vw,64px) 64px}
   .report-nav-panel{background:#fafaf8;border:0;border-radius:0;box-shadow:none;padding:24px 18px;gap:14px;top:0;height:100dvh}
   .report-sidebar.report-nav-panel{border-right:1px solid #eeede9}
@@ -70,17 +70,14 @@
 }
 @media(prefers-reduced-motion:reduce){.report-actions a,.report-actions button{transition:none}}
 
-/* A bounded reading column prevents ultra-wide screens from stretching prose
-   and metadata across the monitor. Side panels still use their own columns. */
+/* Use the available monitor width, with navigation anchored beside the document. */
 @media screen and (min-width:761px){
-  .report-shell{max-width:1480px}
-  .report-shell.papers-open{max-width:1680px}
   .report-article{padding:40px clamp(28px,3vw,56px) 64px;font-size:17px;line-height:1.85}
   .report-article>p,.report-article>ul,.report-article>ol,.report-article>blockquote,
-  .report-article>h1,.report-article>h2,.report-article>h3,.report-article>h4{max-width:1000px;margin-left:auto;margin-right:auto}
+  .report-article>h1,.report-article>h2,.report-article>h3,.report-article>h4{max-width:none;margin-left:0;margin-right:0}
   .report-article>h1:first-child{font-size:clamp(30px,2.1vw,38px);line-height:1.3;margin-bottom:28px}
   .report-article table{font-size:15px;line-height:1.7}
-  .report-article table.report-metadata{display:table;width:100%;max-width:1000px;table-layout:fixed}
+  .report-article table.report-metadata{display:table;width:100%;max-width:none;table-layout:fixed}
   .report-article table.report-metadata :is(th,td){overflow-wrap:anywhere;min-width:0}
   .report-article table.report-metadata :is(th,td):first-child{width:10em}
   .report-nav-panel .toc-doc-title{font-size:13px}
