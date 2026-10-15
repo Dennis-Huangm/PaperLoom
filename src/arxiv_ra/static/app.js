@@ -872,9 +872,7 @@ if (dataNode) {
     rows.forEach((row, rowIndex) => {
       const selected = rowIndex === index;
       row.classList.toggle('selected', selected);
-      row.setAttribute('aria-pressed', String(selected));
-      const icon = row.querySelector('.row-select i');
-      if (icon) icon.className = selected ? 'fas fa-check-square' : 'far fa-square';
+      row.querySelector('.row-main').setAttribute('aria-pressed', String(selected));
     });
     const paper = item.paper;
     showRanking(paper);
@@ -974,8 +972,111 @@ if (dataNode) {
   };
 
   rows.forEach((row) => {
-    row.addEventListener('click', () => selectPaper(Number(row.dataset.paperIndex)));
+    row.addEventListener('click', (event) => {
+      if (!event.target.closest('.row-select-target')) selectPaper(Number(row.dataset.paperIndex));
+    });
   });
+
+  const selectAll = document.querySelector('#recommendation-select-all');
+  const clearSelection = document.querySelector('#recommendation-selection-clear');
+  const batchButtons = [...document.querySelectorAll('[data-recommendation-action]')];
+  const batchStatus = document.querySelector('#recommendation-batch-status');
+  let batchBusy = false;
+  const checkedRows = () => rows.filter(row => row.querySelector('.row-select').checked);
+  const updateSelection = () => {
+    const visible = rows.filter(row => !row.hidden);
+    const count = checkedRows().length;
+    const visibleCount = visible.filter(row => row.querySelector('.row-select').checked).length;
+    setText('#recommendation-selection-count', `已选 ${count} 篇`);
+    const hiddenCount = count - visibleCount;
+    document.querySelector('#recommendation-selection-hint').hidden = hiddenCount === 0;
+    setText('#recommendation-selection-hint', count
+      ? (hiddenCount ? `其中 ${hiddenCount} 篇不在当前筛选结果中；批量操作将处理全部 ${count} 篇。` : `将对所选 ${count} 篇论文执行批量操作。`)
+      : '勾选左侧论文，可批量收藏、生成报告或删除推荐。');
+    document.querySelector('.recommendation-batch-bar').classList.toggle('has-selection', count > 0);
+    selectAll.checked = visible.length > 0 && visibleCount === visible.length;
+    selectAll.indeterminate = visibleCount > 0 && visibleCount < visible.length;
+    selectAll.disabled = batchBusy || !visible.length;
+    clearSelection.disabled = batchBusy || !count;
+    batchButtons.forEach(button => { button.disabled = batchBusy || !count; });
+    rows.forEach(row => {
+      const checkbox = row.querySelector('.row-select');
+      checkbox.disabled = batchBusy;
+      row.classList.toggle('is-checked', checkbox.checked);
+    });
+  };
+  rows.forEach(row => row.querySelector('.row-select').addEventListener('change', updateSelection));
+  selectAll.addEventListener('change', () => {
+    rows.filter(row => !row.hidden).forEach(row => { row.querySelector('.row-select').checked = selectAll.checked; });
+    updateSelection();
+  });
+  clearSelection.addEventListener('click', () => {
+    rows.forEach(row => { row.querySelector('.row-select').checked = false; });
+    updateSelection();
+  });
+  batchButtons.forEach(button => button.addEventListener('click', async () => {
+    if (batchBusy) return;
+    const selectedRows = checkedRows();
+    const action = button.dataset.recommendationAction;
+    if (!selectedRows.length) return;
+    if (action === 'delete') {
+      const dialog = document.querySelector('#recommendation-delete-dialog');
+      document.querySelector('#recommendation-delete-description').textContent =
+        `将从当日推荐中移除所选的 ${selectedRows.length} 篇论文。`;
+      const confirmed = await new Promise(resolve => {
+        dialog.returnValue = '';
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'delete'), {once: true});
+        dialog.showModal();
+      });
+      if (!confirmed) return;
+    }
+    batchBusy = true;
+    updateSelection();
+    const date = document.querySelector('#inspector-report-form [name="source_date"]').value;
+    const failures = [];
+    let completed = 0;
+    const post = async (url, body) => {
+      const response = await scopedFetch(url, {method: 'POST', body});
+      const payload = await response.json().catch(() => ({detail: `操作失败（HTTP ${response.status}），请稍后重试`}));
+      if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : '操作失败');
+      return payload;
+    };
+    try {
+      if (action === 'delete') {
+        const body = new FormData();
+        body.set('date_label', date);
+        body.set('profile_id', document.body.dataset.profileId || '');
+        selectedRows.forEach(row => body.append('arxiv_ids', papers[Number(row.dataset.paperIndex)].paper.arxiv_id));
+        batchStatus.textContent = '正在删除…';
+        await post('/api/recommendations/delete', body);
+        window.location.reload();
+        return;
+      }
+      for (const row of selectedRows) {
+        const item = papers[Number(row.dataset.paperIndex)];
+        batchStatus.textContent = `正在处理 ${completed + failures.length + 1} / ${selectedRows.length}…`;
+        try {
+          const body = new FormData();
+          body.set('arxiv_id', item.paper.arxiv_id + (item.paper.version ? `v${item.paper.version}` : ''));
+          body.set('origin', 'recommendation');
+          body.set('source_date', date);
+          await post(action === 'library' ? '/api/library/add' : '/api/jobs/report', body);
+          if (action === 'library') {
+            item.in_library = true;
+            item.feedback = null;
+            if (papers[selectedPaperIndex] === item) { setLibraryUI(true); setFeedbackUI(null); }
+          }
+          row.querySelector('.row-select').checked = false;
+          completed += 1;
+        } catch (error) { failures.push(`${item.paper.title}：${error.message}`); }
+      }
+      batchStatus.textContent = `${action === 'library' ? '已加入文献库' : '已提交报告任务'} ${completed} 篇。${action === 'report' && completed ? '可在任务页面查看生成进度。' : ''}`
+        + (failures.length ? `失败 ${failures.length} 篇，已保留勾选，可重试。
+${failures.join(String.fromCharCode(10))}` : '');
+    } catch (error) { batchStatus.textContent = error.message; }
+    finally { batchBusy = false; updateSelection(); }
+  }));
+  updateSelection();
 
   document.querySelector('#inspector-library-button')?.addEventListener('click', async (event) => {
     const button = event.currentTarget;
@@ -1076,6 +1177,7 @@ if (dataNode) {
     });
     const empty = document.querySelector('#paper-list-empty');
     if (empty) empty.hidden = visible > 0;
+    updateSelection();
   };
 
   document.querySelectorAll('[data-paper-filter]').forEach((button) => {

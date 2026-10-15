@@ -164,3 +164,58 @@ def test_clear_route_validates_profile_and_date_and_redirects(tmp_path, monkeypa
         assert response.headers["location"] == "/"
         assert read_json(path) == []
         assert "还没有推荐结果" in client.get("/").text
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_delete_subset_preserves_remaining_and_other_profiles(tmp_path, legacy):
+    first = item("") if legacy else item()
+    second = {**first, "paper": {"arxiv_id": "2407.05601", "version": 2}}
+    filename = "recommendations.json" if legacy else "recommendations-alpha.json"
+    write_json(tmp_path / "2026-09-30" / filename, [first, second])
+    write_json(tmp_path / "state-alpha.json", {"processed": ["2407.05600", "2407.05601"]})
+    clear_recommendations(tmp_path, "2026-09-30", "alpha", {"2407.05600"})
+    assert read_recommendations(tmp_path, "2026-09-30", "alpha") == [second]
+    assert read_json(tmp_path / "state-alpha.json")["processed"] == ["2407.05601"]
+    if legacy:
+        assert read_recommendations(tmp_path, "2026-09-30", "beta") == [first, second]
+
+
+def test_delete_subset_rejects_stale_selection_without_mutation(tmp_path):
+    path = tmp_path / "2026-09-30/recommendations-alpha.json"
+    write_json(path, [item()])
+    with pytest.raises(ValueError):
+        clear_recommendations(tmp_path, "2026-09-30", "alpha", {"2407.05600", "missing"})
+    assert read_json(path) == [item()]
+
+
+def test_delete_selection_route_checks_scope_and_active_jobs(tmp_path, monkeypatch):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\ndiscovery:\n  interest_description: alpha\n", encoding="utf-8")
+    app = create_app(config)
+    path = tmp_path / "run/2026-09-30/recommendations-alpha.json"
+    second = {**item(), "paper": {"arxiv_id": "2407.05601", "version": 2}}
+    write_json(path, [item(), second])
+    data = {"profile_id": "alpha", "date_label": "2026-09-30", "arxiv_ids": ["2407.05600"]}
+    with TestClient(app) as client:
+        assert client.post("/api/recommendations/delete", data={**data, "profile_id": "beta"}).status_code == 409
+        with monkeypatch.context() as patch:
+            patch.setattr("arxiv_ra.web_jobs.JobManager.active_for", lambda *args: True)
+            assert client.post("/api/recommendations/delete", data=data).status_code == 409
+        assert read_json(path) == [item(), second]
+        assert client.post("/api/recommendations/delete", data=data).status_code == 200
+        assert read_json(path) == [second]
+
+
+def test_partial_delete_preserves_historical_batch_artifacts(tmp_path):
+    day = tmp_path / '2026-09-30'
+    second = {**item(), 'paper': {'arxiv_id': '2407.05601', 'version': 2}}
+    write_json(day / 'recommendations-alpha.json', [item(), second])
+    batch = day / 'batches/alpha/original'
+    write_json(batch / 'recommendations.json', [item(), second])
+    write_json(batch / 'previous.json', [second])
+    (batch / 'index.html').write_text('Historical reading page', encoding='utf-8')
+    clear_recommendations(tmp_path, '2026-09-30', 'alpha', {'2407.05600'})
+    assert read_recommendations(tmp_path, '2026-09-30', 'alpha') == [second]
+    assert read_json(batch / 'recommendations.json') == [item(), second]
+    assert read_json(batch / 'previous.json') == [second]
+    assert (batch / 'index.html').read_text(encoding='utf-8') == 'Historical reading page'

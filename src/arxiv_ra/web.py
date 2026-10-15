@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 
 import importlib.util
 import os
@@ -164,6 +165,9 @@ def create_app(config_path: Path | str) -> FastAPI:
     output_root.mkdir(parents=True, exist_ok=True)
     package_root = Path(__file__).parent
     templates = Jinja2Templates(directory=str(package_root / "templates"))
+    templates.env.globals["asset_version"] = lambda name: hashlib.sha256(
+        (package_root / "static" / name).read_bytes()
+    ).hexdigest()[:16]
     templates.env.globals.update(conference_choices=CONFERENCES, discovery_modes=MODES,
                                  conference_current_year=datetime.now().year)
     templates.env.filters["config_dict"] = asdict
@@ -435,6 +439,20 @@ def create_app(config_path: Path | str) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return RedirectResponse("/", status_code=303)
+
+    @app.post("/api/recommendations/delete", response_class=JSONResponse)
+    def delete_selected_recommendations(date_label: str = Form(...),
+                                        profile_id: str = Form(...),
+                                        arxiv_ids: list[str] = Form(...)) -> JSONResponse:
+        if profile_id != current_config().profile_id:
+            raise HTTPException(409, "研究方向已切换，请刷新页面后重试")
+        if jobs.active_for("digest", profile_id):
+            raise HTTPException(409, "当前研究方向正在刷新推荐，请等待任务结束后再删除")
+        try:
+            clear_recommendations(output_root, date_label, profile_id, set(arxiv_ids))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return JSONResponse({"message": f"已删除 {len(set(arxiv_ids))} 篇推荐"})
 
     @app.get("/library", response_class=HTMLResponse)
     def paper_library(request: Request, q: str = "", reading_status: str = "") -> HTMLResponse:

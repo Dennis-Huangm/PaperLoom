@@ -463,3 +463,49 @@ input:not([type=checkbox]),textarea,select{max-width:100%;width:100%;border:1px 
 @media(max-width:720px){.page-dashboard .filter-bar{gap:6px}.page-dashboard .filter-label{padding:0 6px}.page-dashboard .filter-chip{padding:0 10px}.page-dashboard .batch-zotero-form .filter-clear{font-size:12px}.page-dashboard .batch-zotero-form .filter-clear i{font-size:12px}}
 
 .math-with-citations{display:flex;align-items:center;justify-content:safe center;gap:.65em;max-width:100%;overflow-x:auto;margin:22px 0;padding:12px 4px}.math-with-citations>.math-block{flex:0 0 auto;margin:0;padding:0;overflow:visible}.math-with-citations .katex-display{margin:0}.math-citations{flex:0 0 auto;white-space:nowrap}
+
+/* Recommendation selection is separate from the paper being inspected. */
+.recommendation-batch-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;margin:0;padding:9px 16px;background:var(--surface);border:1px solid var(--line);border-bottom:0;border-radius:8px 8px 0 0}
+.batch-selection,.batch-actions{display:flex;align-items:center;gap:12px}.batch-actions{margin-left:auto;gap:8px}.batch-select-all{display:flex;align-items:center;gap:9px;min-height:34px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap}
+.recommendation-batch-bar input,.paper-row input.row-select{accent-color:var(--accent);width:17px;height:17px;margin:0;cursor:pointer;flex-shrink:0}
+.selection-count{padding:4px 9px;border-radius:5px;background:var(--surface-subtle);color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.has-selection .selection-count{background:var(--accent-soft);color:var(--accent-hover);font-weight:700}
+.batch-clear{background:none;border:0;color:var(--muted);font-size:12px;padding:8px 0;cursor:pointer}.batch-clear:hover:not(:disabled){color:var(--accent)}.batch-clear:disabled{opacity:.4;cursor:default}
+.batch-actions .button{height:34px;padding:0 13px;font-size:12px;gap:7px;border-radius:5px;white-space:nowrap}.batch-actions .button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}.batch-actions .batch-delete{color:#ac4540;background:transparent;border:1px solid #ead9d7;margin-left:8px}.batch-actions .batch-delete:hover:not(:disabled){background:#fff1ef;border-color:#c98984}
+.batch-hint{flex-basis:100%;margin:0;color:var(--muted);font-size:12px;line-height:1.5}#recommendation-batch-status{flex-basis:100%;padding:10px 12px;border-radius:5px;background:var(--surface-subtle);font-size:13px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}#recommendation-batch-status:empty{display:none}
+.page-dashboard .literature-workspace{border-radius:0 0 8px 8px;height:auto;min-height:0}.page-dashboard .paper-row{padding-left:16px}.row-select-target{display:flex;align-items:center;justify-content:center;min-width:30px;min-height:40px;margin-left:-5px;cursor:pointer}.paper-row .row-main{padding:0;border:0;background:none;color:inherit;text-align:left;font:inherit;cursor:pointer;min-width:0}.paper-row .row-main:focus-visible,.row-select:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}.paper-row.selected{background:#f5f6f4;box-shadow:inset -3px 0 var(--accent)}.paper-row.is-checked{background:#fff5e9}.paper-row.is-checked:hover{background:#fff0dd}
+.recommendation-delete-dialog{width:min(430px,calc(100vw - 32px));border:1px solid var(--line);border-radius:12px;padding:26px;box-shadow:0 24px 80px #18202833;color:var(--ink)}.recommendation-delete-dialog::backdrop{background:#18202866}.delete-dialog-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:10px;background:#fff0ed;color:#af443b;font-size:18px}.recommendation-delete-dialog h2{margin:
+18px 0 10px;font-size:20px}.recommendation-delete-dialog p{font-size:14px;line-height:1.7}.delete-dialog-note{color:var(--muted)}.recommendation-delete-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.recommendation-delete-dialog .danger{background:#ad4239;color:#fff;border-color:#ad4239}
+@media(max-width:900px){.recommendation-batch-bar{padding:12px;gap:8px 12px}.batch-selection{flex:1;gap:10px}.batch-actions{margin-left:0}.page-dashboard .literature-workspace{height:auto;min-height:0}.page-dashboard .paper-list-panel{min-height:280px}}
+@media(max-width:480px){.batch-actions{width:100%;display:grid;grid-template-columns:1fr 1.25fr auto}.batch-actions .button{padding:0 9px}.batch-actions .batch-delete{margin-left:0}.batch-selection{justify-content:space-between}.batch-hint{font-size:11px}}
+
+/* Let the reading workspace use the remaining viewport instead of estimating
+   the height of the search, filters, and changing batch feedback above it. */
+#recommendation-batch-status{max-height:80px;overflow:auto}
+@media(min-width:941px){
+  .page-dashboard:has(.literature-workspace){height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .page-dashboard:has(.literature-workspace)>.app-header{flex:none}
+  .page-dashboard:has(.literature-workspace)>.app-main{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:12px;padding-bottom:12px;overflow:hidden}
+  .page-dashboard .literature-toolbar,.page-dashboard .filter-bar,.page-dashboard .recommendation-batch-bar{flex:none}
+  .page-dashboard .literature-workspace{flex:1;min-height:0;height:auto;max-height:none}
+  .page-dashboard .paper-list-panel,.page-dashboard .paper-inspector,.page-dashboard .paper-list,.page-dashboard .inspector-scroll{min-height:0}
+  .page-dashboard .paper-list,.page-dashboard .inspector-scroll{overscroll-behavior:contain}
+  .page-dashboard .inspector-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));overflow:visible;padding:12px 16px;gap:10px}
+  .page-dashboard .inspector-actions>.button,.page-dashboard .inspector-actions>form,.page-dashboard #inspector-collection-links>.button{width:100%;min-width:0}
+  .page-dashboard .inspector-actions .button{height:42px;font-size:13px;padding-inline:12px}
+  .page-dashboard #inspector-collection-links{display:contents}
+  .page-dashboard #inspector-collection-links:empty{display:none}
+}
+.recommendation-batch-bar .batch-select-all{margin:0}
+
+@media(min-width:2000px){.page-dashboard .inspector-actions{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));padding:14px 18px;gap:12px}.page-dashboard .inspector-actions .button{height:46px;font-size:14px}}
+
+/* Keep large-monitor discovery and catalog views within a useful scan width. */
+@media(min-width:2000px){
+  .page-dashboard>.app-main{max-width:2080px}
+  .page-reports>.app-main,.page-library>.app-main{max-width:1840px}
+  .page-dashboard .row-main strong{font-size:15px;line-height:1.45}
+  .page-dashboard .row-main small{font-size:12px}
+  .page-dashboard .batch-select-all,.page-dashboard .batch-actions .button{font-size:14px}
+  .page-dashboard .batch-actions .button{height:38px}
+  .page-reports .report-paper h2,.page-library .saved-paper-card h2{font-size:18px;line-height:1.5}
+}

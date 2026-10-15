@@ -11,8 +11,9 @@ from .utils import read_json, write_json
 from .reading_state import _locked
 
 
-def clear_recommendations(output_root: Path, date_label: str, profile_id: str = "") -> None:
-    """Clear a daily archive and release its otherwise unreferenced dedup IDs."""
+def clear_recommendations(output_root: Path, date_label: str, profile_id: str = "",
+                          arxiv_ids: set[str] | None = None) -> None:
+    """Remove selected rows (or the whole day), releasing unreferenced dedup IDs."""
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_label):
         raise ValueError("日期格式必须为 YYYY-MM-DD")
     date.fromisoformat(date_label)
@@ -33,7 +34,12 @@ def clear_recommendations(output_root: Path, date_label: str, profile_id: str = 
         payload = read_json(legacy, [])
         if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
             raise ValueError("推荐历史格式错误，已保留原文件")
-        cleared_ids = _recommendation_ids(root, date_label, profile_id)
+        rows = read_recommendations(root, date_label, profile_id, strict=True)
+        available_ids = {str(row["paper"].get("arxiv_id", "")) for row in rows}
+        if arxiv_ids is not None and (not arxiv_ids or not arxiv_ids <= available_ids):
+            raise ValueError("所选论文不在当日推荐中，请刷新后重试")
+        cleared_ids = available_ids if arxiv_ids is None else arxiv_ids
+        kept_rows = [row for row in rows if str(row["paper"].get("arxiv_id", "")) not in cleared_ids]
         retained_ids = retained_recommendation_ids(root, profile_id, excluding_date=date_label)
         released_ids = cleared_ids - retained_ids
         state = read_json(state_path, {})
@@ -47,17 +53,20 @@ def clear_recommendations(output_root: Path, date_label: str, profile_id: str = 
                 # can be safely cleared again, rather than losing the IDs to release.
                 write_json(state_path, {**state, "processed": processed,
                                        "updated_at": datetime.now(timezone.utc).isoformat()})
-        # Keep an empty canonical file to prevent legacy fallback resurrecting this day.
+        # Keep a canonical file, even when empty, to prevent legacy fallback.
         # Untagged legacy rows may also serve other profiles; the tombstone hides
         # them only for the cleared profile without destroying shared history.
-        remaining = [item for item in payload if item.get("profile_id") != profile_id] if profile_id else []
-        write_json(canonical, [])
+        remaining = [item for item in payload
+                     if (profile_id and item.get("profile_id") != profile_id)
+                     or (arxiv_ids is not None and str((item.get("paper") or {}).get("arxiv_id", "")) not in cleared_ids)]
+        write_json(canonical, kept_rows)
         if remaining != payload or not profile_id:
             write_json(legacy, remaining)
             (folder / "index.html").unlink(missing_ok=True)
         digest.unlink(missing_ok=True)
         (folder / f"no-new-{profile_id or 'default'}.html").unlink(missing_ok=True)
-        if batch.exists():
+        # A partial edit must not erase unrelated historical batch snapshots.
+        if arxiv_ids is None and batch.exists():
             shutil.rmtree(batch)
 
 

@@ -8,13 +8,13 @@
   <link rel="icon" href="{{ url_for('static', path='/app-icon.ico') }}" sizes="any">
   <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261003-task-controls">
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ asset_version('app.css') }}">
   {% if active == 'profiles' %}<link rel="stylesheet" href="{{ url_for('static', path='/profiles.css') }}?v=20261009-layout">{% endif %}
   {% if active in ['weekly', 'versions', 'citations', 'search', 'conferences'] %}<link rel="stylesheet" href="{{ url_for('static', path='/research.css') }}?v=20261006-sync-tools">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/katex/katex.min.css') }}">
   <script async src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>
   <script defer src="{{ url_for('static', path='/math.js') }}?v=20261008-readiness"></script>
-  <script defer src="{{ url_for('static', path='/app.js') }}?v=20261008-readiness"></script>
+  <script defer src="{{ url_for('static', path='/app.js') }}?v={{ asset_version('app.js') }}"></script>
 </head>
 <body class="page-{{ active }}" data-profile-id="{{ config.profile_id }}">
   <header class="app-header">

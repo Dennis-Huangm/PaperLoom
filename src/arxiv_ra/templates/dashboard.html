@@ -78,6 +78,29 @@
 
   {% if recommendations %}
   {% set selected = recommendations[0] %}
+  <section class="recommendation-batch-bar" aria-label="批量操作">
+    <div class="batch-selection">
+      <label class="batch-select-all"><input id="recommendation-select-all" type="checkbox"><span>全选当前结果</span></label>
+      <span id="recommendation-selection-count" class="selection-count" aria-live="polite">已选 0 篇</span>
+      <button class="batch-clear" type="button" id="recommendation-selection-clear" disabled>取消选择</button>
+    </div>
+    <div class="batch-actions">
+      <button class="button secondary" type="button" data-recommendation-action="library" disabled><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button>
+      <button class="button primary" type="button" data-recommendation-action="report" disabled><i class="far fa-file-alt" aria-hidden="true"></i>生成完整报告</button>
+      <button class="button batch-delete" type="button" data-recommendation-action="delete" disabled><i class="far fa-trash-alt" aria-hidden="true"></i>删除</button>
+    </div>
+    <p id="recommendation-selection-hint" class="batch-hint" hidden>勾选左侧论文，可批量收藏、生成报告或删除推荐。</p>
+    <div id="recommendation-batch-status" role="status"></div>
+  </section>
+  <dialog id="recommendation-delete-dialog" class="recommendation-delete-dialog" aria-labelledby="recommendation-delete-title" aria-describedby="recommendation-delete-description">
+    <form method="dialog">
+      <div class="delete-dialog-icon"><i class="far fa-trash-alt" aria-hidden="true"></i></div>
+      <h2 id="recommendation-delete-title">删除所选推荐？</h2>
+      <p id="recommendation-delete-description"></p>
+      <p class="delete-dialog-note">已收藏文献和已有报告会保留。</p>
+      <footer><button class="button secondary" value="cancel" autofocus>取消</button><button class="button danger" value="delete">确认删除</button></footer>
+    </form>
+  </dialog>
   <section class="literature-workspace">
     <div class="paper-list-panel">
       <header class="list-head">
@@ -85,24 +108,24 @@
       </header>
       <div class="paper-list" id="paper-list">
         {% for item in recommendations %}
-        <button
+        <div
           class="paper-row {% if loop.first %}selected{% endif %}"
-          type="button"
+          role="group" aria-label="{{ item.paper.title }}"
           data-paper-index="{{ loop.index0 }}"
           data-category="{{ item.paper.primary_category }}"
           data-score="{{ item.paper.final_score }}"
           data-verified="{% if item.verified.venue %}true{% else %}false{% endif %}"
-          aria-pressed="{% if loop.first %}true{% else %}false{% endif %}">
-          <span class="row-select"><i class="{% if loop.first %}fas fa-check-square{% else %}far fa-square{% endif %}" aria-hidden="true"></i></span>
+          >
+          <label class="row-select-target"><input class="row-select" type="checkbox" aria-label="选择 {{ item.paper.title }}"></label>
           <span class="row-rank">{{ loop.index }}</span>
-          <span class="row-main">
+          <button class="row-main" type="button" aria-label="查看 {{ item.paper.title }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">
             <strong>{{ item.paper.title }}</strong>
             <small>{% for author in item.paper.authors[:4] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if item.paper.authors|length > 4 %} et al.{% endif %}</small>
-          </span>
+          </button>
           <span class="row-category">{{ item.paper.primary_category }}</span>
           <span class="row-score">{{ '%.1f'|format(item.paper.final_score) }}</span>
           <span class="row-date">{{ (item.paper.published or '')[:10] or '待核实' }}</span>
-        </button>
+        </div>
         {% endfor %}
       </div>
       <div class="list-empty" id="paper-list-empty" hidden><i class="far fa-folder-open" aria-hidden="true"></i><p>没有符合当前筛选条件的论文。</p></div>

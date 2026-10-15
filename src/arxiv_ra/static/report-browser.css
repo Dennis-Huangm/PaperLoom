@@ -69,3 +69,30 @@
   .report-actions .reading-open{margin-left:auto}
 }
 @media(prefers-reduced-motion:reduce){.report-actions a,.report-actions button{transition:none}}
+
+/* A bounded reading column prevents ultra-wide screens from stretching prose
+   and metadata across the monitor. Side panels still use their own columns. */
+@media screen and (min-width:761px){
+  .report-shell{max-width:1480px}
+  .report-shell.papers-open{max-width:1680px}
+  .report-article{padding:40px clamp(28px,3vw,56px) 64px;font-size:17px;line-height:1.85}
+  .report-article>p,.report-article>ul,.report-article>ol,.report-article>blockquote,
+  .report-article>h1,.report-article>h2,.report-article>h3,.report-article>h4{max-width:1000px;margin-left:auto;margin-right:auto}
+  .report-article>h1:first-child{font-size:clamp(30px,2.1vw,38px);line-height:1.3;margin-bottom:28px}
+  .report-article table{font-size:15px;line-height:1.7}
+  .report-article table.report-metadata{display:table;width:100%;max-width:1000px;table-layout:fixed}
+  .report-article table.report-metadata :is(th,td){overflow-wrap:anywhere;min-width:0}
+  .report-article table.report-metadata :is(th,td):first-child{width:10em}
+  .report-nav-panel .toc-doc-title{font-size:13px}
+  .report-nav-panel .report-toc a{font-size:14px;line-height:1.55}
+  .report-nav-panel .report-toc ul ul a{font-size:13px}
+  .report-paper-title{font-size:14px}
+  .report-paper-meta,.report-paper-directions{font-size:12px}
+}
+@media screen and (min-width:2000px){
+  .report-article{font-size:18px}
+  .report-article table{font-size:16px}
+  .report-nav-heading h2{font-size:16px}
+  .report-nav-panel .report-toc a{font-size:15px}
+  .report-nav-panel .report-toc ul ul a{font-size:14px}
+}
