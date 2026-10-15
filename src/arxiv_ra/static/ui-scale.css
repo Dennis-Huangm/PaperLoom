@@ -1,0 +1,14 @@
+/* Desktop density matches a 90% browser zoom while retaining native reflow.
+   Viewport-height workspaces compensate for CSS zoom so their footers stay
+   at the bottom of the window. Mobile and printed documents keep normal size. */
+@media screen and (min-width:1024px){
+  html{zoom:.9;--app-viewport-height:calc(100dvh / .9)}
+  html .page-dashboard:has(.literature-workspace),html .page-reading{height:var(--app-viewport-height)}
+  html .report-sidebar.report-nav-panel{height:calc(var(--app-viewport-height) - var(--report-topbar-height,68px) - 16px)}
+  html #report-papers{height:var(--app-viewport-height)}
+  html #report-reading.reading-dock{height:var(--app-viewport-height)}
+  html .workspace{height:calc(var(--app-viewport-height) - 224px)}
+}
+@media screen and (min-width:1440px){
+  html #report-papers{height:calc(var(--app-viewport-height) - var(--report-topbar-height,68px) - 16px)}
+}

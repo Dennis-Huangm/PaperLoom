@@ -92,7 +92,7 @@ if(!window.PaperLoomMath){const script=document.createElement('script');script.s
 const reportTopbar = document.querySelector('.report-topbar');
 if (reportTopbar) {
   const updateTopbarHeight = () => {
-    const height = reportTopbar.getBoundingClientRect().height;
+    const height = reportTopbar.offsetHeight;
     if (height) document.documentElement.style.setProperty('--report-topbar-height', `${height}px`);
   };
   updateTopbarHeight();
