@@ -233,9 +233,6 @@ def build_config_update(form: Any) -> dict[str, Any]:
             "copy_pdf": "obsidian_copy_pdf" in form,
             "generate_concepts": "obsidian_generate_concepts" in form,
         },
-        "jobs": {
-            "max_parallel": _int_value(form, "jobs_max_parallel", 1, 8),
-        },
         "weekly": {
             "enabled": "weekly_enabled" in form,
             "days": _int_value(form, "weekly_days", 1, 31),

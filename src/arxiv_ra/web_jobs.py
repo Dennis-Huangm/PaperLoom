@@ -79,24 +79,60 @@ class BackgroundJob:
     report_progress: dict = field(default_factory=dict)
 
 
-class JobManager:
-    """Bounded GUI queue with durable records and explicit recovery requests.
+class _JobThreads:
+    """Run each admitted background job immediately, without a worker cap."""
 
-    The executor always owns eight worker threads while ``max_parallel`` controls
-    how many jobs may be dispatched. This lets the user change concurrency at
-    runtime without replacing an executor that may still have active work.
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.threads: set[threading.Thread] = set()
+        self.closed = False
+
+    def submit(self, function, *args) -> None:
+        def run():
+            try:
+                function(*args)
+            finally:
+                with self.lock:
+                    self.threads.discard(threading.current_thread())
+
+        with self.lock:
+            if self.closed:
+                raise RuntimeError("任务执行器已关闭")
+            thread = threading.Thread(target=run, name="arxiv-ra-gui")
+            self.threads.add(thread)
+            try:
+                thread.start()
+            except BaseException:
+                self.threads.discard(thread)
+                raise
+
+    def shutdown(self, wait=True, *, cancel_futures=False) -> None:
+        with self.lock:
+            self.closed = True
+            threads = list(self.threads)
+        if wait:
+            for thread in threads:
+                if thread is not threading.current_thread():
+                    thread.join()
+
+
+class JobManager:
+    """Durable background jobs with explicit recovery requests.
+
+    Production runs without a concurrency cap. An explicit limit remains
+    available to internal callers that need a bounded queue.
     """
 
-    def __init__(self, output_root: Path, max_parallel: int = 3) -> None:
+    def __init__(self, output_root: Path, max_parallel: int | None = None) -> None:
         self.output_root = output_root.resolve()
         self.store = JobStore(self.output_root)
-        self.executor = ThreadPoolExecutor(
+        self.executor = _JobThreads() if max_parallel is None else ThreadPoolExecutor(
             max_workers=8, thread_name_prefix="arxiv-ra-gui"
         )
         self.jobs: dict[str, BackgroundJob] = {}
         self.pending: list[tuple[str, Callable[[], Path | None]]] = []
         self.active_count = 0
-        self.max_parallel = self._bounded_parallelism(max_parallel)
+        self.max_parallel = self._bounded_parallelism(max_parallel) if max_parallel is not None else None
         self.lock = threading.RLock()
         self.identities: dict[str, str] = {}
         self.cancel_events: dict[str, threading.Event] = {}
@@ -268,7 +304,7 @@ class JobManager:
             self._dispatch_locked()
 
     def _dispatch_locked(self) -> None:
-        while not self.closed and self.pending and self.active_count < self.max_parallel:
+        while not self.closed and self.pending and (self.max_parallel is None or self.active_count < self.max_parallel):
             job_id, function = self.pending.pop(0)
             self.active_count += 1
             self.executor.submit(self._execute, job_id, function)

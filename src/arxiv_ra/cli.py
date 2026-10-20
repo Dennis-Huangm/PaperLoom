@@ -209,7 +209,7 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(ProfileScheduler(config_path, output, None).view(), ensure_ascii=False, indent=2))
             return
         try:
-            jobs = JobManager(output, config.jobs.max_parallel)
+            jobs = JobManager(output)
         except RuntimeError as exc:
             print(f"本次未启动调度：{exc}")
             return

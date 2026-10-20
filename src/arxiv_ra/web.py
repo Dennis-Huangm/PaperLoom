@@ -173,7 +173,7 @@ def create_app(config_path: Path | str) -> FastAPI:
     templates.env.filters["config_dict"] = asdict
     templates.env.filters["summary_html"] = summary_html
     templates.env.filters["clean_summary_text"] = clean_summary_text
-    jobs = JobManager(output_root, config.jobs.max_parallel)
+    jobs = JobManager(output_root)
     scheduler = ProfileScheduler(config_path, output_root, jobs)
 
     @asynccontextmanager
@@ -1053,7 +1053,6 @@ def create_app(config_path: Path | str) -> FastAPI:
             profiles.save(profile)
         else:
             save_config_settings(config_path, {"discovery": discovery, "ranking": ranking})
-        jobs.set_max_parallel(load_config(config_path).jobs.max_parallel)
         return RedirectResponse("/settings?saved=config", status_code=status.HTTP_303_SEE_OTHER)
 
     @app.post("/settings/credentials/reveal", response_class=JSONResponse)
@@ -1494,12 +1493,6 @@ def create_app(config_path: Path | str) -> FastAPI:
             identity=task.identity("obsidian"), profile_id=current.profile_id
         )
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
-
-    @app.post("/api/jobs/parallelism", response_class=JSONResponse)
-    def update_job_parallelism(max_parallel: int = Form(..., ge=1, le=8)) -> JSONResponse:
-        save_config_settings(config_path, {"jobs": {"max_parallel": max_parallel}})
-        jobs.set_max_parallel(max_parallel)
-        return JSONResponse({"max_parallel": jobs.max_parallel})
 
     @app.delete("/api/jobs/completed", response_class=JSONResponse)
     def clear_completed_jobs() -> JSONResponse:
