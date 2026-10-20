@@ -29,8 +29,12 @@ def normalize_grouped_source_ids(text: str) -> str:
     Leave arbitrary prose and incomplete groups untouched.
     """
     pattern = r'\[\[证据ID:\s*[A-Za-z0-9-]+\s*\](?:\s*[,，]\s*\[证据ID:\s*[A-Za-z0-9-]+\s*\])+\s*\]'
-    return re.sub(pattern, lambda match: ' '.join(f'[[证据ID:{key}]]' for key in
+    text = re.sub(pattern, lambda match: ' '.join(f'[[证据ID:{key}]]' for key in
                   re.findall(r'证据ID:\s*([A-Za-z0-9-]+)', match[0])), text)
+    # Some models emit a single bracket pair even with double-bracket guidance.
+    # Repair only the delimiter; the ordinary binder still validates the ID.
+    return re.sub(r'(?<!\[)\[证据ID:\s*([A-Za-z0-9-]+)\s*\](?!\])',
+                  lambda match: f'[[证据ID:{match[1]}]]', text)
 ID_GUIDANCE = """优先使用程序提供的原文片段 ID：在陈述所在段落或数值表格行写 [[证据ID:实际ID]]。
 只可引用当前提供的 ID，不能自造、修改 ID 或把 ID 当成论文页码。无需重抄该片段的原文；程序会取回准确文本。
 每条陈述需由所引片段支持，数值还须保留模型/指标/表头归属；片段中有数字不等于支持任意结论。

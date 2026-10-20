@@ -102,3 +102,14 @@ def test_source_pages_do_not_add_model_calls_to_the_analysis_plan():
     parsed = ParsedPaper('A short complete parsed body.', ['Source context ' * 1000] * 20)
     chunks, banks, _ = generator.analysis_inputs(parsed)
     assert len(chunks) == len(banks) == 1
+
+
+@pytest.mark.parametrize('available', [True, False])
+def test_single_bracket_model_ids_bind_or_disappear_without_changing_prose(available):
+    parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
+    key = next(iter(source_spans(parsed)))
+    raw = f'方法说明 [证据ID:{key}] [证据ID:unknown]。普通 [text]。'
+    report, data = attach_citations(raw, parsed, pdf_available=available, full_report=True)
+    expected = '[1](paper.pdf#page=1)' if available else ''
+    assert report == f'方法说明 {expected} 。普通 [text]。'
+    assert data['validated_citations'] == int(available)
