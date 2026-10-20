@@ -113,3 +113,14 @@ def test_single_bracket_model_ids_bind_or_disappear_without_changing_prose(avail
     expected = '[1](paper.pdf#page=1)' if available else ''
     assert report == f'方法说明 {expected} 。普通 [text]。'
     assert data['validated_citations'] == int(available)
+
+
+@pytest.mark.parametrize('available', [True, False])
+def test_bare_span_ids_in_table_annotations_bind_or_disappear(available):
+    parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
+    key = next(iter(source_spans(parsed)))
+    raw = f'**说明：** 实验条件。证据：[[{key}]] [[S1-unknown]]。'
+    report, data = attach_citations(raw, parsed, pdf_available=available, full_report=True)
+    expected = '[1](paper.pdf#page=1)' if available else ''
+    assert report == f'**说明：** 实验条件。证据：{expected} 。'
+    assert data['validated_citations'] == int(available)

@@ -31,6 +31,9 @@ def normalize_grouped_source_ids(text: str) -> str:
     pattern = r'\[\[证据ID:\s*[A-Za-z0-9-]+\s*\](?:\s*[,，]\s*\[证据ID:\s*[A-Za-z0-9-]+\s*\])+\s*\]'
     text = re.sub(pattern, lambda match: ' '.join(f'[[证据ID:{key}]]' for key in
                   re.findall(r'证据ID:\s*([A-Za-z0-9-]+)', match[0])), text)
+    # Table annotations may omit the prefix and retain only a source-span ID.
+    text = re.sub(r'\[\[([SQ]1-[A-Za-z0-9-]+)\]\]',
+                  lambda match: f'[[证据ID:{match[1]}]]', text)
     # Some models emit a single bracket pair even with double-bracket guidance.
     # Repair only the delimiter; the ordinary binder still validates the ID.
     return re.sub(r'(?<!\[)\[证据ID:\s*([A-Za-z0-9-]+)\s*\](?!\])',
