@@ -12,6 +12,7 @@ import re
 import shutil
 import uuid
 from datetime import datetime, timezone
+from threading import Lock
 
 from .models import FigureCandidate, ParsedPaper
 from .task_runtime import task_checkpoint, task_checkpoint_data, task_warning, task_progress
@@ -73,6 +74,7 @@ class ReportCheckpoint:
         self.pdf_config = asdict(config.pdf)
         self.source = ""
         self.model_identity = None
+        self._request_lock = Lock()
         self.state = {"parsed": False, "chunks_done": 0, "chunks_total": 0,
                       "report_ready": False, "resumable": True}
         task_checkpoint_data("report_work", {"id": self.root.name})
@@ -164,6 +166,7 @@ class ReportCheckpoint:
         # Request waiting policy does not change already completed model inputs.
         # Omitting the new field also preserves identities from older versions.
         model_config.pop("request_timeout_seconds", None)
+        model_config.pop("analysis_workers", None)
         identity = fingerprint([model_config, str(getattr(getattr(llm, "client", None), "base_url", "")), self.source])
         try:
             previous = read_json(self.root / "model.json", {})
@@ -212,7 +215,7 @@ class ReportCheckpoint:
     def record_request(self, event):
         # Diagnostics must not discard a completed model response or mask errors.
         try:
-            with (self.root / "model-requests.jsonl").open("a", encoding="utf-8") as stream:
+            with self._request_lock, (self.root / "model-requests.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({**event, "stage": _REQUEST_STAGE.get(),
                     "recorded_at": datetime.now(timezone.utc).isoformat()}) + "\n")
         except OSError:

@@ -7,6 +7,7 @@ import uuid
 from dataclasses import asdict, fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 
 from .config import AppConfig
 from .model_budget import model_request_budget
@@ -166,11 +167,13 @@ class VersionSyncBatch:
                 if limit is not None:
                     config.version_sync.validate()
                 state["model_requests_this_run"] = 0
+                request_state_lock = RLock()
 
                 def record_request(used):
-                    state["model_requests_this_run"] = used
-                    state["model_requests_total"] = state.get("model_requests_total", 0) + 1
-                    self._save(state)
+                    with request_state_lock:
+                        state["model_requests_this_run"] = used
+                        state["model_requests_total"] = state.get("model_requests_total", 0) + 1
+                        self._save(state)
 
                 with model_request_budget(limit, record_request), PaperVersionSync(config, self.project_root, clients=clients) as sync:
                     total = len(state["items"])
@@ -183,8 +186,9 @@ class VersionSyncBatch:
                         self._save(state)
 
                         def progress(detail, percent):
-                            item.update(current_stage=detail, progress=percent)
-                            self._save(state)
+                            with request_state_lock:
+                                item.update(current_stage=detail, progress=percent)
+                                self._save(state)
 
                         label = f"{index + 1}/{total} · {item['arxiv_id']} v{item['target_version']}"
                         try:

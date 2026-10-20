@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import re
 from contextlib import nullcontext
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextvars import copy_context
+from functools import partial
 
 from .config import LLMConfig
 from .llm import LLMClient
 from .models import FigureCandidate, Paper, ParsedPaper, VerifiedMetadata
 from .utils import normalize_space
-from .task_runtime import task_warning, task_progress, task_checkpoint
+from .task_runtime import TaskCancelled, task_warning, task_progress, task_checkpoint
 from .report_checkpoint import CheckpointWriteError, current_report_checkpoint, file_digest
 from .evidence import EVIDENCE_GUIDANCE, source_table_inventory
 from .report_citations import strip_tokens
@@ -312,40 +315,8 @@ class ReportGenerator:
         checkpoint = current_report_checkpoint()
         if checkpoint:
             checkpoint.configure_model(self.config, self.llm)
-        self._explain_figures(paper, report_figures, parsed)
         chunks, banks, spans = self.analysis_inputs(parsed)
-        evidence_notes: list[str] = []
-        if checkpoint:
-            checkpoint.publish(chunks_total=len(chunks), chunks_done=0)
-        for index, chunk in enumerate(chunks, start=1):
-            task_progress(f"正在分析或复用正文分片 {index}/{len(chunks)}…", 65 + round(17 * (index - 1) / len(chunks)))
-            table_pages = self._table_pages(parsed, chunk)
-            table_material = "\n\n".join(
-                f"[PDF 物理第 {page} 页，完整页面文本]\n{parsed.page_texts[page - 1]}"
-                for page in table_pages
-            ) or "本分片没有可按原表题对应的独立 PDF 表格页面。"
-            note = self._chat(
-                f"chunk-{index}",
-                CHUNK_SYSTEM + "\n" + EVIDENCE_GUIDANCE + "\n" + ID_GUIDANCE + "\n" + QUALITY_GUIDANCE,
-                f"""这是论文第 {index}/{len(chunks)} 个片段：
-
-{chunk}
-
-独立 PDF 原文片段（可能与解析正文分片不同；同时提取这里的证据，引用实际 ID）：
-{span_material(banks[index - 1])}
-
-本分片表格对应的完整 PDF 物理页（独立于 Docling 的列划分）：
-{table_material}
-
-请提取：研究问题、方法机制、关键公式及符号定义、主要贡献、实验设置、关键结果与数值、作者明确陈述的局限性。
-没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。
-另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。
-解析正文的表头、列数或行列归属与独立 PDF 页面不同，应回查完整页面及其证据 ID，不能把解析器多出的列、重复单元格或分片边界当作原文缺失。
-同一原表的全部模型、难度和指标应保留，不能把完整数值行压缩成无列归属的数值串。""",
-            )
-            evidence_notes.append(note)
-            if checkpoint:
-                checkpoint.publish(chunks_done=index)
+        evidence_notes = self._analyze_material(paper, parsed, report_figures, chunks, banks)
         try:
             evidence_notes, synthesis_spans, _ = ground_note_quotes(evidence_notes, parsed, spans)
             evidence_notes, cited_material = cited_span_material(evidence_notes, synthesis_spans)
@@ -478,59 +449,155 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         report = protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
         return GeneratedReport(report, table_catalogue, raw_draft)
 
-    def _explain_figures(self, paper: Paper, figures: list[FigureCandidate], parsed: ParsedPaper | None = None) -> None:
+    def _analyze_material(self, paper, parsed, figures, chunks, banks):
         checkpoint = current_report_checkpoint()
-        for index, figure in enumerate(figures):
-            if figure.explanation:
-                continue
-            context = ""
-            if parsed and figure.role == "experiment":
-                if 0 < figure.page <= len(parsed.page_texts):
-                    context = parsed.page_texts[figure.page - 1][:10000]
-                else:
-                    context = "\n".join(page for page in parsed.page_texts if figure.caption[:30] in normalize_space(page))[:10000]
-            inputs = ["figure-explanation-v2", file_digest(figure.path) if figure.image_available else "missing",
-                      paper.title, paper.abstract, figure.caption, figure.role, context] if checkpoint else None
-            cached = checkpoint.get(f"figure-{index}", inputs) if checkpoint else None
-            if cached:
-                figure.explanation = cached
-                continue
+        if checkpoint:
+            checkpoint.publish(chunks_total=len(chunks), chunks_done=0)
+        notes = [""] * len(chunks)
+        completed = 0
+        tasks = []
+        # Interleave both kinds so a long figure does not hold back all text.
+        for index in range(max(len(figures), len(chunks))):
+            if index < len(figures):
+                tasks.append(("figure", index, partial(self._explain_figure, index, paper, figures[index], parsed)))
+            if index < len(chunks):
+                tasks.append(("chunk", index, partial(self._analyze_chunk, index + 1,
+                    chunks[index], banks[index], parsed, len(chunks))))
+
+        def completed_result(kind, index, result):
+            nonlocal completed
+            if kind == "chunk":
+                notes[index] = result
+                completed += 1
+                if checkpoint:
+                    checkpoint.publish(chunks_done=completed)
+            task_progress(f"图示与正文分析：已完成正文分片 {completed}/{len(chunks)}…",
+                          65 + round(17 * completed / len(chunks)))
+
+        workers = min(self.config.analysis_workers, len(tasks))
+        if workers == 1:
+            for kind, index, operation in tasks:
+                task_checkpoint()
+                completed_result(kind, index, operation())
+            return notes
+
+        remaining = iter(tasks)
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="report-analysis")
+        pending = {}
+
+        def submit_next():
             task_checkpoint()
+            item = next(remaining, None)
+            if item is not None:
+                kind, index, operation = item
+                pending[executor.submit(copy_context().run, operation)] = (kind, index)
+
+        try:
+            for _ in range(workers):
+                submit_next()
+            while pending:
+                task_checkpoint()
+                done, _ = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
+                for future in done:
+                    kind, index = pending.pop(future)
+                    completed_result(kind, index, future.result())
+                # Inspect the whole completed batch before starting more work.
+                for _ in done:
+                    submit_next()
+        finally:
+            # In-flight responses save their own checkpoints before we leave
+            # the task/budget context; no queued work survives an error/cancel.
+            executor.shutdown(wait=True, cancel_futures=True)
             try:
-                if not figure.image_available:
-                    raise ValueError("image unavailable")
-                options = {"role": "experiment", "context": context} if figure.role == "experiment" else {}
-                with checkpoint.request_stage(f"figure-{index}") if checkpoint else nullcontext():
-                    figure.explanation = self.llm.describe_figure(
-                        figure.path, paper.title, paper.abstract, figure.caption, **options,
-                    )
-                if not figure.explanation.strip():
-                    raise ValueError("empty figure explanation")
-            except Exception as vision_exc:
-                try:
-                    guidance = ("解释实验条件、坐标或子图含义、比较对象、趋势和结论边界。只依据图注和正文，不猜测视觉细节。"
-                                if figure.role == "experiment" else "解释图的输入、关键步骤、输出和核心含义。")
-                    with checkpoint.request_stage(f"figure-{index}-text") if checkpoint else nullcontext():
-                        figure.explanation = self.llm.chat(
-                            "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
-                            f"""论文：{paper.title}
+                task_checkpoint()
+            except TaskCancelled:
+                pass
+            else:
+                # A failed sibling must not hide other drained successes from
+                # the resumable progress count. Cancellation keeps their files.
+                for future, (kind, index) in pending.items():
+                    if not future.cancelled() and future.exception() is None:
+                        completed_result(kind, index, future.result())
+        return notes
+
+    def _analyze_chunk(self, index, chunk, bank, parsed, total):
+        table_pages = self._table_pages(parsed, chunk)
+        table_material = "\n\n".join(
+            f"[PDF 物理第 {page} 页，完整页面文本]\n{parsed.page_texts[page - 1]}"
+            for page in table_pages
+        ) or "本分片没有可按原表题对应的独立 PDF 表格页面。"
+        return self._chat(
+            f"chunk-{index}",
+            CHUNK_SYSTEM + "\n" + EVIDENCE_GUIDANCE + "\n" + ID_GUIDANCE + "\n" + QUALITY_GUIDANCE,
+            f"""这是论文第 {index}/{total} 个片段：
+
+{chunk}
+
+独立 PDF 原文片段（可能与解析正文分片不同；同时提取这里的证据，引用实际 ID）：
+{span_material(bank)}
+
+本分片表格对应的完整 PDF 物理页（独立于 Docling 的列划分）：
+{table_material}
+
+请提取：研究问题、方法机制、关键公式及符号定义、主要贡献、实验设置、关键结果与数值、作者明确陈述的局限性。
+没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。
+另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。
+解析正文的表头、列数或行列归属与独立 PDF 页面不同，应回查完整页面及其证据 ID，不能把解析器多出的列、重复单元格或分片边界当作原文缺失。
+同一原表的全部模型、难度和指标应保留，不能把完整数值行压缩成无列归属的数值串。""",
+        )
+
+    def _explain_figure(self, index, paper, figure, parsed):
+        checkpoint = current_report_checkpoint()
+        if figure.explanation:
+            return
+        context = ""
+        if parsed and figure.role == "experiment":
+            if 0 < figure.page <= len(parsed.page_texts):
+                context = parsed.page_texts[figure.page - 1][:10000]
+            else:
+                context = "\n".join(page for page in parsed.page_texts if figure.caption[:30] in normalize_space(page))[:10000]
+        inputs = ["figure-explanation-v2", file_digest(figure.path) if figure.image_available else "missing",
+                  paper.title, paper.abstract, figure.caption, figure.role, context] if checkpoint else None
+        cached = checkpoint.get(f"figure-{index}", inputs) if checkpoint else None
+        if cached:
+            figure.explanation = cached
+            return
+        task_checkpoint()
+        try:
+            if not figure.image_available:
+                raise ValueError("image unavailable")
+            options = {"role": "experiment", "context": context} if figure.role == "experiment" else {}
+            with checkpoint.request_stage(f"figure-{index}") if checkpoint else nullcontext():
+                figure.explanation = self.llm.describe_figure(
+                    figure.path, paper.title, paper.abstract, figure.caption, **options,
+                )
+            if not figure.explanation.strip():
+                raise ValueError("empty figure explanation")
+        except Exception as vision_exc:
+            try:
+                guidance = ("解释实验条件、坐标或子图含义、比较对象、趋势和结论边界。只依据图注和正文，不猜测视觉细节。"
+                            if figure.role == "experiment" else "解释图的输入、关键步骤、输出和核心含义。")
+                with checkpoint.request_stage(f"figure-{index}-text") if checkpoint else nullcontext():
+                    figure.explanation = self.llm.chat(
+                        "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
+                        f"""论文：{paper.title}
 摘要：{paper.abstract[:1200]}
 原始 caption：{figure.caption}
 
 原文上下文：{context}
 请用 2-4 句通俗中文{guidance}""",
-                        ).strip()
-                    if figure.role == "experiment":
-                        figure.explanation = "（依据原文图注与正文，未作视觉解读。）" + (figure.explanation or figure.caption)
-                except Exception as text_exc:
-                    task_warning(
-                        "LLM 图片解读",
-                        "图示的视觉与文本解读均失败，报告将保留原始图注。"
-                        f"请检查模型是否支持图片输入（{type(vision_exc).__name__}; {type(text_exc).__name__}）。",
-                    )
-                    figure.explanation = ("（保留原文图注，未作视觉解读。）" if figure.role == "experiment" else "") + figure.caption
-            if checkpoint and figure.explanation:
-                checkpoint.put(f"figure-{index}", inputs, figure.explanation)
+                    ).strip()
+                if figure.role == "experiment":
+                    figure.explanation = "（依据原文图注与正文，未作视觉解读。）" + (figure.explanation or figure.caption)
+            except Exception as text_exc:
+                task_warning(
+                    "LLM 图片解读",
+                    "图示的视觉与文本解读均失败，报告将保留原始图注。"
+                    f"请检查模型是否支持图片输入（{type(vision_exc).__name__}; {type(text_exc).__name__}）。",
+                )
+                figure.explanation = ("（保留原文图注，未作视觉解读。）" if figure.role == "experiment" else "") + figure.caption
+        if checkpoint and figure.explanation:
+            checkpoint.put(f"figure-{index}", inputs, figure.explanation)
 
     @staticmethod
     def _normalize_title(report: str, paper_title: str) -> str:

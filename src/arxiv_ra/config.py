@@ -74,10 +74,13 @@ class LLMConfig:
     temperature: float = 0.1
     max_chunk_chars: int = 18000
     request_timeout_seconds: float = 600.0
+    analysis_workers: int = 2
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.request_timeout_seconds) or self.request_timeout_seconds <= 0:
             raise ValueError("模型请求读取超时必须是正的有限秒数")
+        if type(self.analysis_workers) is not int or not 1 <= self.analysis_workers <= 4:
+            raise ValueError("报告分析并发数必须是 1 到 4 之间的整数")
 
 
 @dataclass(slots=True)

@@ -75,6 +75,8 @@ class LLMClient:
             task_checkpoint()
             if budget is not None:
                 budget.reserve()
+            # Budget persistence can wait behind a sibling or disk write.
+            task_checkpoint()
             started = time.monotonic()
             checkpoint = current_report_checkpoint()
             if checkpoint:

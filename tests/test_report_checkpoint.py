@@ -30,6 +30,8 @@ def paper():
 def setup(tmp_path):
     config = AppConfig(output_dir=str(tmp_path / "run"), profile_id="alpha")
     config.llm.max_chunk_chars = 4000
+    # These legacy crash/fallback scenarios deliberately finish one call at a time.
+    config.llm.analysis_workers = 1
     config.obsidian.enabled = False
     llm = SimpleNamespace(enabled=True, chat=Mock(return_value="# Checkpoint Paper\n\n## 核心方法\nEvidence"),
                           client=SimpleNamespace(base_url="https://fixture.invalid/v1"))
@@ -311,6 +313,7 @@ from arxiv_ra.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
 root = Path(sys.argv[1])
 config = AppConfig(output_dir=str(root), profile_id="alpha")
 config.llm.max_chunk_chars = 4000
+config.llm.analysis_workers = 1
 p = Paper.from_dict({"arxiv_id": "2407.05600", "title": "Checkpoint Paper", "version": 2, "abstract": "Original abstract", "metadata_status": "complete"})
 cp = ReportCheckpoint(root, config, p)
 (root / "identifier").write_text(cp.root.name)
