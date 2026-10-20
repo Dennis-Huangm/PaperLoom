@@ -101,7 +101,7 @@ class ReportCheckpoint:
             return None
         try:
             data = read_json(path)
-            if data["config"] != self.pdf_config or data["version"] != 2:
+            if data["config"] != self.pdf_config or data["version"] != 3:
                 raise ValueError("parser settings changed")
             for name, digest in data["files"].items():
                 if file_digest(self._file(name)) != digest:
@@ -150,7 +150,7 @@ class ReportCheckpoint:
                 shutil.copy2(figure.path, destination)
                 files[name] = file_digest(destination)
             raw["figures"][index]["path"] = name
-        self._write(self.root / "parsed.json", {"version": 2, "config": self.pdf_config,
+        self._write(self.root / "parsed.json", {"version": 3, "config": self.pdf_config,
                     "files": files, "parsed": raw, "parsed_hash": fingerprint(raw)})
         self.source = fingerprint([self.pdf_config, files["paper.pdf"], fingerprint(raw)])
         self.publish(parsed=True)

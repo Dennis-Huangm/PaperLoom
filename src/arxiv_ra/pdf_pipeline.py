@@ -8,6 +8,7 @@ import pymupdf as fitz
 
 from .config import PDFConfig
 from .models import FigureCandidate, ParsedPaper
+from .task_runtime import task_checkpoint, task_progress, task_warning
 from .utils import normalize_space
 from .figure_sections import EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE, is_body_end
 
@@ -238,18 +239,54 @@ class PDFParser:
         self.config = config
 
     def parse(self, pdf_path: Path, output_dir: Path) -> ParsedPaper:
-        if self.config.use_docling_if_available:
+        task_checkpoint()
+        parser = self.config.parser.strip().casefold()
+        if parser not in {"pymupdf", "docling"}:
+            raise ValueError("PDF 解析器必须是 pymupdf 或 docling")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        parsed = None
+        if parser != "docling":
+            parsed = self._parse_pymupdf(pdf_path, output_dir)
+        if parser == "docling" or (
+            parsed is not None and self.config.use_docling_if_available
+            and self._needs_docling(pdf_path, parsed)
+        ):
+            task_progress("正在使用 Docling 解析版面或识别扫描页…")
             try:
-                parsed = self._parse_docling(pdf_path, output_dir)
-                parsed.figures = extract_report_figures(
+                enhanced = self._parse_docling(pdf_path, output_dir)
+                if not enhanced.text.strip():
+                    raise ValueError("Docling 未提取到有效正文")
+                enhanced.figures = extract_report_figures(
                     pdf_path, output_dir, self.config.max_pages
-                ) + parsed.figures
-                return parsed
+                ) + enhanced.figures
+                return enhanced
             except (ImportError, ModuleNotFoundError):
-                pass
+                task_warning("PDF 版面解析", "Docling 不可用，已保留 PDF 文本层；扫描内容可能不完整。")
             except Exception as exc:
                 (output_dir / "docling-error.txt").write_text(str(exc), encoding="utf-8")
-        return self._parse_pymupdf(pdf_path, output_dir)
+                task_warning("PDF 版面解析", "Docling 解析失败，已保留 PDF 文本层；扫描内容可能不完整。")
+        return parsed if parsed is not None else self._parse_pymupdf(pdf_path, output_dir)
+
+    @staticmethod
+    def _needs_docling(pdf_path: Path, parsed: ParsedPaper) -> bool:
+        # A page number is not a usable text layer. Require a large raster too,
+        # so blank pages or sparse text with a small logo don't start Docling.
+        with fitz.open(pdf_path) as document:
+            for page, text in zip(document, parsed.page_texts):
+                task_checkpoint()
+                # Adjacent decimal cells can become e.g. "1656.5010.20".
+                # Request layout extraction rather than guessing a split or
+                # changing any value. This is a fallback signal, not an audit.
+                if (re.search(r"(?im)^\s*(?:Table|表)\s*\d+", text)
+                        and re.search(r"\d+\.\d{3,}\.\d+", text)):
+                    return True
+                if len(text.strip()) >= 40:
+                    continue
+                for image in page.get_images(full=True):
+                    if any((rect & page.rect).get_area() >= page.rect.get_area() / 2
+                           for rect in page.get_image_rects(image[0])):
+                        return True
+        return False
 
     def _parse_docling(self, pdf_path: Path, output_dir: Path) -> ParsedPaper:
         from docling.datamodel.base_models import InputFormat
@@ -298,49 +335,50 @@ class PDFParser:
         )
 
     def _parse_pymupdf(self, pdf_path: Path, output_dir: Path) -> ParsedPaper:
-        document = fitz.open(pdf_path)
-        page_texts: list[str] = []
-        figures: list[FigureCandidate] = []
-        figures_dir = output_dir / "figures"
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        seen_xrefs: set[int] = set()
-        total_pages = len(document)
-        max_pages = min(total_pages, self.config.max_pages)
-        for page_index in range(max_pages):
-            page = document[page_index]
-            text = page.get_text("text")
-            page_texts.append(text)
-            captions = [
-                normalize_space(line)
-                for line in text.splitlines()
-                if CAPTION_RE.match(normalize_space(line))
-            ]
-            caption = " | ".join(captions[:4])
-            for image_index, info in enumerate(page.get_images(full=True), start=1):
-                xref = int(info[0])
-                width, height = int(info[2]), int(info[3])
-                if xref in seen_xrefs or width < 180 or height < 120:
-                    continue
-                seen_xrefs.add(xref)
-                try:
-                    pixmap = fitz.Pixmap(document, xref)
-                    if pixmap.alpha or pixmap.colorspace is None or pixmap.colorspace.n > 3:
-                        pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
-                    path = figures_dir / f"page-{page_index + 1:02d}-image-{image_index:02d}.png"
-                    pixmap.save(path)
-                    candidate = FigureCandidate(path=path, page=page_index + 1, caption=caption)
-                    candidate.score = score_figure(candidate) + min(width * height / 1_000_000, 2)
-                    figures.append(candidate)
-                except RuntimeError:
-                    continue
-        page_figures = _extract_report_figures(
-            document, output_dir, page_texts, max_pages
-        )
-        document.close()
-        return ParsedPaper(
-            text="\n\n".join(f"[第 {i + 1} 页]\n{text}" for i, text in enumerate(page_texts)),
-            page_texts=page_texts,
-            figures=page_figures + sorted(figures, key=lambda item: item.score, reverse=True),
-            parser="pymupdf",
-            total_pages=total_pages,
-        )
+        with fitz.open(pdf_path) as document:
+            page_texts: list[str] = []
+            figures: list[FigureCandidate] = []
+            figures_dir = output_dir / "figures"
+            figures_dir.mkdir(parents=True, exist_ok=True)
+            seen_xrefs: set[int] = set()
+            total_pages = len(document)
+            max_pages = min(total_pages, self.config.max_pages)
+            for page_index in range(max_pages):
+                task_checkpoint()
+                page = document[page_index]
+                text = page.get_text("text")
+                page_texts.append(text)
+                captions = [
+                    normalize_space(line)
+                    for line in text.splitlines()
+                    if CAPTION_RE.match(normalize_space(line))
+                ]
+                caption = " | ".join(captions[:4])
+                for image_index, info in enumerate(page.get_images(full=True), start=1):
+                    xref = int(info[0])
+                    width, height = int(info[2]), int(info[3])
+                    if xref in seen_xrefs or width < 180 or height < 120:
+                        continue
+                    seen_xrefs.add(xref)
+                    try:
+                        pixmap = fitz.Pixmap(document, xref)
+                        if pixmap.alpha or pixmap.colorspace is None or pixmap.colorspace.n > 3:
+                            pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
+                        path = figures_dir / f"page-{page_index + 1:02d}-image-{image_index:02d}.png"
+                        pixmap.save(path)
+                        candidate = FigureCandidate(path=path, page=page_index + 1, caption=caption)
+                        candidate.score = score_figure(candidate) + min(width * height / 1_000_000, 2)
+                        figures.append(candidate)
+                    except RuntimeError:
+                        continue
+            page_figures = _extract_report_figures(
+                document, output_dir, page_texts, max_pages
+            )
+            return ParsedPaper(
+                text=("\n\n".join(f"[第 {i + 1} 页]\n{text}" for i, text in enumerate(page_texts))
+                      if any(text.strip() for text in page_texts) else ""),
+                page_texts=page_texts,
+                figures=page_figures + sorted(figures, key=lambda item: item.score, reverse=True),
+                parser="pymupdf",
+                total_pages=total_pages,
+            )

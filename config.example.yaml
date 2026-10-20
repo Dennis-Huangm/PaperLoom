@@ -65,6 +65,7 @@ metadata:
 
 pdf:
   parser: pymupdf
+  # 仅在扫描页或紧排表格需要时回退；parser: docling 则始终优先结构化解析。
   use_docling_if_available: true
   max_pages: 60
   figure_dpi: 160

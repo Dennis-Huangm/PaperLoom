@@ -87,6 +87,7 @@ class MetadataConfig:
 @dataclass(slots=True)
 class PDFConfig:
     parser: str = "pymupdf"
+    # With PyMuPDF, use Docling only for suspected scans / packed table cells.
     use_docling_if_available: bool = True
     max_pages: int = 60
     figure_dpi: int = 160

@@ -129,10 +129,10 @@
     <section class="form-section" id="pdf">
       <p class="section-kicker">PDF PIPELINE</p><h2>PDF 与主图</h2>
       <div class="config-grid four">
-        <label>解析器<input name="pdf_parser" value="{{ config.pdf.parser }}" required></label>
+        <label>解析器<select name="pdf_parser" required><option value="pymupdf" {% if config.pdf.parser == 'pymupdf' %}selected{% endif %}>PyMuPDF（快速文本解析）</option><option value="docling" {% if config.pdf.parser == 'docling' %}selected{% endif %}>Docling（结构化版面解析）</option></select></label>
         <label>最大页数<input type="number" name="max_pages" min="1" max="500" value="{{ config.pdf.max_pages }}"></label>
         <label>图片 DPI<input type="number" name="figure_dpi" min="72" max="600" value="{{ config.pdf.figure_dpi }}"></label>
-        <label class="toggle-field"><span>可用时优先 Docling</span><input type="checkbox" name="use_docling_if_available" value="true" {% if config.pdf.use_docling_if_available %}checked{% endif %}></label>
+        <label class="toggle-field"><span>扫描页或紧排表格需要时使用 Docling</span><input type="checkbox" name="use_docling_if_available" value="true" {% if config.pdf.use_docling_if_available %}checked{% endif %}></label>
       </div>
     </section>
 

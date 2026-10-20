@@ -398,3 +398,16 @@ def test_changed_prompt_recomputes_without_component_warning(tmp_path):
         assert checkpoint.get('report',['new prompt']) is None
     assert not warnings
     assert any('重新生成' in text for text in progress)
+
+
+def test_previous_parser_policy_is_reparsed_without_deleting_saved_work(tmp_path):
+    config, clients, checkpoint, parsed = prepared(tmp_path)
+    record_path = checkpoint.root / 'parsed.json'
+    record = read_json(record_path)
+    record['version'] = 2  # previous policy always preferred installed Docling
+    write_json(record_path, record)
+    previous = record_path.read_bytes()
+    resumed = ReportCheckpoint(config.output_dir, config, paper(), {'id': checkpoint.root.name})
+    assert resumed.restore_parsed(tmp_path / 'new') is None
+    assert record_path.read_bytes() == previous
+    assert (checkpoint.root / 'paper.pdf').is_file()

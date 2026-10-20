@@ -1,9 +1,14 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 import fitz
 
+from arxiv_ra.config import PDFConfig
 from arxiv_ra.models import FigureCandidate
 from arxiv_ra.pdf_pipeline import (
+    PDFParser,
     extract_report_figures,
     extract_pre_experiment_figures,
     is_reliable_main_figure,
@@ -124,3 +129,169 @@ def test_pdf_title_and_plot_label_are_not_lettered_appendix_headings(tmp_path: P
         page.insert_text((70, 295), "Figure 5: Results on benchmark A.")
         doc.save(pdf)
     assert [f.role for f in extract_report_figures(pdf, tmp_path / "out")] == ["experiment"]
+
+
+def _text_pdf(path):
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 60), 'A readable method with input, intermediate states and output. ' * 2, fontsize=8)
+        document.save(path)
+
+
+def _install_docling_adapter(monkeypatch, convert):
+    """Replace the optional third-party converter, not the parser under test."""
+    import sys
+
+    class Converter:
+        def __init__(self, **options):
+            pass
+
+        def convert(self, path, **options):
+            return convert(path, **options)
+
+    monkeypatch.setitem(sys.modules, 'docling.datamodel.base_models', SimpleNamespace(
+        InputFormat=SimpleNamespace(PDF='pdf')))
+    monkeypatch.setitem(sys.modules, 'docling.datamodel.pipeline_options', SimpleNamespace(
+        PdfPipelineOptions=SimpleNamespace))
+    monkeypatch.setitem(sys.modules, 'docling.document_converter', SimpleNamespace(
+        DocumentConverter=Converter, PdfFormatOption=lambda **kwargs: kwargs))
+    monkeypatch.setitem(sys.modules, 'docling_core.types.doc', SimpleNamespace(PictureItem=type('PictureItem', (), {})))
+
+
+def test_text_pdf_uses_selected_fast_parser_without_starting_docling(tmp_path, monkeypatch):
+    calls = []
+
+    def convert(path, **options):
+        calls.append(path)
+        return SimpleNamespace(document=SimpleNamespace(
+            export_to_markdown=lambda: 'Unnecessary heavy conversion', iterate_items=lambda: []))
+
+    _install_docling_adapter(monkeypatch, convert)
+    pdf = tmp_path / 'text.pdf'
+    _text_pdf(pdf)
+    parsed = PDFParser(PDFConfig(parser='pymupdf', use_docling_if_available=True)).parse(pdf, tmp_path / 'out')
+    assert parsed.parser == 'pymupdf'
+    assert 'A readable method' in parsed.text
+    assert parsed.total_pages == len(parsed.page_texts) == 1
+    assert calls == []
+
+
+def test_mixed_scanned_pdf_can_use_docling_but_blank_pages_do_not_trigger_it(tmp_path, monkeypatch):
+    calls = []
+
+    def convert(path, **options):
+        calls.append(path)
+        return SimpleNamespace(document=SimpleNamespace(
+            export_to_markdown=lambda: 'Recognized scanned method and its text page.', iterate_items=lambda: []))
+
+    _install_docling_adapter(monkeypatch, convert)
+    scan = fitz.open()
+    page = scan.new_page()
+    page.insert_text((40, 60), 'Scanned method content')
+    image = page.get_pixmap().tobytes('png')
+    scan.close()
+    pdf = tmp_path / 'mixed.pdf'
+    with fitz.open() as document:
+        document.new_page().insert_text((40, 60), 'A readable method explains the entire sequence of operations.' * 2, fontsize=8)
+        page = document.new_page()
+        page.insert_image(page.rect, stream=image)
+        page.insert_text((40, 780), '2')
+        document.save(pdf)
+    parsed = PDFParser(PDFConfig()).parse(pdf, tmp_path / 'mixed-out')
+    assert parsed.parser == 'docling'
+    assert 'Recognized scanned method' in parsed.text
+    assert parsed.total_pages == len(parsed.page_texts) == 2
+    assert calls == [pdf]
+
+    calls.clear()
+    blank = tmp_path / 'blank.pdf'
+    with fitz.open() as document:
+        document.new_page()
+        document.save(blank)
+    parsed = PDFParser(PDFConfig()).parse(blank, tmp_path / 'blank-out')
+    assert parsed.parser == 'pymupdf'
+    assert calls == []
+
+
+def test_tightly_packed_table_keeps_structured_parser_fallback(tmp_path, monkeypatch):
+    calls = []
+
+    def convert(path, **options):
+        calls.append(path)
+        return SimpleNamespace(document=SimpleNamespace(
+            export_to_markdown=lambda: '| Method | rMSE | MSE |\n|---|---|---|\n| Model A | 1656.50 | 10.20 |',
+            iterate_items=lambda: []))
+
+    _install_docling_adapter(monkeypatch, convert)
+    pdf = tmp_path / 'packed-table.pdf'
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 60), 'Table 3: Editing results.')
+        page.insert_text((40, 90), 'Model A    1656.5010.20')
+        document.save(pdf)
+    parsed = PDFParser(PDFConfig()).parse(pdf, tmp_path / 'out')
+    assert calls == [pdf]
+    assert parsed.parser == 'docling'
+    assert '| 1656.50 | 10.20 |' in parsed.text
+
+
+def test_empty_structured_result_keeps_readable_pdf_text(tmp_path, monkeypatch):
+    _install_docling_adapter(monkeypatch, lambda *a, **k: SimpleNamespace(document=SimpleNamespace(
+        export_to_markdown=lambda: '', iterate_items=lambda: [])))
+    pdf = tmp_path / 'text.pdf'
+    _text_pdf(pdf)
+    parsed = PDFParser(PDFConfig(parser='docling', use_docling_if_available=False)).parse(pdf, tmp_path / 'out')
+    assert parsed.parser == 'pymupdf'
+    assert 'A readable method' in parsed.text
+
+
+def test_image_only_pdf_without_ocr_is_not_reported_as_readable_text(tmp_path):
+    image = tmp_path / 'scan.png'
+    _render_test_image(image, 400, 600)
+    pdf = tmp_path / 'scan.pdf'
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_image(page.rect, filename=str(image))
+        document.save(pdf)
+    parsed = PDFParser(PDFConfig(use_docling_if_available=False)).parse(pdf, tmp_path / 'out')
+    assert not parsed.text.strip()
+    assert parsed.page_texts == ['']
+    assert parsed.total_pages == 1
+
+
+def test_unknown_parser_is_rejected_instead_of_silently_using_another(tmp_path):
+    pdf = tmp_path / 'text.pdf'
+    _text_pdf(pdf)
+    with pytest.raises(ValueError, match='解析器'):
+        PDFParser(PDFConfig(parser='unknown')).parse(pdf, tmp_path / 'out')
+
+
+def test_cancellation_during_docling_propagates_without_text_fallback(tmp_path, monkeypatch):
+    from arxiv_ra.task_runtime import TaskCancelled
+
+    def cancel(*args, **kwargs):
+        raise TaskCancelled()
+
+    _install_docling_adapter(monkeypatch, cancel)
+    pdf = tmp_path / 'text.pdf'
+    _text_pdf(pdf)
+    with pytest.raises(TaskCancelled):
+        PDFParser(PDFConfig(parser='docling')).parse(pdf, tmp_path / 'out')
+
+
+def test_docling_failure_keeps_text_and_reports_its_limitations(tmp_path, monkeypatch):
+    from arxiv_ra.task_runtime import TaskHooks, bind_task_hooks
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('Offline converter failure')
+
+    _install_docling_adapter(monkeypatch, fail)
+    pdf = tmp_path / 'text.pdf'
+    _text_pdf(pdf)
+    warnings = []
+    hooks = TaskHooks(progress=lambda *a: None, warning=lambda *args: warnings.append(args), is_cancelled=lambda: False)
+    with bind_task_hooks(hooks):
+        parsed = PDFParser(PDFConfig(parser='docling')).parse(pdf, tmp_path / 'out')
+    assert parsed.parser == 'pymupdf' and 'A readable method' in parsed.text
+    assert warnings and 'Docling' in warnings[0][1]
+    assert 'Offline converter failure' in (tmp_path / 'out/docling-error.txt').read_text(encoding='utf-8')
