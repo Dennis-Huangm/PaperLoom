@@ -301,15 +301,17 @@ class ReadingService:
 
     def settings(self, config):
         saved = read_json(self.folder / 'settings' / 'config.json', {})
-        return {**{'independent': False, 'model': config.llm.model, 'images': True,
+        settings = {**{'independent': False, 'model': config.llm.model, 'images': True,
                    'reasoning_effort': 'high',
                    'max_tools': 10, 'max_tokens': 4000}, **saved,
                 'key_configured': bool(os.getenv('PAPERLOOM_READING_API_KEY')),
                 'base_url': os.getenv('PAPERLOOM_READING_BASE_URL', '')}
+        settings['effective_model'] = settings['model'] if settings['independent'] else config.llm.model
+        return settings
 
     def submit(self, sid, config, *, text, request_id, selection='', report_id='', images=None, retry_of=''):
         settings = self.settings(config)
-        model = settings['model'] if settings['independent'] else config.llm.model
+        model = settings['effective_model']
         key_name = 'PAPERLOOM_READING_API_KEY' if settings['independent'] else config.llm.api_key_env
         url_name = 'PAPERLOOM_READING_BASE_URL' if settings['independent'] else config.llm.base_url_env
         key, url = os.getenv(key_name), os.getenv(url_name)

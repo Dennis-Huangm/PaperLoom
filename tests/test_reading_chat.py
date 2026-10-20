@@ -418,6 +418,28 @@ def test_reading_page_settings_and_entry_points(config_path):
         assert client.put('/api/reading/settings', json={'max_tools': 0}).status_code == 422
 
 
+def test_reading_effective_model_tracks_global_without_discarding_override(config_path):
+    with TestClient(create_app(config_path)) as client:
+        saved = client.put('/api/reading/settings', json={
+            'independent': True, 'model': 'private-reader'}).json()
+        assert saved.get('effective_model', saved['model']) == 'private-reader'
+        inherited = client.put('/api/reading/settings', json={
+            'independent': False, 'model': 'private-reader'}).json()
+        assert inherited.get('effective_model', inherited['model']) == 'test-reader'
+        assert inherited['model'] == 'private-reader'
+
+        config = yaml.safe_load(config_path.read_text(encoding='utf-8'))
+        config['llm']['model'] = 'new-global-reader'
+        config_path.write_text(yaml.safe_dump(config), encoding='utf-8')
+        latest = client.get('/api/reading/settings').json()
+        assert latest.get('effective_model', latest['model']) == 'new-global-reader'
+        assert latest['model'] == 'private-reader'
+
+        independent = client.put('/api/reading/settings', json={
+            'independent': True, 'model': latest['model']}).json()
+        assert independent.get('effective_model', independent['model']) == 'private-reader'
+
+
 def test_stop_delete_and_no_late_resurrection(config_path, monkeypatch):
     import threading
     from types import SimpleNamespace as NS

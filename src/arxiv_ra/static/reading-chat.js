@@ -483,11 +483,17 @@ ${f.text}`));row.append(pieces);}
   }
   compose.querySelector('[type=file]').onchange=event=>addFiles(event.target.files).catch(error);
   input.addEventListener('paste',event=>{const files=[...event.clipboardData.items].filter(i=>i.kind==='file').map(i=>i.getAsFile()); if(files.length){event.preventDefault();addFiles(files).catch(error);}});
+  let modelLabelRevision=0;
+  function showModelLabel(value) {
+    $('.reading-model-label').textContent=value.effective_model ?? value.model;
+    $('.reading-model-label').title='阅读模型设置';
+  }
   settingsForm.onsubmit=async event=>{
     event.preventDefault();const form=new FormData(settingsForm);const body=Object.fromEntries(form);
     for(const key of ['independent','images','clear_key'])body[key]=form.has(key);
     for(const key of ['max_tools','max_tokens'])body[key]=Number(body[key]);
-    try{const saved=await api('/settings','PUT',body);settingsForm.elements.api_key.value='';$('.reading-model-label').textContent=saved.model;settingsDialog.close();status.textContent='阅读设置已保存，应用于下一轮回答';}catch(e){error(e);}
+    ++modelLabelRevision;
+    try{const saved=await api('/settings','PUT',body);++modelLabelRevision;settingsForm.elements.api_key.value='';showModelLabel(saved);settingsDialog.close();status.textContent='阅读设置已保存，应用于下一轮回答';}catch(e){error(e);}
   };
   restoreDraft();
   showWelcome();
@@ -501,7 +507,7 @@ ${f.text}`));row.append(pieces);}
     for(const field of settingsForm.elements)field.disabled=true;
     try {
       const value=await api('/settings');
-      $('.reading-model-label').textContent=value.model;
+      showModelLabel(value);
       for(const [key,item] of Object.entries(value)){const field=settingsForm.elements.namedItem(key);if(field){if(field.type==='checkbox')field.checked=item;else field.value=item;}}
       settingsLoaded=true;
       for(const field of settingsForm.elements)field.disabled=false;
@@ -510,11 +516,20 @@ ${f.text}`));row.append(pieces);}
       $('.reading-model-label').title=e.message;
     } finally {settingsLoading=false;}
   }
-  $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => {settingsDialog.showModal();if(!settingsLoaded)loadSettings();};
+  async function refreshModelLabel() {
+    if(!settingsLoaded || document.hidden || pageSuspended)return;
+    const revision=++modelLabelRevision;
+    try {
+      const value=await api('/settings');
+      if(revision===modelLabelRevision)showModelLabel(value);
+    } catch(e) { /* Keep the last label if a background refresh is unavailable. */ }
+  }
+  $('[data-action=settings]').onclick = $('[data-action=model]').onclick = () => {settingsDialog.showModal();if(!settingsLoaded)loadSettings();else refreshModelLabel();};
   loadSettings();
-  document.addEventListener('visibilitychange',()=>watchSession(true));
+  window.addEventListener('focus',refreshModelLabel);
+  document.addEventListener('visibilitychange',()=>{watchSession(true);refreshModelLabel();});
   window.addEventListener('pagehide',()=>{pageSuspended=true;stopWatching();});
-  window.addEventListener('pageshow',e=>{if(e.persisted){pageSuspended=false;watchSession(true);}});
+  window.addEventListener('pageshow',e=>{if(e.persisted){pageSuspended=false;watchSession(true);refreshModelLabel();}});
   // An editor opening is a transaction: draft selection is committed only on Save.
   function createReferenceEditor({dialog, getContext, loadCatalog, save}) {
     const find=selector=>dialog.querySelector(selector);
