@@ -54,6 +54,8 @@ llm:
   base_url_env: LLM_BASE_URL
   temperature: 0.1
   max_chunk_chars: 18000
+  # Read inactivity timeout per attempt; transport + compatibility share 2 attempts.
+  request_timeout_seconds: 600
 
 metadata:
   openalex_email: your-email@example.com

@@ -6,10 +6,12 @@ from contextvars import ContextVar
 from dataclasses import asdict
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 import shutil
 import uuid
+from datetime import datetime, timezone
 
 from .models import FigureCandidate, ParsedPaper
 from .task_runtime import task_checkpoint, task_checkpoint_data, task_warning, task_progress
@@ -30,6 +32,7 @@ def file_digest(path):
 
 
 _CURRENT: ContextVar[ReportCheckpoint | None] = ContextVar("report_checkpoint", default=None)
+_REQUEST_STAGE: ContextVar[str] = ContextVar("report_request_stage", default="model")
 
 
 def current_report_checkpoint():
@@ -157,7 +160,11 @@ class ReportCheckpoint:
 
     def configure_model(self, config, llm):
         # Hash the effective endpoint; never store its credentials or runtime key.
-        identity = fingerprint([asdict(config), str(getattr(getattr(llm, "client", None), "base_url", "")), self.source])
+        model_config = asdict(config)
+        # Request waiting policy does not change already completed model inputs.
+        # Omitting the new field also preserves identities from older versions.
+        model_config.pop("request_timeout_seconds", None)
+        identity = fingerprint([model_config, str(getattr(getattr(llm, "client", None), "base_url", "")), self.source])
         try:
             previous = read_json(self.root / "model.json", {})
         except (OSError, ValueError):
@@ -193,3 +200,20 @@ class ReportCheckpoint:
         # Preserve a completed response even if cancellation arrived in flight.
         self._write(self.root / f"{key}.json", {"signature": self.signature(inputs),
                     "text": text, "hash": fingerprint(text)})
+
+    @contextmanager
+    def request_stage(self, key):
+        token = _REQUEST_STAGE.set(key)
+        try:
+            yield
+        finally:
+            _REQUEST_STAGE.reset(token)
+
+    def record_request(self, event):
+        # Diagnostics must not discard a completed model response or mask errors.
+        try:
+            with (self.root / "model-requests.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({**event, "stage": _REQUEST_STAGE.get(),
+                    "recorded_at": datetime.now(timezone.utc).isoformat()}) + "\n")
+        except OSError:
+            logging.getLogger(__name__).warning("Could not save model request timing")

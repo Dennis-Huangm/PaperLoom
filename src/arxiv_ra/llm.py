@@ -1,35 +1,129 @@
 from __future__ import annotations
 
 import base64
+import logging
+import math
 import mimetypes
+import re
+import time
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+import httpx
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from .config import LLMConfig
 from .models import Paper
-from .model_budget import current_model_budget, ModelBudgetExceeded
+from .model_budget import current_model_budget
 from .utils import env, extract_json_object
+from .task_runtime import task_checkpoint
+from .report_checkpoint import current_report_checkpoint
+
+
+logger = logging.getLogger(__name__)
+
+
+def _unsupported_parameter(exc: APIStatusError, kwargs: dict) -> str | None:
+    if exc.status_code not in {400, 422} or not isinstance(exc.body, dict):
+        return None
+    body = exc.body.get("error", exc.body)
+    if not isinstance(body, dict):
+        return None
+    message = str(body.get("message", "")).lower()
+    unsupported = body.get("code") in {"unsupported_parameter", "unsupported_value", "unknown_parameter"} or re.search(
+        r"unsupported|not supported|does not support|not support|not allowed|unknown parameter|unrecognized request argument", message)
+    if unsupported:
+        for parameter in ("temperature", "response_format"):
+            matches = body.get("param") == parameter if body.get("param") else re.search(rf"\b{parameter}\b", message)
+            if parameter in kwargs and matches:
+                return parameter
+    return None
+
+
+def _retry_delay(exc: APIConnectionError | APIStatusError) -> float | None:
+    if not isinstance(exc, APIStatusError):
+        return 1.0
+    if exc.response.headers.get("x-should-retry") == "false":
+        return None
+    body = exc.body if isinstance(exc.body, dict) else {}
+    body = body.get("error", body)
+    if isinstance(body, dict) and body.get("code") in {"insufficient_quota", "billing_hard_limit_reached"}:
+        return None
+    headers = exc.response.headers
+    delay = 1.0
+    try:
+        if "retry-after-ms" in headers:
+            delay = float(headers["retry-after-ms"]) / 1000
+        elif "retry-after" in headers:
+            try:
+                delay = float(headers["retry-after"])
+            except ValueError:
+                delay = parsedate_to_datetime(headers["retry-after"]).timestamp() - time.time()
+    except (ValueError, TypeError, OverflowError):
+        pass
+    # Leave long server cooldowns to an explicit task resume, never retry early.
+    return max(0.0, delay) if math.isfinite(delay) and delay <= 10 else None
 
 
 class LLMClient:
-    def _completion(self, *, single_attempt=False, **kwargs):
+    def _completion(self, *, single_attempt=False, kind="text", **kwargs):
         budget = current_model_budget()
-        client = self.client
-        if budget is not None:
-            budget.reserve()
-        if budget is not None or single_attempt:
-            # Count every outbound attempt; the SDK must not retry invisibly.
-            client = client.with_options(max_retries=0)
-        return client.chat.completions.create(**kwargs)
+        # One policy owns all outbound attempts, including budget accounting.
+        client = self.client.with_options(max_retries=0)
+        for attempt in range(1, (1 if single_attempt else 2) + 1):
+            task_checkpoint()
+            if budget is not None:
+                budget.reserve()
+            started = time.monotonic()
+            checkpoint = current_report_checkpoint()
+            if checkpoint:
+                checkpoint.record_request({"event": "started", "kind": kind, "attempt": attempt})
+            outcome = "interrupted"
+            status = None
+            delay = 0.0
+            try:
+                response = client.chat.completions.create(**kwargs)
+                outcome = "success"
+                return response
+            except (APIConnectionError, APIStatusError) as exc:
+                outcome = type(exc).__name__
+                status = exc.status_code if isinstance(exc, APIStatusError) else None
+                parameter = _unsupported_parameter(exc, kwargs) if isinstance(exc, APIStatusError) else None
+                transient = isinstance(exc, APIConnectionError) or exc.status_code in {408, 409, 429} or exc.status_code >= 500
+                if single_attempt or attempt == 2 or not (transient or parameter):
+                    raise
+                if parameter:
+                    kwargs.pop(parameter)
+                else:
+                    delay = _retry_delay(exc)
+                    if delay is None:
+                        raise
+            except BaseException as exc:
+                outcome = type(exc).__name__
+                raise
+            finally:
+                elapsed = time.monotonic() - started
+                logger.info("model_request kind=%s attempt=%d outcome=%s status=%s elapsed_seconds=%.3f",
+                            kind, attempt, outcome, status, elapsed)
+                if checkpoint:
+                    checkpoint.record_request({"event": "finished", "kind": kind, "attempt": attempt, "outcome": outcome,
+                                               "status": status, "elapsed_seconds": round(elapsed, 3)})
+            while delay > 0:
+                task_checkpoint()
+                interval = min(delay, 0.25)
+                time.sleep(interval)
+                delay -= interval
 
     def __init__(self, config: LLMConfig) -> None:
         self.config = config
         api_key = env(config.api_key_env)
         base_url = env(config.base_url_env)
         self.enabled = bool(api_key or base_url)
-        self.client = OpenAI(api_key=api_key or "ollama", base_url=base_url) if self.enabled else None
+        self.client = OpenAI(
+            api_key=api_key or "ollama", base_url=base_url, max_retries=0,
+            timeout=httpx.Timeout(config.request_timeout_seconds, connect=5.0, write=60.0, pool=5.0),
+        ) if self.enabled else None
 
     def chat(self, system: str, user: str, json_mode: bool = False, *, retry_on_error: bool = True) -> str:
         if not self.client:
@@ -43,20 +137,7 @@ class LLMClient:
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        try:
-            response = self._completion(single_attempt=not retry_on_error, **kwargs)
-        except ModelBudgetExceeded:
-            raise
-        except Exception:
-            if not retry_on_error:
-                raise
-            retry_kwargs = dict(kwargs)
-            retry_kwargs.pop("temperature", None)
-            if json_mode:
-                retry_kwargs.pop("response_format", None)
-            if retry_kwargs == kwargs:
-                raise
-            response = self._completion(**retry_kwargs)
+        response = self._completion(single_attempt=not retry_on_error, **kwargs)
         content = response.choices[0].message.content or ""
         if not content.strip():
             raise RuntimeError("LLM 返回空内容")
@@ -143,11 +224,5 @@ class LLMClient:
             ],
             "temperature": self.config.temperature,
         }
-        try:
-            response = self._completion(**kwargs)
-        except ModelBudgetExceeded:
-            raise
-        except Exception:
-            kwargs.pop("temperature", None)
-            response = self._completion(**kwargs)
+        response = self._completion(kind="figure", **kwargs)
         return (response.choices[0].message.content or "").strip()

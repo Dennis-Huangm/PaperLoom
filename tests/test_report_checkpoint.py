@@ -165,6 +165,15 @@ def test_final_integration_failure_reuses_all_chunks_and_completed_report(tmp_pa
     assert clients.llm.chat.call_count == 1
 
 
+def test_request_timeout_change_reuses_completed_model_responses(tmp_path):
+    config, clients, checkpoint, parsed = prepared(tmp_path)
+    first = generate(clients, checkpoint, parsed)
+    clients.llm.chat.reset_mock()
+    config.llm.request_timeout_seconds = 720
+    assert generate(clients, checkpoint, parsed) == first
+    clients.llm.chat.assert_not_called()
+
+
 @pytest.mark.parametrize("change", ["model", "endpoint", "temperature", "chunks", "prompt", "source", "parser"])
 def test_incompatible_processing_inputs_are_not_reused(tmp_path, monkeypatch, change):
     config, clients, checkpoint, parsed = prepared(tmp_path)

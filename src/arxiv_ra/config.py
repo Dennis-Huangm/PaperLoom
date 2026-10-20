@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import math
 import re
 from typing import Any
 
@@ -72,6 +73,11 @@ class LLMConfig:
     base_url_env: str = "LLM_BASE_URL"
     temperature: float = 0.1
     max_chunk_chars: int = 18000
+    request_timeout_seconds: float = 600.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.request_timeout_seconds) or self.request_timeout_seconds <= 0:
+            raise ValueError("模型请求读取超时必须是正的有限秒数")
 
 
 @dataclass(slots=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import nullcontext
 
 from .config import LLMConfig
 from .llm import LLMClient
@@ -285,10 +286,11 @@ class ReportGenerator:
         if cached is not None:
             return cached
         task_checkpoint()
-        if key == 'table-organization-v1':
-            result = self.llm.chat(system, user, retry_on_error=False)
-        else:
-            result = self.llm.chat(system, user)
+        with checkpoint.request_stage(key) if checkpoint else nullcontext():
+            if key == 'table-organization-v1':
+                result = self.llm.chat(system, user, retry_on_error=False)
+            else:
+                result = self.llm.chat(system, user)
         if checkpoint:
             checkpoint.put(key, inputs, result)
         return result
@@ -498,24 +500,26 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
                 if not figure.image_available:
                     raise ValueError("image unavailable")
                 options = {"role": "experiment", "context": context} if figure.role == "experiment" else {}
-                figure.explanation = self.llm.describe_figure(
-                    figure.path, paper.title, paper.abstract, figure.caption, **options,
-                )
+                with checkpoint.request_stage(f"figure-{index}") if checkpoint else nullcontext():
+                    figure.explanation = self.llm.describe_figure(
+                        figure.path, paper.title, paper.abstract, figure.caption, **options,
+                    )
                 if not figure.explanation.strip():
                     raise ValueError("empty figure explanation")
             except Exception as vision_exc:
                 try:
                     guidance = ("解释实验条件、坐标或子图含义、比较对象、趋势和结论边界。只依据图注和正文，不猜测视觉细节。"
                                 if figure.role == "experiment" else "解释图的输入、关键步骤、输出和核心含义。")
-                    figure.explanation = self.llm.chat(
-                        "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
-                        f"""论文：{paper.title}
+                    with checkpoint.request_stage(f"figure-{index}-text") if checkpoint else nullcontext():
+                        figure.explanation = self.llm.chat(
+                            "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
+                            f"""论文：{paper.title}
 摘要：{paper.abstract[:1200]}
 原始 caption：{figure.caption}
 
 原文上下文：{context}
 请用 2-4 句通俗中文{guidance}""",
-                    ).strip()
+                        ).strip()
                     if figure.role == "experiment":
                         figure.explanation = "（依据原文图注与正文，未作视觉解读。）" + (figure.explanation or figure.caption)
                 except Exception as text_exc:
