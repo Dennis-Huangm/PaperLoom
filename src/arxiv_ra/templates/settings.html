@@ -1,20 +1,32 @@
 {% extends "base.html" %}
-{% block title %}完整配置中心 · PaperLoom{% endblock %}
+{% block title %}设置 · PaperLoom{% endblock %}
+{% macro credential_card(item) %}
+        <div class="credential-card">
+          <span class="credential-title"><strong>{{ item.label }}</strong><em class="{% if item.configured %}configured{% endif %}">{% if item.configured %}<i class="fas fa-check-circle" aria-hidden="true"></i>已配置{% else %}未配置{% endif %}</em></span>
+          <div class="credential-input-control">
+            <input class="credential-value" type="hidden" name="{{ item.field }}" value="">
+            <input id="credential-{{ item.field }}" type="password" value="" placeholder="{% if item.configured %}********{% else %}输入新值{% endif %}" aria-label="{{ item.label }}" autocomplete="new-password" spellcheck="false" data-configured="{{ 'true' if item.configured else 'false' }}">
+            <button class="credential-visibility" type="button" aria-controls="credential-{{ item.field }}" aria-label="显示 {{ item.label }}" aria-pressed="false" data-label="{{ item.label }}"><i class="far fa-eye" aria-hidden="true"></i><span>显示</span></button>
+          </div>
+          <small>{{ item.help }}</small>
+          <label class="clear-option"><input type="checkbox" name="clear_{{ item.field }}" value="true"> 清除此项</label>
+        </div>
+{% endmacro %}
 {% block content %}
   <header class="page-heading compact-heading">
-    <div><p class="section-kicker">CONFIGURATION</p><h1>完整配置中心</h1><p>运行参数与本地凭据分开保存；凭据默认隐藏，可查看和修改。</p></div>
+    <div><p class="section-kicker">CONFIGURATION</p><h1>设置</h1><p>先连接模型即可开始使用；其余设置已提供默认值，可按需调整。</p></div>
     <a class="button secondary" href="/backups">备份与恢复</a>
   </header>
   {% if saved == 'config' %}<div class="notice success">✓ 全局设置已写入 config.yaml，检索与排序参数已写入当前研究方向档案。</div>{% endif %}
-  {% if saved == 'credentials' %}<div class="notice success">✓ API 与邮箱凭据已安全写入本地 .env，并已应用到当前进程。</div>{% endif %}
+  {% if saved == 'credentials' %}<div class="notice success">✓ 模型与凭据已保存，新创建的任务立即生效。</div>{% endif %}
 
   <div class="settings-shell">
     <aside class="settings-section-nav" aria-label="配置分区">
-      <a href="#credentials" class="active"><i class="fas fa-key" aria-hidden="true"></i>API 与凭据</a>
+      <a href="#credentials" class="active"><i class="fas fa-key" aria-hidden="true"></i>模型与 API</a>
       <a href="#general"><i class="fas fa-cog" aria-hidden="true"></i>常规</a>
       <a href="#discovery"><i class="fas fa-search" aria-hidden="true"></i>检索</a>
       <a href="#ranking"><i class="fas fa-sort-amount-down" aria-hidden="true"></i>排序</a>
-      <a href="#llm"><i class="fas fa-microchip" aria-hidden="true"></i>模型</a>
+      <a href="#llm"><i class="fas fa-microchip" aria-hidden="true"></i>模型高级参数</a>
       <a href="#metadata"><i class="fas fa-database" aria-hidden="true"></i>元数据</a>
       <a href="#pdf"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
       <a href="#zotero"><i class="fas fa-book" aria-hidden="true"></i>Zotero</a>
@@ -27,25 +39,22 @@
     <div class="settings-content">
 
   <section class="form-section credential-section" id="credentials">
-    <p class="section-kicker">LOCAL SECRETS · .ENV</p><h2>API 与邮箱凭据</h2>
-    <div class="notice secret-notice"><strong>查看与修改</strong><p>已配置的值默认显示为 ********，点击“显示”可查看明文并修改。留空表示保持不变；勾选“清除此项”后保存会删除该值。凭据保存到本机 .env，普通设置保存到 config.yaml；凭据不会进入脱敏压缩包。</p></div>
-    <form method="post" action="/settings/credentials" autocomplete="off"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+    <p class="section-kicker">MODEL CONNECTION</p><h2>模型与 API</h2>
+    <div class="notice secret-notice"><strong>查看与修改</strong><p>已配置的值默认显示为 ********，点击“显示”可查看明文并修改。留空表示保持不变；勾选“清除此项”后保存会删除该值。无需配置环境变量名。API 地址请填写服务商提供的完整基础地址（通常以 /v1 结尾）；使用官方 OpenAI 时可留空。</p></div>
+    <form id="model-connection-form" method="post" action="/settings/credentials" autocomplete="off"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+      <label>模型名称<input name="llm_model" value="{{ config.llm.model }}" required placeholder="填写服务商提供的模型 ID"><small>请使用服务商支持的准确模型名称。</small></label>
       <div class="credential-grid">
-        {% for item in credentials %}
-        <div class="credential-card">
-          <span class="credential-title"><strong>{{ item.label }}</strong><em class="{% if item.configured %}configured{% endif %}">{% if item.configured %}<i class="fas fa-check-circle" aria-hidden="true"></i>已配置{% else %}未配置{% endif %}</em></span>
-          <code>{{ item.env_name }}</code>
-          <div class="credential-input-control">
-            <input class="credential-value" type="hidden" name="{{ item.field }}" value="">
-            <input id="credential-{{ item.field }}" type="password" value="" placeholder="{% if item.configured %}********{% else %}输入新值{% endif %}" aria-label="{{ item.label }}" autocomplete="new-password" spellcheck="false" data-configured="{{ 'true' if item.configured else 'false' }}">
-            <button class="credential-visibility" type="button" aria-controls="credential-{{ item.field }}" aria-label="显示 {{ item.label }}" aria-pressed="false" data-label="{{ item.label }}"><i class="far fa-eye" aria-hidden="true"></i><span>显示</span></button>
-          </div>
-          <small>{{ item.help }}</small>
-          <label class="clear-option"><input type="checkbox" name="clear_{{ item.field }}" value="true"> 清除此项</label>
-        </div>
+        {% for item in credentials if item.field in ["llm_api_key", "llm_base_url"] %}
+{{ credential_card(item) }}
         {% endfor %}
       </div>
-      <div class="section-save"><span>保存后，新创建的推荐或报告任务立即使用新凭据。</span><button class="button primary" type="submit">保存 API 与凭据</button></div>
+      <div class="connection-actions"><button class="button secondary" id="test-model-connection" type="button">测试连接</button><button class="button primary" type="submit">保存模型与凭据</button></div>
+      <p class="muted">测试当前填写的配置，不会自动保存；将发送一次简短模型请求，可能产生少量 API 费用。</p>
+      <p id="connection-test-result" role="status" aria-live="polite" hidden></p>
+      <details class="settings-advanced"><summary>其他服务凭据（按需配置）</summary>
+        <div class="credential-grid">{% for item in credentials if item.field not in ["llm_api_key", "llm_base_url"] %}{{ credential_card(item) }}{% endfor %}</div>
+        <div class="section-save"><span>留空保持原值。</span><button class="button secondary" type="submit">保存模型与凭据</button></div>
+      </details>
     </form>
   </section>
 
@@ -61,7 +70,7 @@
     <section class="form-section" id="discovery">
       <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
       {% with discovery=config.discovery|config_dict %}{% include 'conference_scope.html' %}{% endwith %}
-      <details><summary>OpenReview 官方 API 账号配置</summary><p>在凭据设置中填写账号和密码，供 ICLR 目录检索登录使用。</p><div class="form-columns"><label>账号环境变量<input name="openreview_username_env" value="{{ config.discovery.openreview_username_env }}"></label><label>密码环境变量<input name="openreview_password_env" value="{{ config.discovery.openreview_password_env }}"></label></div></details>
+      <details><summary>OpenReview 官方 API 账号配置</summary><p>在凭据设置中填写账号和密码，供 ICLR 目录检索登录使用。</p><div class="form-columns"><input type="hidden" name="openreview_username_env" value="{{ config.discovery.openreview_username_env }}"><input type="hidden" name="openreview_password_env" value="{{ config.discovery.openreview_password_env }}"></div></details>
       {% if config.discovery.search_plan %}<p class="notice">此方向使用已确认的检索计划。主题与条件请在<a href="/profiles">研究方向</a>中复制为草稿后修改；这里可调整运行预算和排序参数。</p>{% endif %}
       <label>研究主题描述<textarea name="interest_description" {% if config.discovery.search_plan %}readonly{% endif %} rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
       <label class="check-row"><input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}><span>根据最近 5 篇收藏微调推荐</span></label>
@@ -69,7 +78,7 @@
       <div class="form-columns">
         <label>检索来源模式<select name="discovery_provider"><option value="hybrid" {% if config.discovery.provider == 'hybrid' %}selected{% endif %}>协作：arXiv + alphaXiv</option><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>备用：arXiv 失败后使用 alphaXiv</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>协作模式每次主动进行 alphaXiv 语义发现，使用其助手额度；arXiv 补全正式论文数据。</small></label>
         <label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label>
-        <label>alphaXiv API Key 环境变量名<input name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}" required></label>
+        <input type="hidden" name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}">
         <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，检索投入更多轮次，耗时也可能增加。</small></label>
         <label>alphaXiv 候选上限<input type="number" name="alphaxiv_max_candidates" min="1" max="15" value="{{ config.discovery.alphaxiv_max_candidates }}"><small>单次最多保留 15 篇，独立于 arXiv 候选预算。</small></label>
         <label>语义候选最低概念组数<input type="number" name="alphaxiv_minimum_concept_groups" min="0" max="100" value="{{ config.discovery.alphaxiv_minimum_concept_groups }}"><small>仅用于 alphaXiv 召回的论文，不超过下方通用门槛；0 表示不要求精确词匹配。</small></label>
@@ -104,22 +113,23 @@
     </section>
 
     <section class="form-section" id="llm">
-      <p class="section-kicker">LLM</p><h2>模型调用</h2>
+      <p class="section-kicker">LLM</p><h2>模型高级参数</h2>
+      <details class="settings-advanced"><summary>调节生成参数（通常无需修改）</summary>
       <div class="form-columns">
-        <label>模型名称<input name="llm_model" value="{{ config.llm.model }}" required></label>
         <label>Temperature<input type="number" name="llm_temperature" min="0" max="2" step="0.01" value="{{ config.llm.temperature }}"></label>
-        <label>API Key 环境变量名<input name="llm_api_key_env" value="{{ config.llm.api_key_env }}" required></label>
-        <label>Base URL 环境变量名<input name="llm_base_url_env" value="{{ config.llm.base_url_env }}" required></label>
+        <input type="hidden" name="llm_api_key_env" value="{{ config.llm.api_key_env }}">
+        <input type="hidden" name="llm_base_url_env" value="{{ config.llm.base_url_env }}">
         <label>报告分片最大字符数<input type="number" name="max_chunk_chars" min="4000" max="100000" value="{{ config.llm.max_chunk_chars }}"></label>
       </div>
+    </details>
     </section>
 
     <section class="form-section" id="metadata">
       <p class="section-kicker">METADATA</p><h2>学术元数据</h2>
       <div class="form-columns">
         <label>OpenAlex 联系邮箱<input type="email" name="openalex_email" value="{{ config.metadata.openalex_email }}"></label>
-        <label>OpenAlex Key 环境变量名<input name="openalex_api_key_env" value="{{ config.metadata.openalex_api_key_env }}" required></label>
-        <label>Semantic Scholar Key 环境变量名<input name="semantic_scholar_api_key_env" value="{{ config.metadata.semantic_scholar_api_key_env }}" required></label>
+        <input type="hidden" name="openalex_api_key_env" value="{{ config.metadata.openalex_api_key_env }}">
+        <input type="hidden" name="semantic_scholar_api_key_env" value="{{ config.metadata.semantic_scholar_api_key_env }}">
         <label>Semantic Scholar 最小请求间隔（秒）<input type="number" name="semantic_scholar_min_interval" min="0" max="60" step="0.1" value="{{ config.metadata.semantic_scholar_min_interval }}"><small>免费 API 建议保持 1.1 秒。</small></label>
         <label>Semantic Scholar 临时故障重试次数<input type="number" name="semantic_scholar_max_retries" min="0" max="10" value="{{ config.metadata.semantic_scholar_max_retries }}"></label>
         <label class="toggle-field"><span>核验会议/期刊信息</span><input type="checkbox" name="verify_venue" value="true" {% if config.metadata.verify_venue %}checked{% endif %}></label>
@@ -145,7 +155,7 @@
       <div class="form-columns">
         <label>本地 API 地址<input name="zotero_base_url" value="{{ config.zotero.base_url }}" required></label>
         <label>工作模式<select name="zotero_mode"><option value="local" selected>本地 API（推荐）</option></select></label>
-        <label>本地授权环境变量名<input name="zotero_api_key_env" value="{{ config.zotero.api_key_env }}" required></label>
+        <input type="hidden" name="zotero_api_key_env" value="{{ config.zotero.api_key_env }}">
         <label>目标分类名称<input name="zotero_collection_name" value="{{ config.zotero.collection_name }}" placeholder="PaperLoom"></label>
         <label>PDF 附件方式<select name="zotero_pdf_attachment_mode"><option value="imported_file" {% if config.zotero.pdf_attachment_mode == 'imported_file' %}selected{% endif %}>导入 Zotero 存储（可同步）</option><option value="linked_file" {% if config.zotero.pdf_attachment_mode == 'linked_file' %}selected{% endif %}>链接本地文件</option></select></label>
       </div>
@@ -196,8 +206,8 @@
       <div class="config-grid four">
         <label>SMTP 主机<input name="smtp_host" value="{{ config.delivery.smtp_host }}"></label>
         <label>SMTP 端口<input type="number" name="smtp_port" min="1" max="65535" value="{{ config.delivery.smtp_port }}"></label>
-        <label>邮箱环境变量名<input name="email_address_env" value="{{ config.delivery.email_address_env }}" required></label>
-        <label>授权码环境变量名<input name="smtp_password_env" value="{{ config.delivery.password_env }}" required></label>
+        <input type="hidden" name="email_address_env" value="{{ config.delivery.email_address_env }}">
+        <input type="hidden" name="smtp_password_env" value="{{ config.delivery.password_env }}">
         <label>显式 SMTP 用户名<input name="smtp_username" value="{{ config.delivery.username }}" placeholder="留空则使用 .env 邮箱"></label>
         <label>显式发件地址<input name="from_address" value="{{ config.delivery.from_address }}" placeholder="留空则使用 .env 邮箱"></label>
         <label>收件地址<textarea name="to_addresses" rows="4">{{ config.delivery.to_addresses|join('\n') }}</textarea><small>每行一个；留空则发送给自己。</small></label>

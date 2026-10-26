@@ -51,6 +51,45 @@ document.querySelectorAll('.credential-visibility').forEach((button) => {
   });
 });
 
+const connectionForm = document.querySelector('#model-connection-form');
+const connectionTest = document.querySelector('#test-model-connection');
+if (connectionForm && connectionTest) {
+  const result = document.querySelector('#connection-test-result');
+  let generation = 0;
+  connectionForm.addEventListener('input', () => {
+    generation += 1;
+    if (!result.hidden) result.textContent = '配置已修改，请重新测试连接。';
+  });
+  connectionTest.addEventListener('click', async () => {
+    if (!connectionForm.reportValidity()) return;
+    const version = generation;
+    connectionTest.disabled = true;
+    connectionTest.textContent = '正在测试…';
+    result.hidden = false;
+    result.className = 'notice';
+    result.textContent = '正在请求模型，请稍候…';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await scopedFetch('/settings/connection-test', {
+        method: 'POST', body: new FormData(connectionForm), signal: controller.signal,
+      });
+      const payload = await response.json();
+      if (version !== generation) return;
+      result.className = `notice ${payload.ok ? 'success' : ''}`;
+      result.textContent = (payload.message || '测试失败，请稍后重试。')
+        + (payload.ok ? ` 耗时 ${payload.elapsed_ms} ms。保存后生效。` : '');
+    } catch (error) {
+      if (version === generation) result.textContent = error.name === 'AbortError'
+        ? '测试超时，请检查网络后重试。' : '无法完成测试，请检查本地服务是否正常运行。';
+    } finally {
+      clearTimeout(timeout);
+      connectionTest.disabled = false;
+      connectionTest.textContent = '测试连接';
+    }
+  });
+}
+
 const zoteroConnect = document.querySelector('#zotero-connect');
 zoteroConnect?.addEventListener('click', async () => {
   const original = zoteroConnect.innerHTML;

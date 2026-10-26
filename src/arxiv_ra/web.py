@@ -28,6 +28,7 @@ from .arxiv_client import ArxivClient
 from .render import summary_html
 from .summary_cleaning import clean_summary_text
 from .config import AppConfig, VersionSyncConfig, load_config
+from .model_connection import connection_values, probe_connection
 from .citation_graph import CitationExplorer
 from .feedback import FeedbackStore, VERDICTS
 from .library import PaperLibraryStore
@@ -494,6 +495,8 @@ def create_app(config_path: Path | str) -> FastAPI:
             report = reports_by_id.get((arxiv_id, (entry.get("paper") or {}).get("version")))
             entry["report_url"] = report.get("report_url") if report else None
             entry["has_report"] = bool(report)
+        library_counts = {value: sum(entry['reading']['status'] == value for entry in entries)
+                          for value in READING_STATUSES}
         if q.strip():
             needle = q.casefold().strip()
             entries = [
@@ -523,6 +526,7 @@ def create_app(config_path: Path | str) -> FastAPI:
                 request,
                 "library",
                 entries=entries,
+                library_counts=library_counts,
                 query=q.strip(),
                 reading_status=reading_status,
                 reading_statuses=READING_STATUSES,
@@ -1022,8 +1026,9 @@ def create_app(config_path: Path | str) -> FastAPI:
 
     @app.post("/settings/config")
     async def update_settings(request: Request) -> RedirectResponse:
-        form = await request.form()
+        form = dict(await request.form())
         current = current_config()
+        form.setdefault("llm_model", current.llm.model)
         try:
             scope = scope_from_form(form)
         except ValueError as exc:
@@ -1078,10 +1083,25 @@ def create_app(config_path: Path | str) -> FastAPI:
                 updates[env_name] = value.strip() if not item["secret"] else value
         clear.difference_update(updates)
         try:
+            if "llm_model" in form:
+                model, key, url = connection_values(form, current.llm)
+                for env_name, value in ((current.llm.api_key_env, key), (current.llm.base_url_env, url)):
+                    if env_name in updates:
+                        updates[env_name] = value
             update_dotenv(project_root / ".env", updates, clear)
+            if "llm_model" in form:
+                save_config_settings(config_path, {"llm": {"model": model}})
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse("/settings?saved=credentials", status_code=status.HTTP_303_SEE_OTHER)
+
+    @app.post("/settings/connection-test")
+    async def test_model_connection(request: Request) -> JSONResponse:
+        try:
+            values = connection_values(await request.form(), current_config().llm)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        return JSONResponse(await run_in_threadpool(probe_connection, *values))
 
     @app.post("/api/zotero/authorize", response_class=JSONResponse)
     async def authorize_zotero() -> JSONResponse:
@@ -1504,6 +1524,16 @@ def create_app(config_path: Path | str) -> FastAPI:
         if not job:
             raise HTTPException(status_code=404, detail="任务不存在或记录无法读取")
         return JSONResponse(asdict(job))
+
+    @app.delete("/api/jobs/{job_id}", response_class=JSONResponse)
+    def delete_finished_job(job_id: str) -> JSONResponse:
+        try:
+            jobs.delete_finished(job_id, current_config().profile_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="当前研究方向没有这条任务记录") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse({"deleted": job_id})
 
     @app.post("/api/jobs/{job_id}/retry", response_class=JSONResponse)
     def retry_job(job_id: str) -> JSONResponse:

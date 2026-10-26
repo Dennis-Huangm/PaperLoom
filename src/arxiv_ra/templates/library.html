@@ -3,46 +3,42 @@
 {% block content %}
   <header class="page-heading library-heading">
     <div><p class="section-kicker">SAVED PAPERS</p><h1>我的文献库</h1><p>保存当前研究方向中值得长期跟进的论文，不受每日推荐刷新影响。</p></div>
-    <div><span class="active-profile-pill"><i class="fas fa-circle" aria-hidden="true"></i>{{ config.profile_name }} · {{ entries|length }} 篇</span> <a class="button secondary" href="/compare">跨论文比较</a></div>
+    <div class="library-heading-actions"><span class="library-profile-label" title="{{ config.profile_name }}"><i class="fas fa-layer-group" aria-hidden="true"></i>{{ config.profile_name }}</span><a class="button secondary" href="/compare"><i class="fas fa-columns" aria-hidden="true"></i>跨论文比较</a></div>
   </header>
 
-  <form class="library-search" method="get">
+  <nav class="library-status-tabs" aria-label="按阅读进度筛选"><a href="/library?q={{ query|urlencode }}" {% if not reading_status %}aria-current="page"{% endif %}>全部论文 <span data-library-count="all">{{ library_counts.values()|sum }}</span></a>{% for value, label in reading_statuses.items() %}<a href="/library?q={{ query|urlencode }}&amp;reading_status={{ value }}" {% if reading_status == value %}aria-current="page"{% endif %}>{{ label }} <span data-library-count="{{ value }}">{{ library_counts[value] }}</span></a>{% endfor %}</nav>
+  <form class="library-search" method="get" role="search" aria-label="搜索文献库">
     <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
-    <input name="q" value="{{ query }}" placeholder="搜索标题、作者、标签或个人笔记">
-    <select name="reading_status" aria-label="按阅读进度筛选"><option value="">全部进度</option>{% for value, label in reading_statuses.items() %}<option value="{{ value }}" {% if reading_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-    {% if query %}<a href="/library" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+    <input type="search" aria-label="搜索标题、作者、标签或个人笔记" name="q" value="{{ query }}" placeholder="搜索标题、作者、arXiv ID、标签或个人笔记">
+    <input type="hidden" name="reading_status" value="{{ reading_status }}">
+    {% if query %}<a href="/library?reading_status={{ reading_status }}" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
     <button type="submit">搜索</button>
   </form>
+  <div class="library-list-heading"><p>{% if query or reading_status %}找到 <strong>{{ entries|length }}</strong> 篇论文{% if reading_status %} · {{ reading_statuses[reading_status] }}{% endif %}{% if query %} · “{{ query }}”{% endif %} <a href="/library">清除筛选</a>{% else %}共 <strong>{{ entries|length }}</strong> 篇已保存论文{% endif %}</p><span><i class="fas fa-sort-amount-down" aria-hidden="true"></i>按收藏时间排列</span></div>
 
   {% if entries %}
   <section class="saved-library" aria-label="已保存论文">
     {% for entry in entries %}
     {% set paper = entry.paper %}
-    <article class="saved-paper-card">
+    <article class="saved-paper-card" data-reading-status="{{ entry.reading.status }}" aria-labelledby="library-title-{{ paper.arxiv_id }}">
       <header>
-        <div><span>{{ paper.arxiv_id }}</span><em>{{ paper.primary_category }}</em></div>
-        <time>收藏于 {{ entry.saved_at[:10] }}</time>
+        <div><a class="library-arxiv-id" href="{{ paper.abs_url }}" target="_blank" rel="noopener noreferrer">{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}</a><em>{{ paper.primary_category }}</em></div>
+        <span class="library-reading-badge status-{{ entry.reading.status }}">{{ reading_statuses[entry.reading.status] }}</span>
       </header>
-      <h2>{{ paper.title }}</h2>
-      {% if paper.conference_publications %}<p>{% for pub in paper.conference_publications %}<a href="{{ pub.evidence_url }}" target="_blank" rel="noopener noreferrer">{{ conference_choices.get(pub.conference, pub.conference) }} {{ pub.year }} · 主会长文</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      <h2 id="library-title-{{ paper.arxiv_id }}"><a href="{{ entry.report_url or paper.abs_url }}">{{ paper.title }}</a></h2>
+      {% if paper.conference_publications %}<p class="library-publications">{% for pub in paper.conference_publications %}<a href="{{ pub.evidence_url }}" target="_blank" rel="noopener noreferrer">{{ conference_choices.get(pub.conference, pub.conference) }} {{ pub.year }} · 主会长文</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
       <p class="saved-paper-authors">{% for author in paper.authors[:5] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if paper.authors|length > 5 %} et al.{% endif %}</p>
-      <section>
-        <strong>摘要精要</strong>
-        <div class="paper-summary">{{ (paper.abstract_zh or paper.abstract)|summary_html|safe }}</div>
-      </section>
-      <section class="saved-paper-reason">
-        <strong>保存价值</strong>
-        <div class="paper-summary">{{ (paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。')|summary_html|safe }}</div>
-      </section>
-      <details class="reading-editor" {% if entry.reading.notes or entry.reading.status != 'unread' %}open{% endif %}>
-        <summary>阅读记录 · <span class="reading-summary">{{ reading_statuses[entry.reading.status] }}{% if entry.reading.read_version %} v{{ entry.reading.read_version }}{% endif %}</span></summary>
+      <div class="library-paper-content" id="library-content-{{ paper.arxiv_id }}"><section class="library-abstract"><h3>摘要精要</h3><div class="paper-summary">{{ (paper.abstract_zh or paper.abstract or '暂无摘要，可查看论文原文。')|summary_html|safe }}</div></section><section class="saved-paper-reason"><h3><i class="far fa-bookmark" aria-hidden="true"></i>保存价值</h3><div class="paper-summary">{{ (paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。')|summary_html|safe }}</div></section></div>
+      <button class="library-expand" type="button" data-library-expand aria-expanded="false" aria-controls="library-content-{{ paper.arxiv_id }}">展开摘要与保存理由<i class="fas fa-chevron-down" aria-hidden="true"></i></button>
+      <details class="reading-editor">
+        <summary><i class="far fa-edit" aria-hidden="true"></i>阅读记录 · <span class="reading-summary">{{ reading_statuses[entry.reading.status] }}{% if entry.reading.read_version %} v{{ entry.reading.read_version }}{% endif %}</span><span class="library-reading-hint">{{ '已记录笔记' if entry.reading.notes else '添加笔记与标签' }}</span><i class="fas fa-chevron-down library-reading-chevron" aria-hidden="true"></i></summary>
         <p class="reading-context">收藏版本：{% if paper.version %}v{{ paper.version }}{% else %}未知{% endif %}。新版同步后保留你的阅读版本与个人结论。</p>
         <form class="reading-form" action="/api/library/reading" method="post">
           <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
           <input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}">
           <input type="hidden" name="expected_updated_at" value="{{ entry.reading.updated_at }}">
           <div class="reading-fields">
-            <label>阅读进度<select name="reading_status">{% for value, label in reading_statuses.items() %}<option value="{{ value }}" {% if entry.reading.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            <label>阅读进度<select name="reading_status" aria-label="阅读进度">{% for value, label in reading_statuses.items() %}<option value="{{ value }}" {% if entry.reading.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
             <label>阅读修订版<input type="number" name="read_version" min="1" {% if paper.version %}max="{{ paper.version }}"{% endif %} value="{{ entry.reading.read_version or '' }}" placeholder="已读时默认当前版本"></label>
             <label>标签<input name="tags" value="{{ entry.reading.tags|join(', ') }}" placeholder="方法、可复现、待比较（用逗号分隔）"></label>
           </div>
@@ -50,26 +46,24 @@
           <div class="reading-save"><button class="button secondary" type="submit">保存阅读记录</button><span class="reading-save-status" role="status">{% if entry.reading.completed_at %}读完于 {{ entry.reading.completed_at[:10] }}{% endif %}</span></div>
         </form>
       </details>
-      <footer>
-        <span class="saved-status"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span>
+      <div class="library-card-meta"><time datetime="{{ entry.saved_at }}">收藏于 {{ entry.saved_at[:10] }}</time><span class="saved-status" title="已收藏论文会作为当前研究方向后续推荐的相关样本"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span></div>
+      <footer class="library-card-actions">
         {% if entry.report_url %}
-        <a href="{{ entry.report_url }}"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
+        <a class="button library-report-button" href="{{ entry.report_url }}"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
         {% else %}
-        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
+        <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button class="button library-report-button" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
         {% endif %}
-        <a href="{{ paper.abs_url }}" rel="noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>arXiv</a>
-        <a href="{{ paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>PDF</a>
-        <a href="/collection?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
         {% if entry.has_report %}
-        <a href="/reading?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library">阅读对话</a>
-        {% else %}<span aria-disabled="true" title="生成报告后可阅读对话">阅读对话（需先生成报告）</span>{% endif %}
+        <a class="library-chat-link" href="/reading?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library"><i class="far fa-comments" aria-hidden="true"></i>阅读对话</a>
+        {% else %}<span class="library-chat-disabled" aria-disabled="true" title="生成报告后可阅读对话"><i class="far fa-comments" aria-hidden="true"></i>阅读对话<small>需先生成报告</small></span>{% endif %}
+        <details class="library-more"><summary><i class="fas fa-ellipsis-h" aria-hidden="true"></i>更多</summary><div class="library-more-menu"><a href="{{ paper.abs_url }}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i>查看 arXiv 原文</a><a href="{{ paper.pdf_url }}" target="_blank" rel="noopener noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a><a href="/collection?arxiv_id={{ (paper.arxiv_id ~ ('v' ~ paper.version if paper.version else ''))|urlencode }}&amp;origin=library"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
         {% for target, url in collection_links(paper.arxiv_id).items() if target != 'obsidian' or entry.has_report %}<a href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}
-        <form action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出</button></form>
+        <form class="library-remove-form" action="/library/remove" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}"><button class="remove-paper" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>移出文献库</button></form></div></details>
       </footer>
     </article>
     {% endfor %}
   </section>
   {% else %}
-  <section class="empty-state"><i class="far fa-bookmark" aria-hidden="true"></i><h1>{% if query %}没有匹配的已保存论文{% else %}文献库还是空的{% endif %}</h1><p>{% if query %}换一个标题、作者或 arXiv ID 试试。{% else %}在“文献推荐”页面选择论文，然后点击“加入文献库”。{% endif %}</p><a class="button primary" href="/">返回每日推荐</a></section>
+  <section class="empty-state library-empty"><i class="far fa-bookmark" aria-hidden="true"></i><h2>{% if query or reading_status %}没有匹配的已保存论文{% else %}文献库还是空的{% endif %}</h2><p>{% if query or reading_status %}试试其他关键词，或清除筛选以查看全部已保存论文。{% else %}在“文献推荐”页面选择感兴趣的论文，加入文献库后可持续记录阅读进度与个人笔记。{% endif %}</p>{% if query or reading_status %}<a class="button secondary" href="/library">查看全部论文</a>{% else %}<a class="button primary" href="/">发现值得阅读的论文<i class="fas fa-arrow-right" aria-hidden="true"></i></a>{% endif %}</section>
   {% endif %}
 {% endblock %}

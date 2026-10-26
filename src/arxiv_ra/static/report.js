@@ -1,6 +1,95 @@
 if('scrollRestoration' in history){history.scrollRestoration='manual';}if(!location.hash){requestAnimationFrame(function(){window.scrollTo(0,0);});}
 // Exported older reports load this shared script without the enhancement module.
 if(!window.PaperLoomMath){const script=document.createElement('script');script.src=new URL('math.js',document.currentScript.src);document.head.append(script);}
+// Load through the shared reader so previously exported reports benefit too.
+(() => {
+  const images = [...document.querySelectorAll('.report-article img')];
+  if (!images.length) return;
+  const stylesheet = document.createElement('link');
+  stylesheet.rel = 'stylesheet';
+  const url = new URL('report-images.css', document.currentScript.src);
+  url.search = new URL(document.currentScript.src).search;
+  stylesheet.href = url;
+  document.head.append(stylesheet);
+  const occurrences = new Map();
+  const refreshers = [];
+  images.forEach((img, index) => {
+    const source = img.getAttribute('src');
+    const occurrence = occurrences.get(source) || 0;
+    occurrences.set(source, occurrence + 1);
+    const key = `paperloom.reportImage.v1:${location.pathname}:${source}:${occurrence}`;
+    let preferred = null;
+    try {
+      const saved = Number(localStorage.getItem(key));
+      if (Number.isFinite(saved) && saved >= 1 && saved <= 100) preferred = saved;
+    } catch { /* Storage is optional, including for file:// reports. */ }
+    const frame = document.createElement('span');
+    frame.className = 'report-image';
+    const anchor = img.closest('a');
+    const target = anchor || img;
+    target.before(frame);
+    frame.append(target);
+    const controls = document.createElement('span');
+    controls.className = 'report-image-controls';
+    controls.setAttribute('role', 'group');
+    controls.setAttribute('aria-label', `图片 ${index + 1} 大小`);
+    const makeButton = (text, label) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.setAttribute('aria-label', label);
+      return button;
+    };
+    const minus = makeButton('−', '缩小图片');
+    const plus = makeButton('＋', '放大图片');
+    const reset = makeButton('恢复默认', '恢复图片默认大小');
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '1';
+    slider.max = '100';
+    slider.step = '1';
+    slider.setAttribute('aria-label', '图片宽度占可用区域的百分比');
+    const value = document.createElement('span');
+    value.className = 'report-image-size';
+    controls.append(minus, slider, plus, value, reset);
+    controls.hidden = true;
+    frame.append(controls);
+    let displayed = 100;
+    function refresh() {
+      const width = frame.clientWidth;
+      if (!width || !img.naturalWidth || !img.naturalHeight) return;
+      const topbar = document.querySelector('.report-topbar')?.offsetHeight || 0;
+      const availableHeight = Math.max(80, window.innerHeight - topbar - 120);
+      const defaultWidth = Math.min(width, img.naturalWidth, availableHeight * img.naturalWidth / img.naturalHeight);
+      const desiredWidth = preferred === null ? defaultWidth : width * preferred / 100;
+      img.style.setProperty('--report-image-width', `${desiredWidth}px`);
+      displayed = Math.max(1, Math.min(100, Math.round(desiredWidth / width * 100)));
+      slider.value = String(displayed);
+      value.textContent = `${displayed}%`;
+      slider.setAttribute('aria-valuetext', `${displayed}% 正文可用宽度${preferred === null ? '，自动适应' : ''}`);
+      minus.disabled = displayed <= 1;
+      plus.disabled = displayed >= 100;
+      controls.hidden = false;
+    }
+    function choose(percent) {
+      preferred = percent === null ? null : Math.max(1, Math.min(100, percent));
+      try {
+        if (preferred === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, String(preferred));
+      } catch { /* Reading and resizing remain available without storage. */ }
+      refresh();
+    }
+    slider.addEventListener('input', () => choose(Number(slider.value)));
+    minus.addEventListener('click', () => choose(displayed - 5));
+    plus.addEventListener('click', () => choose(displayed + 5));
+    reset.addEventListener('click', () => choose(null));
+    img.addEventListener('load', refresh);
+    new ResizeObserver(refresh).observe(frame);
+    refreshers.push(refresh);
+    refresh();
+  });
+  window.addEventListener('resize', () => refreshers.forEach(refresh => refresh()));
+})();
 (() => {
   const sidebar = document.querySelector('.report-sidebar');
   const shell = document.querySelector('.report-shell');

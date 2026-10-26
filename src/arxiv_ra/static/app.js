@@ -191,6 +191,33 @@ const pollJob = async (jobId) => {
 };
 
 document.querySelector('#job-list')?.addEventListener('click', async (event) => {
+  const remove = event.target.closest('[data-delete-job]');
+  if (remove) {
+    if (!window.confirm('删除这条已结束的任务记录？检索结果、已收藏论文和阅读报告会保留。')) return;
+    remove.disabled = true;
+    try {
+      const jobId = remove.dataset.deleteJob;
+      const response = await scopedFetch(`/api/jobs/${jobId}`, {method: 'DELETE'});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || '无法删除任务记录');
+      window.clearTimeout(jobPollTimers.get(jobId));
+      jobPollTimers.delete(jobId);
+      jobWarningCounts.delete(jobId);
+      remove.closest('[data-job-id]').remove();
+      const list = document.querySelector('#job-list');
+      if (!list.children.length) {
+        const empty = document.createElement('p');
+        empty.className = 'queue-empty';
+        empty.textContent = '暂无任务记录';
+        list.append(empty);
+      }
+      toast('任务记录已删除');
+    } catch (error) {
+      remove.disabled = false;
+      toast(error.message);
+    }
+    return;
+  }
   const retry = event.target.closest('[data-retry-job]');
   if (retry) {
     retry.disabled = true;
@@ -353,6 +380,35 @@ document.querySelectorAll('.job-form:not(.conference-search-form)').forEach((for
   bindJobForm(form, () => { if (form.id === 'comparison-form') validateComparison(); });
 });
 
+const profileCreateDialog = document.querySelector('#profile-create-dialog');
+if (profileCreateDialog) {
+  document.querySelectorAll('[data-open-profile-create]').forEach((button) => {
+    button.addEventListener('click', () => {
+      profileCreateDialog.showModal();
+      profileCreateDialog.querySelector('[name="name"]').focus({preventScroll: true});
+    });
+  });
+  profileCreateDialog.querySelector('[data-close-profile-create]').addEventListener('click', () => {
+    profileCreateDialog.close();
+  });
+  profileCreateDialog.addEventListener('cancel', (event) => {
+    if (profileCreateDialog.querySelector('button[type="submit"]').disabled) event.preventDefault();
+  });
+  // Preserve existing links to the former inline creation form.
+  const openProfileCreateFromHash = () => {
+    if (window.location.hash === '#profile-create' && !profileCreateDialog.open) {
+      profileCreateDialog.showModal();
+      profileCreateDialog.querySelector('[name="name"]').focus({preventScroll: true});
+    }
+  };
+  window.addEventListener('hashchange', openProfileCreateFromHash);
+  openProfileCreateFromHash();
+}
+
+document.querySelector('.profile-section-nav a[href="#deleted-drafts"]')?.addEventListener('click', () => {
+  document.querySelector('#deleted-drafts').open = true;
+});
+
 const profileForm = document.querySelector('.profile-form');
 if (profileForm) {
   const button = profileForm.querySelector('button[type="submit"]');
@@ -369,6 +425,7 @@ if (profileForm) {
 
     const body = new URLSearchParams(new FormData(profileForm));
     const fields = [...profileForm.elements].filter((field) => field !== button);
+    const close = profileCreateDialog?.querySelector('[data-close-profile-create]');
     const hasReferences = profileForm.elements.reference_ids.value.trim() !== '';
     const started = Date.now();
     const updateElapsed = () => {
@@ -386,6 +443,7 @@ if (profileForm) {
     status.scrollIntoView({block: 'nearest'});
     const timer = window.setInterval(updateElapsed, 1000);
     button.disabled = true;
+    if (close) close.disabled = true;
     button.innerHTML = '<i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>生成中';
     fields.forEach((field) => { field.disabled = true; });
 
@@ -412,6 +470,7 @@ if (profileForm) {
       window.clearInterval(timer);
       fields.forEach((field) => { field.disabled = false; });
       button.disabled = false;
+      if (close) close.disabled = false;
       button.innerHTML = originalButton;
     }
   });
@@ -1167,6 +1226,37 @@ if (comparisonForm) {
   validateComparison();
 }
 
+document.querySelector('.saved-library')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-library-expand]');
+  if (!button) return;
+  const expanded = button.getAttribute('aria-expanded') !== 'true';
+  document.getElementById(button.getAttribute('aria-controls')).classList.toggle('is-expanded', expanded);
+  button.setAttribute('aria-expanded', String(expanded));
+  button.firstChild.textContent = expanded ? '收起摘要与保存理由' : '展开摘要与保存理由';
+});
+
+if (document.querySelector('.library-more')) {
+  document.addEventListener('click', (event) => {
+    const current = event.target.closest('.library-more');
+    document.querySelectorAll('.library-more[open]').forEach((menu) => {
+      if (menu !== current) menu.open = false;
+    });
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    document.querySelectorAll('.library-more[open]').forEach((menu) => {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    });
+  });
+}
+
+document.querySelectorAll('.library-remove-form').forEach((form) => {
+  form.addEventListener('submit', (event) => {
+    if (!window.confirm('从当前研究方向的文献库移出这篇论文？个人阅读记录和已生成报告会保留。')) event.preventDefault();
+  });
+});
+
 // Explicit saves keep notes intact when a request fails or another editor wins.
 document.querySelectorAll('.reading-form').forEach((form) => {
   form.addEventListener('submit', async (event) => {
@@ -1183,6 +1273,25 @@ document.querySelectorAll('.reading-form').forEach((form) => {
       form.elements.read_version.value = payload.reading.read_version || '';
       form.closest('.reading-editor').querySelector('.reading-summary').textContent =
         payload.label + (payload.reading.read_version ? ` v${payload.reading.read_version}` : '');
+      const card = form.closest('.saved-paper-card');
+      if (card) {
+        const previous = card.dataset.readingStatus;
+        const next = payload.reading.status;
+        const badge = card.querySelector('.library-reading-badge');
+        if (badge) {
+          badge.textContent = payload.label;
+          badge.className = `library-reading-badge status-${next}`;
+        }
+        const hint = card.querySelector('.library-reading-hint');
+        if (hint) hint.textContent = payload.reading.notes ? '已记录笔记' : '添加笔记与标签';
+        if (previous !== next) {
+          [previous, next].forEach((value) => {
+            const counter = document.querySelector(`[data-library-count="${value}"]`);
+            if (counter) counter.textContent = String(Number(counter.textContent) + (value === next ? 1 : -1));
+          });
+        }
+        card.dataset.readingStatus = next;
+      }
       status.textContent = payload.message;
     } catch (error) {
       status.textContent = error.message;

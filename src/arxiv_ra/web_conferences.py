@@ -32,28 +32,55 @@ def register_conference_routes(app, templates, context, current_config, jobs, ou
             raise HTTPException(404, '当前研究方向没有这次检索记录')
         return result
 
+    def result_history(profile_id):
+        paths = sorted(result_folder(profile_id).glob('*.json'),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        history = []
+        for path in paths:
+            item = read_json(path, {})
+            if item.get('profile_id') == profile_id and re.fullmatch(r'[a-f0-9]{32}', path.stem):
+                history.append(item)
+        return history
+
     @app.get('/conferences')
     def conference_page(request: Request, search_id: str = '', profile_id: str | None = None):
         current = current_config()
         if profile_id is not None and profile_id != current.profile_id:
             raise HTTPException(409, '研究方向已切换，请重新打开会议检索')
+        history = result_history(current.profile_id)
         result = None
         if search_id:
             result = read_result(current.profile_id, search_id)
         else:
-            paths = sorted(result_folder(current.profile_id).glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)
-            if paths:
-                result = read_result(current.profile_id, paths[0].stem)
+            result = history[0] if history else None
         scope = asdict(current.discovery)
         if result:
             scope.update(result['scope'])
         scope['mode'] = 'conference'
         return templates.TemplateResponse(request, 'conferences.html', context(request, 'conferences',
-            scope=scope, result=result, search_options={
+            scope=scope, result=result, conference_history=history,
+            jobs=[asdict(job) for job in jobs.recent(limit=None, kind='conferences', profile_id=current.profile_id)],
+            search_options={
                 'topic_mode': result.get('topic_mode', 'direction') if result else 'direction',
                 'topic': result.get('topic', '') if result and result.get('topic_mode') == 'custom' else '',
                 'max_candidates': result.get('max_candidates', 30) if result else 30,
             }, saved=PaperLibraryStore(output_root, current.profile_id).all()))
+
+    @app.post('/conferences/{search_id}/delete')
+    async def delete_conference_result(request: Request, search_id: str):
+        form = await request.form()
+        current = current_config()
+        if str(form.get('profile_id', '')) != current.profile_id:
+            raise HTTPException(409, '研究方向已切换，请刷新页面后重试')
+        read_result(current.profile_id, search_id)
+        selected = str(form.get('selected_search_id', ''))
+        # Keep the result being read when deleting a different history entry.
+        if selected and selected != search_id:
+            read_result(current.profile_id, selected)
+        (result_folder(current.profile_id) / f'{search_id}.json').unlink()
+        if selected and selected != search_id:
+            return RedirectResponse(f'/conferences?profile_id={current.profile_id}&search_id={selected}#conference-results', status_code=303)
+        return RedirectResponse(f'/conferences?profile_id={current.profile_id}#conference-results', status_code=303)
 
     @app.post('/api/jobs/conferences')
     async def search_conferences(request: Request):

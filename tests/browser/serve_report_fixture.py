@@ -30,6 +30,12 @@ for number, title in enumerate([
         "paper": {"arxiv_id": aid, "version": 1, "title": title, "authors": [{"name": "Ada"}]},
     })
     text = f"# {title}\n\n| 字段 | 内容 |\n|---|---|\n| arXiv ID | {aid} |\n| 作者 | Ada |\n\n"
+    for name, width, height in [("wide", 2400, 1400), ("tall", 1000, 2400), ("small", 120, 80)]:
+        (directory / f"{name}.svg").write_text(
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+            f'<rect width="{width}" height="{height}" fill="#fff3e7"/>'
+            f'<text x="20" y="55" font-size="32" fill="#c7650e">{name}</text></svg>', encoding="utf-8")
+        text += f"![{name}]({name}.svg)\n*图片说明 {name}*\n\n"
     for section in ["一句话总结", "核心方法", "关键结果", "局限性", *[f"补充分析 {index}" for index in range(1, 31)]]:
         text += f"## {section}\n\n" + "这是用于验证报告阅读布局的独立演示材料。" * 18 + "\n\n"
     (directory / "report.md").write_text(text, encoding="utf-8")

@@ -9,7 +9,8 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', path='/app-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/fontawesome/css/all.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v={{ asset_version('app.css') }}">
-  {% if active == 'profiles' %}<link rel="stylesheet" href="{{ url_for('static', path='/profiles.css') }}?v=20261009-layout">{% endif %}
+  {% if active == 'profiles' %}<link rel="stylesheet" href="{{ url_for('static', path='/profiles.css') }}?v={{ asset_version('profiles.css') }}">{% endif %}
+  {% if active == 'library' %}<link rel="stylesheet" href="{{ url_for('static', path='/library.css') }}?v={{ asset_version('library.css') }}">{% endif %}
   {% if active in ['weekly', 'versions', 'citations', 'search', 'conferences'] %}<link rel="stylesheet" href="{{ url_for('static', path='/research.css') }}?v={{ asset_version('research.css') }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/katex/katex.min.css') }}">
   <script async src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>

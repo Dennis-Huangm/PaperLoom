@@ -446,6 +446,16 @@ class JobManager:
                 deleted += 1
             return deleted
 
+    def delete_finished(self, job_id: str, profile_id: str) -> None:
+        """Delete one owned, terminal queue record without deleting its result."""
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if job is None or job.profile_id != profile_id:
+                raise KeyError(job_id)
+            if job.status not in FINISHED_STATUSES:
+                raise ValueError('任务仍在运行，请先取消任务，结束后再删除记录')
+            self._forget(job_id)
+
     def _forget(self, job_id: str) -> None:
         self.store.delete(job_id)
         del self.jobs[job_id]
@@ -502,14 +512,17 @@ class JobManager:
                     job.result_url = None
                     self._save(job)
 
-    def recent(self, limit: int = 8) -> list[BackgroundJob]:
+    def recent(self, limit: int | None = 8, *, kind: str | None = None,
+               profile_id: str | None = None) -> list[BackgroundJob]:
         with self.lock:
             for job in self.jobs.values():
                 if self._dismiss_content_warning(job):
                     self._save(job)
             # Reading turns expose their progress and history in the conversation.
-            ordered = [job for job in reversed(list(self.jobs.values())) if job.kind != "reading"]
-            return [job for index, job in enumerate(ordered) if index < limit
+            ordered = [job for job in reversed(list(self.jobs.values())) if job.kind != "reading"
+                       and (kind is None or job.kind == kind)
+                       and (profile_id is None or job.profile_id == profile_id)]
+            return [job for index, job in enumerate(ordered) if limit is None or index < limit
                     or job.status in {"queued", "running", "cancelling", "interrupted"} and not job.retry_job_id]
 
     def history(self, page: int, size: int = 25) -> dict:
