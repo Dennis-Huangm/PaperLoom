@@ -2,6 +2,54 @@
 from arxiv_ra.report_tables import ReportTables
 
 
+def test_multiple_category_columns_survive_json_roundtrip():
+    import json
+
+    note = ('### Table 1\n| Model | Difficulty | Model Category | Score |\n'
+            '|---|---|---|---|\n| A | Hard | Open | 91.2 |\n')
+    catalogue = ReportTables.from_notes([note], [{'number': 1}])
+    restored = ReportTables.from_dict(json.loads(json.dumps(catalogue.to_dict())))
+    assert restored.tables == catalogue.tables
+    assert isinstance(restored.tables[0].variants[0].rows[0].category, str)
+
+
+def test_duplicate_rows_in_one_extraction_merge_reference_column():
+    note = ('### Table 1: Results\n\n| Model | Score | 原文依据 |\n|---|---|---|\n'
+            '| A | 1 | [[证据ID:p1-s1]] |\n| A | 1 | [[证据ID:p1-s2]] |\n')
+    rows = ReportTables.from_notes([note], [{'number': 1}]).tables[0].variants[0].rows
+    assert len(rows) == 1
+    assert '[[证据ID:p1-s1]]' in rows[0].cells[2]
+    assert '[[证据ID:p1-s2]]' in rows[0].cells[2]
+
+
+def test_duplicate_values_keep_distinct_evidence_embedded_in_data_cells():
+    note = ('### Table 1: Results\n\n| Model | Score |\n|---|---|\n'
+            '| A [[证据ID:p1-s1]] | 1 |\n| A [[证据ID:p1-s2]] | 1 |\n')
+    # Cover both an individual extraction and merging repeated chunks.
+    for notes in ([note], [note, note]):
+        rows = ReportTables.from_notes(notes, [{'number': 1}]).tables[0].variants[0].rows
+        assert len(rows) == 2
+        assert '[[证据ID:p1-s1]]' in rows[0].cells[0]
+        assert '[[证据ID:p1-s2]]' in rows[1].cells[0]
+
+
+def test_reopened_category_keeps_its_heading_without_empty_duplicate_groups():
+    note = ('### Table 1\n| Model | Score |\n|---|---|\n'
+            '| Open | |\n| A | 1 |\n| Closed | |\n| B | 2 |\n| Open | |\n| C | 3 |\n')
+    for notes in ([note], [note, note]):
+        catalogue = ReportTables.from_notes(notes, [{'number': 1}])
+        rows = catalogue.tables[0].variants[0].rows
+        active = None
+        ownership = {}
+        for row in rows:
+            if row.group_heading:
+                active = row.cells[0].lower()
+            else:
+                ownership[row.cells[0]] = active
+        assert ownership == {'A': 'open', 'B': 'closed', 'C': 'open'}
+        assert len(rows) <= 6
+
+
 def test_repeated_multilevel_header_extraction_has_one_matrix():
     plain = ('### Table 6: Ablation over model size.\n\n'
              '| #L | #H | #A | LM (ppl) | MNLI-m |\n|---|---|---|---|---|\n'

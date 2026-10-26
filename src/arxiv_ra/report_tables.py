@@ -161,21 +161,38 @@ def _merge_note_variants(variants):
         key = variant.condition, tuple(sorted(columns)) if unique else columns
         previous = combined.get(key)
         if previous is None:
-            combined[key] = variant
-            continue
+            previous = replace(variant, rows=(), context=())
         headers = previous.headers
         if any(role == 'reference' for role in variant.column_roles) and not any(
                 role == 'reference' for role in previous.column_roles):
             headers += ('原文依据',)
         merged = []
         seen = {}
+        active_heading = None
         for current in (previous, variant):
             current_indices = [i for i, role in enumerate(current.column_roles) if role == 'data']
+            pending_heading = None
             for row in current.rows:
+                refs = [value for value, role in zip(row.cells, current.column_roles) if role == 'reference' and value]
+                mapping = {_column(h): value for h, value, role in zip(current.headers, row.cells, current.column_roles)
+                           if role == 'data'}
+                data_values = iter(row.cells[i] for i in current_indices)
+                values = tuple(' '.join(refs) if column_role(h) == 'reference' else
+                               mapping[_column(h)] if unique else next(data_values) for h in headers)
+                if row.group_heading:
+                    # Emit a heading only when its group contributes a row.
+                    # Reopened groups need their heading even after deduplication.
+                    pending_heading = replace(row, cells=values)
+                    continue
                 data = [(_column(current.headers[i]), _cell_value(row.cells[i], current.headers[i]))
                         for i in current_indices]
-                identity = _digest([row.category, row.group_heading, sorted(data) if unique else data])
-                refs = [value for value, role in zip(row.cells, current.column_roles) if role == 'reference' and value]
+                # Evidence inside data cells cannot be moved into a reference
+                # column. Keep distinct supporting extracts as separate rows.
+                inline_sources = sorted({match[0] for i in current_indices
+                                         for pattern in (TOKEN, _LINK)
+                                         for match in pattern.finditer(row.cells[i])})
+                identity = _digest([row.category, row.group_heading, sorted(data) if unique else data,
+                                    inline_sources])
                 if identity in seen:
                     index = seen[identity]
                     if refs:
@@ -184,11 +201,10 @@ def _merge_note_variants(variants):
                         cells[ref_index] = ' '.join(dict.fromkeys([cells[ref_index], *refs])).strip()
                         merged[index] = replace(merged[index], cells=tuple(cells))
                     continue
-                mapping = {_column(h): value for h, value, role in zip(current.headers, row.cells, current.column_roles)
-                           if role == 'data'}
-                data_values = iter(row.cells[i] for i in current_indices)
-                values = tuple(' '.join(refs) if column_role(h) == 'reference' else
-                               mapping[_column(h)] if unique else next(data_values) for h in headers)
+                if pending_heading is not None and pending_heading.cells != active_heading:
+                    merged.append(pending_heading)
+                    active_heading = pending_heading.cells
+                pending_heading = None
                 seen[identity] = len(merged)
                 merged.append(replace(row, cells=values))
         combined[key] = replace(previous, headers=headers, column_roles=(), rows=tuple(merged),
@@ -304,7 +320,7 @@ class ReportTables:
             table_rows = []
             for row in rows:
                 values = tuple(value.strip() for value, _, _ in row['cells'])
-                category = row.get('category', '')
+                category = str(row.get('category', ''))
                 identity = [category, condition, [(h, _cell_value(v, h)) for h, v in zip(headers, values)
                                                 if label(h) not in _SOURCE]]
                 table_rows.append(TableRow('row-' + _digest(identity)[:20], values, category,
