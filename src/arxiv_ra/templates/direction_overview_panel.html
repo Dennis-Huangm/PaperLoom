@@ -1,0 +1,14 @@
+<section class="draft-panel overview-panel" data-overview-panel data-overview-status="{{ overview.status }}" data-overview-url="/api/direction-overviews/{{ overview_profile.id }}?source={{ overview_source }}">
+  <div class="draft-section-heading"><h2>方向小综述</h2><span data-overview-status-label>{{ {'none':'尚未生成','queued':'排队中','running':'生成中','cancelling':'正在取消','ready':'可阅读','failed':'生成失败','cancelled':'已取消','interrupted':'已中断'}.get(overview.status, overview.status) }}</span></div>
+  <p>介绍研究背景、关键概念、技术路线与代表工作，附参考文献和入门阅读顺序。</p>
+  {% if overview.stale %}<p class="draft-notice">主题已更新，可重新生成。下方文章对应生成时的主题。</p>{% endif %}
+  {% if overview.generation_outdated %}<p class="draft-notice">正在为修改前的主题生成。完成后可阅读原主题文章，也可以按当前主题重新生成。</p>{% endif %}
+  {% if overview.error %}<p class="draft-notice" role="status">{{ overview.error }}{% if overview.article %} 已有文章仍可阅读。{% endif %}</p>{% endif %}
+  {% if overview.job and overview.status in ['queued','running','cancelling'] %}<p class="draft-help" data-overview-progress aria-live="polite">{{ overview.job.detail }}</p>{% endif %}
+  <div class="draft-actions">
+    {% if overview.article %}<a class="button primary" href="/profiles/{{ overview_profile.id }}/overview?source={{ overview_source }}">阅读方向小综述</a><a class="button secondary" href="/profiles/{{ overview_profile.id }}/overview.md?source={{ overview_source }}">下载 Markdown</a>{% endif %}
+    <form method="post" action="/profiles/{{ overview_profile.id }}/overview?source={{ overview_source }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button secondary" type="submit" {% if overview.status in ['queued','running','cancelling'] and not overview.generation_outdated %}disabled{% endif %}>{{ '重新生成小综述' if overview.article else '生成方向小综述' }}</button></form>
+  </div>
+  {% if overview.status in ['queued','running','cancelling'] %}<p class="draft-help">正在后台生成，可以继续检查、试搜或启用方向。</p>{% endif %}
+</section>
+<script defer src="{{ url_for('static', path='/direction-overview.js') }}?v={{ asset_version('direction-overview.js') }}"></script>

@@ -9,7 +9,7 @@ from pathlib import Path
 from .config import AppConfig
 
 
-RECOVERABLE = {"report", "digest", "weekly", "compare", "version-batch"}
+RECOVERABLE = {"report", "digest", "weekly", "compare", "version-batch", "direction-overview"}
 
 
 def capture_request(kind, config, project_root, **parameters):
@@ -31,6 +31,8 @@ def restore_config(request, output_root):
 
 
 def recovery_note(kind):
+    if kind == "direction-overview":
+        return "按提交时的主题与参考论文重新检索并生成小综述；已有文章继续保留。"
     if kind == "version-batch":
         return "继续原批次，复用已成功的同步步骤。"
     note = "按保存的配置重新执行，可能再次调用模型及已配置的同步。"
@@ -70,6 +72,10 @@ def request_runner(request, output_root, checkpoint=None):
     checkpoint = deepcopy(checkpoint or {})
 
     def run():
+        if kind == "direction-overview":
+            from .direction_overview import OverviewGenerator
+            with OverviewGenerator(config, root) as service:
+                return service.generate(params["profile"])
         if kind == "report":
             from .models import Paper
             from .pipeline import DailyPipeline

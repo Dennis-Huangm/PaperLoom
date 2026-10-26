@@ -193,6 +193,30 @@ class ArxivClient:
         response.raise_for_status()
         return parse_feed(response.text)
 
+    def search_literature(self, categories: list[str], query_groups: list[list[str]], *,
+                          date_from: datetime | None = None, date_to: datetime | None = None,
+                          max_results: int = 30) -> list[Paper]:
+        """Bounded topic retrieval for introductions, independent of daily recency."""
+        if not query_groups or any(not group for group in query_groups):
+            raise ValueError("综述检索需要非空主题概念组")
+        groups = []
+        for group in query_groups:
+            if any(not isinstance(term, str) or not term.strip() or re.search(r'["\\\[\]():]', term) for term in group):
+                raise ValueError("查询短语不接受原始查询语法")
+            groups.append("(" + " OR ".join(f'all:"{term}"' for term in group) + ")")
+        parts = [" AND ".join(groups)]
+        if categories:
+            parts.append("(" + " OR ".join(f"cat:{category}" for category in categories) + ")")
+        if date_from or date_to:
+            start = date_from.strftime("%Y%m%d%H%M") if date_from else "199101010000"
+            end = (date_to or datetime.now(timezone.utc)).strftime("%Y%m%d%H%M")
+            parts.append(f"submittedDate:[{start} TO {end}]")
+        params = {"search_query": " AND ".join(parts), "start": 0, "max_results": min(30, max(1, max_results)),
+                  "sortBy": "relevance", "sortOrder": "descending"}
+        response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")
+        response.raise_for_status()
+        return parse_feed(response.text)
+
     def find_by_title(self, title: str) -> list[Paper]:
         """Find association candidates without a submission-date constraint."""
         words = re.findall(r"\w+", title, re.UNICODE)

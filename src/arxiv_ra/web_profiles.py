@@ -12,11 +12,13 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from .profiles import DraftConflict
-from .profile_plan import KINDS, categories, strings, refresh_draft, condition, new_draft, edit_draft
+from .profile_plan import KINDS, categories, strings, refresh_draft, condition, new_draft, edit_draft, edit_profile_references
 from .profile_drafts import ProfileDraftWorkflow, DRAFT_ACTIONS
 
 
 def register_profile_routes(app, profiles, current_config, templates, context, jobs, project_root):
+    from .web_direction_overview import register_overview_routes
+    overview_for = register_overview_routes(app, profiles, current_config, templates, context, jobs, project_root)
     def get_draft(draft_id):
         try:
             return profiles.draft(draft_id)
@@ -44,6 +46,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         profile = get_saved(profile_id)
         return templates.TemplateResponse(request, "profile_edit.html", context(request, "profiles",
             profile=profile, profile_revision=profiles.saved_revision(profile_id), condition_kinds=KINDS,
+            overview=overview_for(profile), overview_profile=profile, overview_source="saved",
             versioned=(profile.get("plan") or {}).get("version") == 2))
 
     @app.post("/profiles/{profile_id}/edit")
@@ -81,6 +84,8 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
                     negative_keywords=strings([s.strip() for s in str(form.get("negative_keywords", "")).splitlines() if s.strip()]),
                 )
             updated["discovery"].update(numbers)
+            if "reference_ids" in form:
+                edit_profile_references(updated, [s.strip() for s in str(form["reference_ids"]).splitlines() if s.strip()])
             if "mode" in form:
                 updated["discovery"].update(scope_from_form(form))
             updated["discovery"]["prefilter_count"] = max(
@@ -148,8 +153,10 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
 
     @app.get("/profiles/drafts/{draft_id}")
     def draft_page(request: Request, draft_id: str):
+        draft = get_draft(draft_id)
         return templates.TemplateResponse(request, "profile_draft.html", context(request, "profiles",
-            draft=get_draft(draft_id), condition_kinds=KINDS))
+            draft=draft, condition_kinds=KINDS, overview=overview_for(draft),
+            overview_profile=draft, overview_source="draft"))
 
     async def mutation_data(request, draft, action):
         data: dict[str, Any]
@@ -163,6 +170,8 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         if action == "preview":
             data["lookback_days"] = int(str(form.get("lookback_days", "90")))
         if action == "edit":
+            if "reference_ids" in form:
+                data["reference_ids"] = [s.strip() for s in str(form["reference_ids"]).splitlines() if s.strip()]
             if "mode" in form:
                 data.update(scope_from_form(form))
             items = []

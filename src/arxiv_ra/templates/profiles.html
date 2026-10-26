@@ -63,6 +63,7 @@
             <form method="post" action="/profiles/{{ profile.id }}/activate"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button subtle" type="submit">切换到此方向</button></form>{% endif %}
           </div>
           <p>{{ profile.description or '尚未填写方向描述。' }}</p>
+          <p><a href="/profiles/{{ profile.id }}/overview?source=saved">方向小综述 · 阅读或生成 →</a></p>
           <div class="profile-card-actions"><a class="button secondary" href="/profiles/{{ profile.id }}/edit"><i class="far fa-edit" aria-hidden="true"></i>编辑方向</a><form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="button subtle">复制为新草稿</button></form></div>
           <div class="profile-tags">{% for keyword in profile.keywords[:8] %}<span>{{ keyword }}</span>{% endfor %}</div>
           {% if profile.references %}<div class="profile-references"><strong>参考论文</strong>{% for paper in profile.references[:4] %}<span>arXiv:{{ paper.arxiv_id }} · {{ paper.title }}</span>{% endfor %}</div>{% endif %}

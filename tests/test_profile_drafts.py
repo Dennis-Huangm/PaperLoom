@@ -24,6 +24,10 @@ def workspace(tmp_path, monkeypatch):
     }))
     monkeypatch.setattr(ResearchClients, "llm", property(lambda self: model))
     monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
+    # Newly created directions now start a background overview. Keep its
+    # external literature sources offline without replacing the workflow.
+    monkeypatch.setattr("arxiv_ra.arxiv_client.ArxivClient.search_literature", lambda *a, **kw: [])
+    monkeypatch.setattr("arxiv_ra.conference_discovery.ConferenceClient.discover", lambda *a, **kw: ([], {}))
     app = create_app(config)
     with TestClient(app) as client:
         yield client, model, tmp_path

@@ -134,9 +134,23 @@ def _reconcile_branches(draft):
         draft["diagnostics"].append("主题线索已改变，原查询分支失去锚点；已重新建立基础查询，请检查。")
 
 
+def edit_profile_references(profile, reference_ids):
+    ids = strings(reference_ids, limit=12, label="参考论文")
+    if any(not re.fullmatch(r"(?:[a-z-]+(?:\.[A-Z]{2})?/\d{7}|\d{4}\.\d{4,5})(?:v\d+)?", aid, re.I) for aid in ids):
+        raise ValueError("参考论文 arXiv ID 无效")
+    previous = {r["arxiv_id"]: r for r in profile.get("references", [])}
+    profile["references"] = [previous.get(aid) or {"arxiv_id": aid, "title": "", "abstract": "", "categories": []}
+                             for aid in ids]
+    profile.setdefault("source", {})["reference_papers"] = [
+        {"arxiv_id": r["arxiv_id"], "title": r.get("title", "")} for r in profile["references"]]
+    profile["discovery"]["seed_papers"] = ids
+
+
 def edit_draft(draft, changes):
     """Apply user edits without losing provenance or resurrecting deleted suggestions."""
     draft = copy.deepcopy(draft)
+    if "reference_ids" in changes:
+        edit_profile_references(draft, changes["reference_ids"])
     old = {c["id"]: c for c in draft["plan"]["conditions"]}
     items = validate_conditions(changes.get("conditions", draft["plan"]["conditions"]))
     suppressed = set(draft.get("suppressed", []))

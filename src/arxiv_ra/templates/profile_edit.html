@@ -3,12 +3,15 @@
 {% block content %}
 <div class="draft-workspace profile-edit-workspace">
   <header class="page-heading"><div><p class="section-kicker">研究方向 / 编辑</p><h1>编辑研究方向</h1><p>{{ profile.name }}</p></div><a href="/profiles#saved-profiles">返回已保存方向</a></header>
+  {% include 'direction_overview_panel.html' %}
   <form method="post" action="/profiles/{{ profile.id }}/edit" class="settings-form draft-panel">
     <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
     <input type="hidden" name="profile_revision" value="{{ profile_revision }}">
     <div class="draft-section-heading"><h2>研究主题</h2></div>
     <label>方向名称<input name="name" value="{{ profile.name }}" maxlength="80" required></label>
     <label>研究主题<textarea name="description" rows="4" maxlength="4000" required>{{ profile.description or profile.discovery.interest_description }}</textarea></label>
+    <label>参考论文 arXiv ID<textarea name="reference_ids" rows="3">{% for ref in profile.get('references') or profile.get('source', {}).get('reference_papers', []) %}{{ ref.arxiv_id }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea></label>
+    <p class="draft-help">每行一个，最多 12 篇。保存主题或参考论文修改后，可重新生成方向小综述。</p>
 
     {% if versioned %}
     <div class="draft-section-heading"><h2>检索与筛选条件</h2></div>

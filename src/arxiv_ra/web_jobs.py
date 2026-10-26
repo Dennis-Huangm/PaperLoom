@@ -43,6 +43,7 @@ JOB_LABELS = {
     "reading": "论文阅读对话",
     "conferences": "会议论文检索",
     "profile-preview": "研究方向试搜",
+    "direction-overview": "生成方向小综述",
     "search-index": "更新本地搜索索引",
     "report": "生成完整阅读报告",
     "digest": "刷新每日推荐",
@@ -560,6 +561,9 @@ class JobManager:
                               # active request with the original submission hash.
                               identity=f"recovery:{job_id}", profile_id=profile_id, request=request,
                               retry_of=job_id, checkpoint=checkpoint)
+            if previous.kind == "direction-overview":
+                from .direction_overview import OverviewStore
+                OverviewStore(self.output_root).attach_job(request["parameters"]["profile"], job.id)
             self._forget(job_id)
             return job
 

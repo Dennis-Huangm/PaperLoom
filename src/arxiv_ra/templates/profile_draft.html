@@ -7,12 +7,15 @@
 <nav class="draft-steps" aria-label="草稿步骤"><a href="#draft-editor">1 · 确认主题与条件</a><a href="#draft-try">2 · 试搜验证</a><a href="#draft-enable">3 · 启用方向</a></nav>
 <div class="draft-overview"><span class="draft-badge {{ draft.status }}">{{ {'ready':'可试搜 / 可启用','needs_input':'待补全主题','failed':'建议生成失败'}[draft.status] }}</span><span>第 {{ draft.revision }} 版</span><span>{{ draft.plan.conditions|selectattr('confirmed')|list|length }} 条已采用条件</span><span>{{ draft.references|length }} 篇参考论文</span></div>
 {% if draft.diagnostics %}<aside class="draft-notice"><strong>需要关注</strong>{% for message in draft.diagnostics %}<p>{{ message }}</p>{% endfor %}{% if draft.status == 'failed' %}<p>可修改并保存主题条件，或在下方重新生成建议。</p>{% endif %}</aside>{% endif %}
+{% include 'direction_overview_panel.html' %}
 <form id="draft-editor" method="post" action="/profiles/drafts/{{ draft.id }}/edit" class="settings-form draft-panel">
 {{ hidden_fields() }}
 <div class="draft-section-heading"><h2>1 · 确认研究主题</h2><span>修改后先保存</span></div>
 <label>方向名称<input name="name" value="{{ draft.name }}" maxlength="80" required></label>
 <p class="draft-help">模型提炼的名称可以在这里修改；手动修改后，重新生成建议会保留你的名称。</p>
 <label>研究主题<textarea name="description" rows="3" maxlength="4000" required>{{ draft.description }}</textarea></label>
+<label>参考论文 arXiv ID<textarea name="reference_ids" rows="3">{% for ref in draft.references %}{{ ref.arxiv_id }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea></label>
+<p class="draft-help">每行一个，最多 12 篇。保存参考论文修改后，可重新生成方向小综述。</p>
 <p class="draft-help">检查系统理解是否准确。关键词帮助找到论文；偏好调整排序；必要条件和明确排除决定能否入选。</p>
 <div class="draft-section-heading"><h3>筛选条件</h3><span>展开一组，再点具体条件进行编辑</span></div>
 {% for kind, label in condition_kinds.items() %}

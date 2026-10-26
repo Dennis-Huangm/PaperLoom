@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ overview_profile.name }} · 方向小综述{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='/direction-overview.css') }}?v={{ asset_version('direction-overview.css') }}">
+<div class="draft-workspace overview-workspace">
+  <header class="page-heading"><div><p class="section-kicker">研究方向 / 小综述</p><h1>{{ overview_profile.name }}</h1><p>从背景、技术路线到入门阅读顺序。</p></div><a href="{{ '/profiles/drafts/' ~ overview_profile.id if overview_source == 'draft' else '/profiles/' ~ overview_profile.id ~ '/edit' }}">返回方向</a></header>
+  {% include 'direction_overview_panel.html' %}
+  {% if overview.article %}
+  <div class="overview-meta"><span>生成于 {{ overview.article.generated_at[:10] }}</span><span>{{ overview.article.sources|length }} 篇文献</span><span>主题：{{ overview.article.snapshot.description }}</span></div>
+  <article class="overview-article" aria-label="方向小综述正文">{{ overview_body|safe }}</article>
+  {% else %}<section class="draft-panel"><p>小综述会结合实际检索到的文献介绍该方向。生成完成后，正文会显示在这里。</p></section>{% endif %}
+</div>
+{% endblock %}

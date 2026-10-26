@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from .profiles import ProfileGenerator, DraftConflict
 from .profile_plan import KINDS, strings, edit_draft, merge_regenerated_draft
@@ -61,7 +62,16 @@ class ProfileDraftWorkflow:
             draft = generator.generate(draft_id, name, keywords, negative, references, description, count,
                                        required=required, excluded=excluded)
         draft.update(request_id=request_id, request_fingerprint=fingerprint)
-        return self.profiles.save_draft(draft)
+        draft = self.profiles.save_draft(draft)
+        # The search draft is usable even if overview submission fails.
+        from .direction_overview import OverviewStore, submit_overview
+        try:
+            submit_overview(draft, self.config, self.profiles.root.parent, self.jobs)
+        except Exception:
+            output = Path(self.config.output_dir)
+            store = OverviewStore(output if output.is_absolute() else self.profiles.root.parent / output)
+            store.fail(store.start(draft), "综述任务提交失败，可从方向小综述入口重试")
+        return draft
 
     def mutate(self, draft_id, action, data):
         if action not in DRAFT_ACTIONS:
