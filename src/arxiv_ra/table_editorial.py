@@ -48,7 +48,7 @@ def validate_editorial(table, editorial):
 
 def editorial_errors(table, editorial):
     """Actionable, source-scoped diagnostics for repair and persisted fallback."""
-    from .report_completeness import _column
+    from .table_extraction import column_key as _column
     if not isinstance(editorial, dict):
         return ['输出必须是 JSON 对象。']
     entries = editorial.get('entries')

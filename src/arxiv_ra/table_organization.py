@@ -5,7 +5,7 @@ import json
 import re
 
 from .evidence import TOKEN
-from .report_completeness import _headings
+from .table_extraction import section_headings as _headings
 from .report_tables import ReportTables, SourceTable, TableRow, TableVariant
 from .table_quality import cells, mask_quotes, tables
 from .utils import extract_json_object

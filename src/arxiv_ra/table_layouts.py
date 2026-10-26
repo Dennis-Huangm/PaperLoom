@@ -8,7 +8,7 @@ from dataclasses import replace
 import re
 import unicodedata
 
-from .report_completeness import _column, _cell_value, _value
+from .table_extraction import column_key as _column, cell_key as _cell_value, text_key as _value
 
 
 def _name(value):

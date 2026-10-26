@@ -1,3 +1,4 @@
+(() => {
 const renderSummaryMath = root => window.PaperLoomMath?.render(root);
 
 // Carry the direction shown by this page through every asynchronous operation.
@@ -14,56 +15,6 @@ const toast = (message) => {
   node.classList.add('show');
   window.setTimeout(() => node.classList.remove('show'), 3600);
 };
-
-document.querySelectorAll('.credential-visibility').forEach((button) => {
-  const card = button.closest('.credential-card');
-  const input = card.querySelector('.credential-input-control input:not([type="hidden"])');
-  const stored = card.querySelector('.credential-value');
-  const clear = card.querySelector('.clear-option input');
-  const setVisible = (visible) => {
-    input.value = visible ? stored.value : '';
-    input.placeholder = stored.value || (input.dataset.configured === 'true' && input.dataset.edited !== 'true')
-      ? '********' : '输入新值';
-    input.type = visible ? 'text' : 'password';
-    button.setAttribute('aria-pressed', String(visible));
-    button.setAttribute('aria-label', `${visible ? '隐藏' : '显示'} ${button.dataset.label}`);
-    button.innerHTML = `<i class="far fa-eye${visible ? '-slash' : ''}" aria-hidden="true"></i><span>${visible ? '隐藏' : '显示'}</span>`;
-  };
-  input.addEventListener('input', () => {
-    input.dataset.edited = 'true';
-    stored.value = input.value;
-  });
-  clear.addEventListener('change', () => {
-    if (clear.checked) setVisible(false);
-    input.disabled = clear.checked;
-    button.disabled = clear.checked;
-  });
-  button.addEventListener('click', async () => {
-    if (input.type === 'text') {
-      setVisible(false);
-      return;
-    }
-    button.disabled = true;
-    try {
-      if (!stored.value && input.dataset.configured === 'true'
-          && input.dataset.loaded !== 'true' && input.dataset.edited !== 'true') {
-        const body = new FormData();
-        body.set('field', stored.name);
-        const response = await scopedFetch('/settings/credentials/reveal', {method: 'POST', body});
-        const payload = await response.json();
-        if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : '无法读取当前配置');
-        // Keep edits made while the request was in flight.
-        if (input.dataset.edited !== 'true') stored.value = payload.value;
-        input.dataset.loaded = 'true';
-      }
-      if (!clear.checked) setVisible(true);
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      button.disabled = clear.checked;
-    }
-  });
-});
 
 const jobIcon = (status) => {
   if (status === 'succeeded') return 'fas fa-check';
@@ -119,9 +70,12 @@ const renderJob = (job) => {
   indicator.append(icon);
 
   const copy = document.createElement('div');
+  copy.className = 'job-copy';
   const title = document.createElement('strong');
+  title.className = 'job-title';
   title.textContent = job.label;
   const detail = document.createElement('p');
+  detail.className = 'job-detail';
   detail.textContent = job.progress == null ? job.detail : `${job.progress}% · ${job.detail}`;
   copy.append(title, detail);
   if (job.report_progress && Object.keys(job.report_progress).length) {
@@ -200,6 +154,7 @@ const renderJob = (job) => {
     actions.append(cancelling);
   }
   node.append(actions);
+  list.dispatchEvent(new CustomEvent('paperloom:job-rendered', {detail: {job, node}}));
 };
 
 const pollJob = async (jobId) => {
@@ -366,7 +321,7 @@ if (reportBulkForm) {
   updateSelection();
 }
 
-document.querySelectorAll('.job-form').forEach((form) => {
+const bindJobForm = (form, afterSubmit = () => {}) => {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = form.querySelector('button[type="submit"]');
@@ -389,9 +344,13 @@ document.querySelectorAll('.job-form').forEach((form) => {
         button.disabled = false;
         button.innerHTML = original;
       }
-      if (form.id === 'comparison-form') validateComparison();
+      afterSubmit();
     }
   });
+};
+
+document.querySelectorAll('.job-form:not(.conference-search-form)').forEach((form) => {
+  bindJobForm(form, () => { if (form.id === 'comparison-form') validateComparison(); });
 });
 
 const profileForm = document.querySelector('.profile-form');
@@ -612,24 +571,6 @@ document.querySelector('#zotero-location-confirm')?.addEventListener('click', ()
   pendingZoteroForm = null;
   zoteroLocationDialog.close();
   if (form) submitZoteroForm(form, collectionKey);
-});
-
-const zoteroConnect = document.querySelector('#zotero-connect');
-zoteroConnect?.addEventListener('click', async () => {
-  const original = zoteroConnect.innerHTML;
-  zoteroConnect.disabled = true;
-  zoteroConnect.textContent = '等待 Zotero 确认…';
-  try {
-    const response = await scopedFetch(zoteroConnect.dataset.action, {method: 'POST'});
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || 'Zotero 授权失败');
-    toast(payload.message);
-    window.setTimeout(() => window.location.reload(), 800);
-  } catch (error) {
-    toast(error.message);
-    zoteroConnect.disabled = false;
-    zoteroConnect.innerHTML = original;
-  }
 });
 
 document.querySelectorAll('[data-job-id]').forEach((node) => {
@@ -1226,20 +1167,6 @@ if (comparisonForm) {
   validateComparison();
 }
 
-const settingsLinks = [...document.querySelectorAll('.settings-section-nav a')];
-if (settingsLinks.length) {
-  settingsLinks.forEach((link) => link.addEventListener('click', () => {
-    settingsLinks.forEach((item) => item.classList.toggle('active', item === link));
-  }));
-  const sections = settingsLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
-  const observer = new IntersectionObserver((entries) => {
-    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-    if (!visible) return;
-    settingsLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
-  }, {rootMargin: '-15% 0px -70% 0px', threshold: [0, .2, .5]});
-  sections.forEach((section) => observer.observe(section));
-}
-
 // Explicit saves keep notes intact when a request fails or another editor wins.
 document.querySelectorAll('.reading-form').forEach((form) => {
   form.addEventListener('submit', async (event) => {
@@ -1446,3 +1373,16 @@ document.querySelectorAll('.collection-action').forEach((form) => {
     }
   });
 });
+
+// Page scripts share requests and job state through this small boundary.
+window.PaperLoom = {scopedFetch, toast, jobs: {
+  bindForm: bindJobForm,
+  loadHistory(jobs) {
+    jobs.slice().reverse().forEach((job) => {
+      renderJob(job);
+      jobWarningCounts.set(job.id, job.warnings?.length || 0);
+      if (activeJobStatuses.includes(job.status)) pollJob(job.id);
+    });
+  },
+}};
+})();

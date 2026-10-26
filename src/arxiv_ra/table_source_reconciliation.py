@@ -10,7 +10,7 @@ from collections import defaultdict
 import re
 
 from .evidence import TOKEN
-from .report_completeness import _blocks, _headings, _column, _LINK, _SOURCE
+from .table_extraction import table_blocks as _blocks, section_headings as _headings, column_key as _column, SOURCE_LINK as _LINK, SOURCE_HEADERS as _SOURCE
 from .table_quality import label
 
 

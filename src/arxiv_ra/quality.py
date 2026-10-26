@@ -47,9 +47,10 @@ def numbers(text: str) -> dict[tuple[Decimal | str, str], str]:
     text = re.sub(r"(?i)\b(?:figure|fig\.?|table|eq\.?|equation|page|section)\s*\(?\d+(?:\.\d+)*\)?", " ", text)
     text = re.sub(r"第\s*\d+\s*[页章节]|(?:图|表)\s*\d+", " ", text)
     text = re.sub(r"(?m)^\s*\d+(?:[.)]\s+|、\s*)", " ", text)
-    found = {}
+    found: dict[tuple[Decimal | str, str], str] = {}
     for match in _NUMBER.finditer(text):
         raw = match["value"].replace(",", "")
+        value: Decimal | str
         try:
             value = Decimal(raw)  # Equality is exact; normalize() would round at context precision.
         except InvalidOperation:
@@ -62,196 +63,6 @@ def numbers(text: str) -> dict[tuple[Decimal | str, str], str]:
 def unsupported_numbers(claim: str, support: str) -> list[str]:
     known = numbers(support)
     return [text for key, text in numbers(claim).items() if key not in known]
-
-
-def _numeric_ranges(text, quote_token, table_boundaries=()):
-    """Character ranges let publication replace the exact audited block only."""
-    from .table_quality import mask_quotes
-    protected = mask_quotes(text, quote_token)
-    protected = _MATH.sub(lambda m: m[0] if any(g and _NUMBER.fullmatch(g.strip()) for g in m.groups()) else
-                          "".join("\n" if c == "\n" else " " for c in m[0]), protected)
-    offset, start, finish, fence = 0, None, 0, None
-    for line in protected.splitlines(keepends=True):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-        excluded = bool(fence or marker or re.match(r"^\s*#{2,6}\s", line))
-        if marker:
-            if fence is None:
-                fence = marker[1]
-            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
-                fence = None
-        table = line.lstrip().startswith("|") or offset in table_boundaries
-        boundary = excluded or not line.strip() or table or re.match(r'^\s*(?:[-+*]\s+|\d+[.)]\s+)\S', line)
-        if boundary and start is not None:
-            yield start, finish
-            start = None
-        if not excluded and line.strip():
-            if start is None:
-                start = offset
-            finish = offset + len(line.rstrip("\r\n"))
-            if table:
-                yield start, finish
-                start = None
-        offset += len(line)
-    if start is not None:
-        yield start, finish
-
-
-def _numeric_blocks(text, quote_token):
-    for start, end in _numeric_ranges(text, quote_token):
-        yield text[start:end]
-
-
-def _report_sections(masked):
-    offset, fence = 0, None
-    heading = re.compile(r"^##\s+([^\n]+)", re.M)
-    for line in masked.splitlines(keepends=True):
-        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
-        if marker:
-            if fence is None:
-                fence = marker[1]
-            elif marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
-                fence = None
-        elif not fence and (match := heading.match(masked, offset)):
-            yield match
-        offset += len(line)
-
-
-def _partial_prose(block, quote_token, resolve_quote, is_located):
-    """Retain independently cited clauses, never borrow a sibling's reference.
-
-    Only explicit semicolon boundaries outside quotes, math and code qualify.
-    A fragment without its own numeric support stays withheld. No sentence
-    rewriting, inferred parameters or qualitative substitute is introduced.
-    """
-    from .table_quality import mask_quotes
-    from .markdown_rendering import _CODE_SPAN
-    masked = mask_quotes(block, quote_token)
-    for pattern in (_MATH, _CODE_SPAN):
-        masked = pattern.sub(lambda m: 'X' * len(m[0]), masked)
-    # Parenthetical dataset breakdowns are a single assertion, even when the
-    # model separates their entries with semicolons. Never leave a dangling
-    # closing bracket or detach a value from its condition.
-    stack, boundaries = [], []
-    pairs = {')': '(', '）': '（', ']': '[', '}': '{'}
-    for index, char in enumerate(masked):
-        if char in pairs.values():
-            stack.append(char)
-        elif char in pairs:
-            if not stack or stack.pop() != pairs[char]:
-                return None
-        elif char in ';；' and not stack:
-            boundaries.append(index + 1)
-    if stack:
-        return None
-    cuts = [0, *boundaries, len(block)]
-    pieces = [block[a:b] for a, b in zip(cuts, cuts[1:]) if block[a:b].strip()]
-    if len(pieces) < 2:
-        return None
-    supported = []
-    for piece in pieces:
-        claim = quote_token.sub('', piece)
-        quotes = [q for m in quote_token.finditer(piece)
-                  if (q := resolve_quote(m) if resolve_quote else m[1] if is_located(m[1]) else None)]
-        supported.append(not numbers(claim) or bool(quotes and not unsupported_numbers(claim, '\n'.join(quotes))))
-    if not any(supported) or all(supported):
-        return None
-    result = []
-    for piece, keep in zip(pieces, supported):
-        if keep:
-            result.append(piece)
-        else:
-            prefix = re.match(r'\s*(?:[-+*]\s+|\d+[.)]\s+)', piece)
-            refs = ' '.join(dict.fromkeys(m[0] for m in quote_token.finditer(piece)))
-            result.append((prefix[0] if prefix else '') + '定量陈述暂不展示。' + refs)
-    return ''.join(result), supported.count(False)
-
-
-def audit_report_numbers(report, quote_token, is_located, resolve_quote=None, *, resolve_source=None, pages=()):
-    """Audit numeric prose blocks in experimental sections against adjacent quotes."""
-    issues = []
-    checked = 0
-    from .table_quality import tables, check_row, mask_quotes
-    table_rows = {row["start"]: row for row in tables(report, quote_token)}
-    header_starts = {row["header_start"] for row in table_rows.values()}
-    table_checks = []
-    sections = list(_report_sections(mask_quotes(report, quote_token)))
-    for index, heading in enumerate(sections):
-        section = heading.group(1).strip()
-        if section not in {"一句话总结", "为什么值得阅读", "主要贡献", "实验设置", "关键结果", "可复现性"}:
-            continue
-        end = sections[index + 1].start() if index + 1 < len(sections) else len(report)
-        boundaries = {position - heading.end() for position in (*table_rows, *header_starts) if heading.end() <= position < end}
-        for start, stop in _numeric_ranges(report[heading.end():end], quote_token, boundaries):
-            start, stop = start + heading.end(), stop + heading.end()
-            if start in header_starts:
-                continue  # Header units/scales belong to column binding, not prose.
-            block = report[start:stop]
-            claim = quote_token.sub("", block)
-            # Numbered subsection headings describe report structure, not
-            # experimental values (e.g. "### 2. 测试集性能").
-            claim = re.sub(r"(?m)^\s*#{3,6}\s+[^\n]*(?:\n|$)", "", claim)
-            claim = re.sub(r"\[([^]]*)\]\([^)]*\)", r"\1", claim)
-            if not numbers(claim):
-                continue
-            checked += 1
-            quotes = ([quote for m in quote_token.finditer(block) if (quote := resolve_quote(m))]
-                      if resolve_quote else
-                      [m.group(1) for m in quote_token.finditer(block) if is_located(m.group(1))])
-            missing = unsupported_numbers(claim, "\n".join(quotes))
-            row = table_rows.get(start)
-            partial = _partial_prose(block, quote_token, resolve_quote, is_located) if not row else None
-            binding = None
-            if row and resolve_source:
-                sources = [s for m in quote_token.finditer(block) if (s := resolve_source(m))]
-                binding = check_row(row, sources, pages)
-                table_checks.append({"start": start, "headers": row["headers"], **binding})
-                if binding.get("supported_columns"):
-                    remaining = " | ".join(quote_token.sub("", block[a:b]) for col, (_, a, b) in enumerate(row["cells"])
-                                             if col not in binding["supported_columns"])
-                    missing = unsupported_numbers(remaining, "\n".join(quotes))
-            if not missing and not (binding and binding["bad_columns"]) and not partial:
-                continue
-            issue = {"section": section, "numbers": missing,
-                     "reason": (("not_in_quote" if quotes else "no_located_quote") if missing else
-                                binding["reason"] if binding else "incomplete_clause_citations"),
-                     "claim": claim.strip()[:600], "original": block, "start": start, "end": stop}
-            if row:
-                edits = []
-                bad_columns = set(binding["bad_columns"] if binding else [])
-                for col, (_, a, b) in enumerate(row["cells"]):
-                    if binding and col in binding.get("supported_columns", []):
-                        continue
-                    raw_cell = block[a:b]
-                    clean_cell = quote_token.sub("", raw_cell)
-                    if col not in bad_columns and not unsupported_numbers(clean_cell, "\n".join(quotes)):
-                        continue
-                    if not numbers(clean_cell):
-                        continue
-                    references = " ".join(m[0] for m in quote_token.finditer(raw_cell))
-                    edits.append((a, b, " — " + (references + " " if references else "")))
-                replacement = block
-                for a, b, value in reversed(edits):
-                    replacement = replacement[:a] + value + replacement[b:]
-                issue.update(action="withhold_cells", withheld_cells=len(edits), replacement=replacement)
-                if binding:
-                    issue["table_binding"] = binding
-                if not missing:
-                    issue["numbers"] = [row["cells"][i][0] for i in sorted(bad_columns)]
-            else:
-                prefix = re.match(r"\s*(?:[-+*]\s+|\d+[.)]\s+)", block)
-                references = " ".join(dict.fromkeys(m[0] for m in quote_token.finditer(block)))
-                issue.update(action="withhold_claim", replacement=(prefix[0] if prefix else "") + "定量陈述暂不展示。" + references)
-                if partial:
-                    issue.update(action="withhold_clauses", replacement=partial[0], withheld_clauses=partial[1])
-            issues.append(issue)
-    return {"version": 4, "scope": "experimental_blocks_with_adjacent_quotes",
-            "checked_claims": checked, "issues": issues, "semantic_support": "not_assessed",
-            "table_checks": table_checks,
-            "publication": {"withheld_claims": sum(i["action"] == "withhold_claim" for i in issues),
-                            "partially_withheld_claims": sum(i["action"] == "withhold_clauses" for i in issues),
-                            "withheld_clauses": sum(i.get("withheld_clauses", 0) for i in issues),
-                            "withheld_cells": sum(i.get("withheld_cells", 0) for i in issues),
-                            "unchanged_numeric_blocks": checked - len(issues)}}
 
 
 def preserve_unverified_content(audit, quote_token, *, quiet_tables=False, quiet_prose=False):
@@ -331,25 +142,6 @@ def preserve_unverified_content(audit, quote_token, *, quiet_tables=False, quiet
         'unchanged_numeric_blocks': audit['checked_claims'] - len(issues),
     }
     return audit
-
-
-def apply_numeric_policy(report, audit):
-    """No model calls or guessed replacements; preserve full originals in audit."""
-    issues = audit["issues"]
-    edits = []
-    for issue in issues:
-        start, end = issue["start"], issue["end"]
-        if report[start:end] != issue["original"]:
-            raise ValueError("数值核对后的报告发生变化，已停止应用过期结果")
-        replacement = issue["replacement"]
-        # Adjacent withheld siblings with no sources share one short placeholder.
-        if edits and issue["action"] == "withhold_claim" and replacement == edits[-1][2] and not report[edits[-1][1]:start].strip():
-            edits[-1] = (edits[-1][0], end, replacement)
-        else:
-            edits.append((start, end, replacement))
-    for start, end, replacement in reversed(edits):
-        report = report[:start] + replacement + report[end:]
-    return report
 
 
 def unchecked_ranking(text: str) -> bool:

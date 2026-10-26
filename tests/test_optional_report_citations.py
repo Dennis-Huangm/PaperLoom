@@ -37,9 +37,7 @@ def test_page_cleanup_only_removes_unregistered_source_link_pages():
     assert cleaned == report.replace('#page=99', '').replace('#page=9', '').replace('#page=8', '')
 
 
-def test_linking_never_runs_numeric_audit_or_changes_disagreeing_values(monkeypatch):
-    import arxiv_ra.quality as quality
-    monkeypatch.setattr(quality, 'audit_report_numbers', Mock(side_effect=AssertionError('retired')))
+def test_linking_preserves_disagreeing_values_without_numeric_audit():
     source = '| Model | Score |\n|---|---|\n| A | 10.0 |'
     parsed = ParsedPaper(source, [source])
     key = next(iter(source_spans(parsed)))
@@ -48,7 +46,6 @@ def test_linking_never_runs_numeric_audit_or_changes_disagreeing_values(monkeypa
     assert '| A | 99.9 | [1](paper.pdf#page=1) |' in report
     assert evidence['scope'] == 'source_location_only'
     assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
-    quality.audit_report_numbers.assert_not_called()
 
 
 def test_broken_locator_delivers_original_content_without_internal_tokens(monkeypatch):
@@ -77,7 +74,6 @@ def test_generation_survives_optional_table_organization_failure(monkeypatch, fa
     from arxiv_ra.report_tables import ReportTables
     retired = Mock(side_effect=AssertionError('No annotation review or retries'))
     monkeypatch.setattr(ReportTables, 'localize_annotations', retired)
-    monkeypatch.setattr(ReportTables, 'consolidate_annotations', retired)
     if failure == 'source_bank':
         monkeypatch.setattr(module, 'source_spans', Mock(side_effect=ValueError('broken bank')))
     if failure == 'table_import':

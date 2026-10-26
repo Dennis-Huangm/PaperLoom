@@ -15,6 +15,7 @@
   <script async src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>
   <script defer src="{{ url_for('static', path='/math.js') }}?v=20261008-readiness"></script>
   <script defer src="{{ url_for('static', path='/app.js') }}?v={{ asset_version('app.js') }}"></script>
+  {% if active in ['conferences', 'settings'] %}<script defer src="{{ url_for('static', path='/' + active + '.js') }}?v={{ asset_version(active + '.js') }}"></script>{% endif %}
 </head>
 <body class="page-{{ active }}" data-profile-id="{{ config.profile_id }}">
   <header class="app-header">

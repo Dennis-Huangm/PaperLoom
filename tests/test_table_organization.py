@@ -120,3 +120,22 @@ def test_source_marker_in_header_never_leaks_internal_mask():
     output = result.render('[[表格:table-1]]')
     assert 'XXX' not in output
     assert 'Score [[证据ID:S1-test]]' in output
+
+
+def test_failed_organization_preserves_sibling_matrix_footnotes_and_conditions():
+    note = ('### Table 2: Results\n\n数据集：甲\n\n'
+            '| Model | Score |\n|---|---|\n| A | 1 |\n\n'
+            '*甲实验只包含测试样本。*\n\n数据集：乙\n\n'
+            '| Model | Score |\n|---|---|\n| A | 2 |\n\n'
+            '*乙实验使用额外训练数据。*')
+    def offline(*args):
+        raise RuntimeError('offline')
+    result = organize_tables([note], [{'number': 2}], None, offline)
+    variants = result.tables[0].variants
+    assert len(variants) == 2
+    first = next(v for v in variants if v.rows[0].cells[1] == '1')
+    second = next(v for v in variants if v.rows[0].cells[1] == '2')
+    assert any('甲实验只包含测试样本' in note for note in first.context)
+    assert not any('乙实验使用额外训练数据' in note for note in first.context)
+    assert any('乙实验使用额外训练数据' in note for note in second.context)
+    assert '数据集：甲' in first.condition and '数据集：乙' in second.condition

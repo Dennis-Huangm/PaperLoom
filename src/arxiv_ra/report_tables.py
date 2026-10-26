@@ -11,14 +11,14 @@ import json
 import re
 
 from .evidence import TOKEN
-from .report_completeness import (_blocks, _headings, _destination, _SOURCE, _column,
-                                  _cell_value, _clean_recovered_model_notes,
-                                  restore_note_tables, _LINK)
+from .report_completeness import _destination, _clean_recovered_model_notes
+from .table_extraction import (SOURCE_HEADERS as _SOURCE, SOURCE_LINK as _LINK,
+                               table_blocks as _blocks, section_headings as _headings,
+                               column_key as _column, cell_key as _cell_value, note_extractions)
 from .table_quality import label
 from .table_schema import column_role
 from .table_layouts import reconcile_layouts
-from .table_annotations import (annotation_units, display_annotations, validate_groups,
-                                ANNOTATION_SYSTEM, ANNOTATION_PROMPT)
+from .table_annotations import annotation_units, display_annotations, validate_groups
 from .utils import extract_json_object
 from .model_budget import ModelBudgetExceeded
 from .report_checkpoint import CheckpointWriteError
@@ -151,6 +151,51 @@ def _coalesce_duplicate_variants(variants):
     return reconcile_layouts(tuple(combined.values()))
 
 
+def _merge_note_variants(variants):
+    """Join partial extractions with the same schema and explicit condition."""
+    combined = {}
+    for variant in variants:
+        indices = [i for i, role in enumerate(variant.column_roles) if role == 'data']
+        columns = tuple(_column(variant.headers[i]) for i in indices)
+        unique = len(set(columns)) == len(columns)
+        key = variant.condition, tuple(sorted(columns)) if unique else columns
+        previous = combined.get(key)
+        if previous is None:
+            combined[key] = variant
+            continue
+        headers = previous.headers
+        if any(role == 'reference' for role in variant.column_roles) and not any(
+                role == 'reference' for role in previous.column_roles):
+            headers += ('原文依据',)
+        merged = []
+        seen = {}
+        for current in (previous, variant):
+            current_indices = [i for i, role in enumerate(current.column_roles) if role == 'data']
+            for row in current.rows:
+                data = [(_column(current.headers[i]), _cell_value(row.cells[i], current.headers[i]))
+                        for i in current_indices]
+                identity = _digest([row.category, row.group_heading, sorted(data) if unique else data])
+                refs = [value for value, role in zip(row.cells, current.column_roles) if role == 'reference' and value]
+                if identity in seen:
+                    index = seen[identity]
+                    if refs:
+                        cells = list(merged[index].cells)
+                        ref_index = next(i for i, h in enumerate(headers) if column_role(h) == 'reference')
+                        cells[ref_index] = ' '.join(dict.fromkeys([cells[ref_index], *refs])).strip()
+                        merged[index] = replace(merged[index], cells=tuple(cells))
+                    continue
+                mapping = {_column(h): value for h, value, role in zip(current.headers, row.cells, current.column_roles)
+                           if role == 'data'}
+                data_values = iter(row.cells[i] for i in current_indices)
+                values = tuple(' '.join(refs) if column_role(h) == 'reference' else
+                               mapping[_column(h)] if unique else next(data_values) for h in headers)
+                seen[identity] = len(merged)
+                merged.append(replace(row, cells=values))
+        combined[key] = replace(previous, headers=headers, column_roles=(), rows=tuple(merged),
+                                context=tuple(dict.fromkeys(previous.context + variant.context)))
+    return tuple(combined.values())
+
+
 @dataclass(frozen=True)
 class SourceTable:
     id: str
@@ -246,67 +291,32 @@ class ReportTables:
             statuses.append({'id': table.id, 'status': status, 'detail': detail, 'attempts': attempts})
         return replace(self, editorials=tuple(accepted.values()), editorial_status=tuple(statuses))
 
-    def consolidate_annotations(self, chat):
-        if not self.tables or self.annotations:
-            return self
-        material = [{'id': t.id, 'units': annotation_units(t)} for t in self.tables]
-        try:
-            response = extract_json_object(chat(ANNOTATION_SYSTEM, ANNOTATION_PROMPT + json.dumps(material, ensure_ascii=False)))
-        except (ModelBudgetExceeded, CheckpointWriteError):
-            raise
-        except Exception:
-            # An optional semantic selection must not block report publication.
-            return self
-        proposed = response.get('tables', []) if isinstance(response, dict) else []
-        if not isinstance(proposed, list):
-            return self
-        retained = []
-        for table in self.tables:
-            matches = [p for p in proposed if isinstance(p, dict) and p.get('id') == table.id]
-            if len(matches) == 1 and validate_groups(annotation_units(table), matches[0].get('groups')):
-                retained.append({'id': table.id, 'groups': matches[0]['groups']})
-        return replace(self, annotations=tuple(retained))
-
     @classmethod
     def from_notes(cls, notes, inventory, *, source_pages=()):
-        # Old extraction formats are consolidated exactly once, independently
-        # of the generated prose. Keep unmatched schemas and conflicting cells.
+        # Read structure directly: report placement and Markdown rendering do
+        # not participate in catalogue construction.
         notes, resolutions = reconcile_source_matrices(notes, source_pages)
         known = {item['number']: item for item in inventory}
-        for note in notes:
-            for number, *_ in _blocks(note):
-                known.setdefault(number, {'number': number})
-        imported = restore_note_tables('', notes, list(known.values()), source_pages=source_pages,
-                                       integrate=False)
-        return replace(cls._from_markdown(imported, known), source_resolutions=resolutions)
-
-    @classmethod
-    def _from_markdown(cls, text, inventory):
-        headings = _headings(text)
         collected = {}
-        for number, rows, _, context in _blocks(text):
-            title = rows[0]['table_title']
-            end = next((h[0] for h in headings if h[0] > rows[-1]['end']), len(text))
-            paragraphs = re.split(r'\n\s*\n', context + '\n\n' + text[rows[-1]['end']:end])
-            paragraphs = _table_context(dict.fromkeys(p.strip() for p in paragraphs
-                                                       if p.strip() and p.strip() != title))
+        for number, rows, context in note_extractions(notes, source_pages=source_pages):
             headers = tuple(rows[0]['headers'])
             condition = rows[0].get('heading_qualifier', '')
-            variant_id = 'variant-' + _digest([headers, condition])[:20]
             table_rows = []
             for row in rows:
                 values = tuple(value.strip() for value, _, _ in row['cells'])
-                category = str(row.get('category', ''))
+                category = row.get('category', '')
                 identity = [category, condition, [(h, _cell_value(v, h)) for h, v in zip(headers, values)
-                                                  if label(h) not in _SOURCE]]
+                                                if label(h) not in _SOURCE]]
                 table_rows.append(TableRow('row-' + _digest(identity)[:20], values, category,
                                            bool(row.get('category_heading_row'))))
-            variant = TableVariant(variant_id, condition, headers, tuple(table_rows), paragraphs)
-            entry = collected.setdefault(number, {'caption': title, 'variants': []})
+            variant = TableVariant('variant-' + _digest([headers, condition])[:20], condition,
+                                   headers, tuple(table_rows), _table_context(context))
+            entry = collected.setdefault(number, {'caption': rows[0]['table_title'], 'variants': []})
             entry['variants'].append(variant)
         return cls(tuple(SourceTable(f'table-{number}', number, data['caption'],
-                                    inventory.get(number, {}).get('page'), _coalesce_duplicate_variants(data['variants']))
-                         for number, data in sorted(collected.items())))
+                                    known.get(number, {}).get('page'),
+                                    _coalesce_duplicate_variants(_merge_note_variants(data['variants'])))
+                         for number, data in sorted(collected.items())), source_resolutions=tuple(resolutions))
 
     def to_dict(self):
         payload = {'version': 4, 'tables': [asdict(table) for table in self.tables],

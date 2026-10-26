@@ -1,5 +1,5 @@
 """Captions and notes have the same single owner as the experimental cells."""
-import json
+from dataclasses import replace
 
 import pytest
 
@@ -14,10 +14,10 @@ def test_annotation_selection_cannot_discard_plain_model_names(model):
     from arxiv_ra.table_annotations import annotation_units
     units = annotation_units(catalogue.tables[0])
     groups = [[u['id'] for u in units]]
-    selected = catalogue.consolidate_annotations(lambda *_: json.dumps({
-        'tables': [{'id': 'table-1', 'groups': groups}]}))
-    assert not selected.annotations
-    assert f'{model} uses the baseline configuration.' in selected.render('## Results')
+    stored = replace(catalogue, annotations=({'id': 'table-1', 'groups': groups},)).to_dict()
+    with pytest.raises(ValueError, match='Invalid table annotation selection'):
+        ReportTables.from_dict(stored)
+    assert f'{model} uses the baseline configuration.' in catalogue.render('## Results')
 
 
 def test_reference_cell_cleanup_does_not_count_as_deleted_scientific_note():
@@ -84,7 +84,7 @@ def test_ruler_caption_and_paraphrased_notes_have_one_display_without_rewriting_
     units = annotation_units(catalogue.tables[0])
     by_text = {u['text']: u['id'] for u in units}
     # A semantic selector chooses existing text, never generates replacement facts.
-    def select(system, prompt):
+    def selection():
         groups = []
         def group(keep, *other):
             groups.append([by_text[keep], *(by_text[t] for t in other)])
@@ -97,8 +97,9 @@ def test_ruler_caption_and_paraphrased_notes_have_one_display_without_rewriting_
               '平均输出 token 包含生成的理想 SVG 和细则两部分；')
         group('`Avg. Rubric Tokens` 仅统计评分标准部分。',
               'Avg. Rubric Tokens counts the rubric portion only.', '平均细则 token 仅计细则部分。')
-        return json.dumps({'tables': [{'id': 'table-10', 'groups': groups}]})
-    result = catalogue.consolidate_annotations(select)
+        return groups
+    stored = replace(catalogue, annotations=({'id': 'table-10', 'groups': selection()},)).to_dict()
+    result = ReportTables.from_dict(stored)
     assert result.tables == catalogue.tables  # raw evidence is retained verbatim
     output = result.render('## 实验设置\n\n[[表格:table-10]]')
     assert output.count('Table 10') == 1
@@ -119,9 +120,10 @@ def test_invalid_annotation_partition_preserves_every_scientific_note():
     catalogue = ruler_table()
     # Dropped units, unknown IDs, duplicate assignments must all fail closed.
     for groups in ([], [['invented']], [['title', 'title']]):
-        result = catalogue.consolidate_annotations(lambda *_: json.dumps({'tables': [{'id': 'table-10', 'groups': groups}]}))
-        assert not result.annotations
-        output = result.render('## 结果')
+        stored = replace(catalogue, annotations=({'id': 'table-10', 'groups': groups},)).to_dict()
+        with pytest.raises(ValueError, match='Invalid table annotation selection'):
+            ReportTables.from_dict(stored)
+        output = catalogue.render('## 结果')
         assert 'Claude-Opus-4.6' in output and '$2,013.12' in output
 
 
@@ -134,21 +136,11 @@ def test_unique_conditions_are_not_lost_by_numeric_deduplication():
     units = annotation_units(catalogue.tables[0])
     # Even a model calling two different numeric conditions equivalent cannot drop them.
     groups = [[u['id'] for u in units]]
-    result = catalogue.consolidate_annotations(lambda *_: json.dumps({'tables': [{'id': 'table-2', 'groups': groups}]}))
-    assert not result.annotations
-    text = result.render('## 结果')
+    stored = replace(catalogue, annotations=({'id': 'table-2', 'groups': groups},)).to_dict()
+    with pytest.raises(ValueError, match='Invalid table annotation selection'):
+        ReportTables.from_dict(stored)
+    text = catalogue.render('## 结果')
     assert 'temperature=0.2' in text and 'MSE ↓' in text and 'Tokens in k' in text
-
-
-def test_annotation_failure_does_not_fail_report_and_cancellation_propagates():
-    import pytest
-    def unavailable(*_):
-        raise RuntimeError('offline')
-    assert not ruler_table().consolidate_annotations(unavailable).annotations
-    def cancelled(*_):
-        raise KeyboardInterrupt()
-    with pytest.raises(KeyboardInterrupt):
-        ruler_table().consolidate_annotations(cancelled)
 
 
 def test_formulas_lists_and_named_model_conditions_are_preserved():

@@ -17,7 +17,7 @@ from .utils import read_json, write_json
 from .version_scope import update_options
 from .version_batch import VersionSyncBatch, update_candidates
 from .version_sync import BASE_ARXIV_ID_RE
-from .web_catalog import version_tracking_data
+from .version_catalog import tracking_snapshot
 
 
 class AutomaticVersionSync:
@@ -46,7 +46,7 @@ class AutomaticVersionSync:
         try:
             policy.validate()
             # Re-read actual files/reading state; tracker counters can be stale.
-            items = version_tracking_data(self.batches.output_root, self.config.profile_id)["items"]
+            items = tracking_snapshot(self.batches.output_root, self.config.profile_id)["items"]
             candidates = []
             for item in items:
                 aid = item["arxiv_id"]

@@ -15,6 +15,7 @@ from .feedback import FeedbackStore
 from .paper_data import base_id
 from .report_store import preferred_report_index, profile_matches, quality_rank, html_reports
 from .version_sync import STEP_LABELS, STATUS_LABELS
+from .version_catalog import tracking_snapshot
 
 
 DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -159,7 +160,7 @@ def grouped_report_library(reports: list[dict[str, Any]],
                 version = 0
             return (version, quality_rank(item), item["report_path"].stat().st_mtime_ns)
 
-        chosen = dict(max(attempts, key=rank))
+        chosen = max(attempts, key=rank).copy()
         directions: dict[str, str] = {}
         for attempt in attempts:
             profile_id = str(attempt.get("profile_id") or "")
@@ -208,66 +209,17 @@ def weekly_library(output_root: Path, profile_id: str = "") -> list[dict[str, An
 
 
 def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
-    suffix = profile_id or "default"
-    payload = _safe_json(output_root / f"version-state-{suffix}.json", {}) or {}
-    if not isinstance(payload, dict):
-        payload = {}
-    from .version_scope import local_sources
-    by_id = local_sources(output_root, profile_id)
-    for aid, previous in (payload.get("items") or {}).items():
-        if "Zotero" in previous.get("sources", []):
-            item = by_id.setdefault(aid, {"arxiv_id": aid, "title": previous.get("title") or aid, "sources": []})
-            item["sources"].append("Zotero")
-        if aid in by_id:
-            current = by_id[aid]
-            by_id[aid] = {**{k: v for k, v in previous.items() if k not in
-                            {"sources", "report_version", "local_version", "saved_version"}}, **current}
-
-    def entry(aid, title=""):
-        item = by_id[aid]
-        item.setdefault("checked_at", "")
-        return item
-
-    for aid, saved in PaperLibraryStore(output_root, profile_id).all().items():
-        if aid in by_id:
-            by_id[aid]["saved_version"] = (saved.get("paper") or {}).get("version")
-    for state_path in (output_root / "papers" / suffix).glob("*/sync.json"):
-        sync = _safe_json(state_path, {}) or {}
-        if sync.get("arxiv_id") not in by_id:
-            continue
-        item = entry(sync["arxiv_id"], sync.get("title", ""))
-        item["latest_version"] = max(int(item.get("latest_version") or 0), int(sync.get("latest_version") or 0)) or None
-        item["checked_at"] = max(item.get("checked_at") or "", sync.get("latest_checked_at") or "")
-        item["sync_error"] = sync.get("latest_error", "")
-        item["sync_url"] = artifact_url(state_path.with_name("index.html"), output_root)
-        item["sync_target"] = sync.get("last_target")
-        operation = (sync.get("operations") or {}).get(str(sync.get("last_target")), {})
-        item["sync_status"] = STATUS_LABELS.get(operation.get("status"), "尚未同步")
-        item["retry_available"] = operation.get("status") in {"failed", "partial", "running", "interrupted"}
-        active_steps = {"download", "library"} | {name for name, enabled in operation.get("options", {}).items() if enabled}
-        item["sync_steps"] = [{"label": STEP_LABELS.get(name, name),
-                               "status": STATUS_LABELS.get(step.get("status"), "待处理"), "error": step.get("error", "")}
-                              for name, step in operation.get("steps", {}).items() if name in active_steps]
-        for completed in (sync.get("operations") or {}).values():
-            step = (completed.get("steps") or {}).get("zotero") or {}
-            if (step.get("status") == "succeeded" and step.get("version")
-                    and step.get("item_key") in item.get("zotero_keys", [])
-                    and step.get("library") == item.get("zotero_library") and not item.get("zotero_stale")):
-                try:
-                    newer = (datetime.fromisoformat(step["verified_at"]) >
-                             datetime.fromisoformat(item.get("zotero_checked_at") or payload.get("checked_at") or "1970-01-01T00:00:00+00:00"))
-                except (ValueError, KeyError, TypeError):
-                    newer = False
-                if newer:
-                    item["zotero_version"] = step["version"]
-                    item["zotero_checked_at"] = step["verified_at"]
-                    item["zotero_reason"] = ""
-        for path in state_path.parent.glob("v*/metadata.json"):
-            paper = (_safe_json(path, {}) or {}).get("paper") or {}
-            if path.with_name("paper.pdf").is_file():
-                item["local_version"] = max(int(item.get("local_version") or 0), int(paper.get("version") or 0)) or None
-    dismissed = FeedbackStore(output_root, profile_id).all()
-    items = [entry(aid) for aid in list(by_id) if aid not in dismissed]
+    """Add browser links and labels to the shared material snapshot."""
+    tracking = tracking_snapshot(output_root, profile_id)
+    items = tracking["items"]
+    for item in items:
+        if "sync_report_path" in item:
+            item["sync_url"] = artifact_url(item.pop("sync_report_path"), output_root)
+            item["sync_status"] = STATUS_LABELS.get(item["sync_status"], "尚未同步")
+            item["sync_steps"] = [
+                {"label": STEP_LABELS.get(step["name"], step["name"]),
+                 "status": STATUS_LABELS.get(step["status"], "待处理"), "error": step["error"]}
+                for step in item["sync_steps"]]
     events: list[dict[str, Any]] = []
     for item in items:
         for event in item.get("events") or []:
@@ -287,8 +239,7 @@ def version_tracking_data(output_root: Path, profile_id: str) -> dict[str, Any]:
             )
     events.sort(key=lambda item: item.get("detected_at", ""), reverse=True)
     items.sort(key=lambda item: item.get("title", "").casefold())
-    return {"checked_at": payload.get("checked_at", ""), "items": items, "events": events,
-            "coverage": payload.get("coverage") or {}, "source_status": payload.get("source_status") or {}}
+    return {**tracking, "events": events}
 
 
 def citation_library(output_root: Path, profile_id: str | None = None) -> list[dict[str, Any]]:
