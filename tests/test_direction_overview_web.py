@@ -144,6 +144,7 @@ def test_failed_overview_can_be_retried_from_task_page_without_losing_old_articl
     client.post("/api/direction-overviews/svg")
     assert wait_overview(client, "svg")["status"] == "ready"
 
+
     class Model(OverviewModel):
         fail = True
 
@@ -163,3 +164,14 @@ def test_failed_overview_can_be_retried_from_task_page_without_losing_old_articl
     response = client.post(f"/api/jobs/{job['id']}/retry")
     assert response.status_code == 202
     assert wait_overview(client, "svg")["status"] == "ready"
+
+
+def test_unavailable_overview_storage_does_not_block_creating_or_opening_draft(workspace):
+    client, app = workspace
+    (app.state.output_root / "direction-overviews").write_text("blocked", encoding="utf-8")
+    response = client.post("/api/profile-drafts", json={"name": "SVG", "description": "SVG editing", "keywords": ["SVG"]})
+    assert response.status_code == 201
+    draft = response.json()
+    page = client.get(f"/profiles/drafts/{draft['id']}")
+    assert page.status_code == 200
+    assert "无法读取小综述" in page.text

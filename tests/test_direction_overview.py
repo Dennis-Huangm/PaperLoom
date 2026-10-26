@@ -185,3 +185,41 @@ def test_cancelling_during_generation_preserves_previous_article(tmp_path):
             generator.generate(profile)
     assert store.read(profile)["markdown"] == "# 原有文章"
     assert store.read(profile)["status"] == "cancelled"
+
+
+def test_uppercase_version_suffix_does_not_allow_substitution(tmp_path):
+    profile = direction()
+    profile["references"] = [{"arxiv_id": "2401.00001V2"}]
+    config = AppConfig()
+    wrong = literature("2401.00001", 2024)
+    wrong.version = 3
+    class Model(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            return '{"selected":["2401.00001"]}' if kwargs.get("json_mode") else super().chat(system, prompt, **kwargs)
+
+    arxiv = SimpleNamespace(get=lambda aid: wrong, search_literature=lambda *a, **kw: [],
+                            download_version=LiteratureAPI().download_version)
+    clients = ResearchClients(config, arxiv=arxiv, llm=Model(), conferences=SimpleNamespace(
+        discover=lambda *a, **kw: ([], {})))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        with pytest.raises(ValueError, match="材料不足"):
+            generator.generate(profile)
+    assert OverviewStore(tmp_path / "run").read(profile)["article"] is None
+
+
+def test_bibliography_only_response_does_not_replace_readable_article(tmp_path):
+    profile = direction()
+    config = AppConfig()
+    store = OverviewStore(tmp_path / "run")
+    store.publish(store.start(profile), "# 原有文章", [], [])
+
+    class Model(OverviewModel):
+        def chat(self, *args, **kwargs):
+            return super().chat(*args, **kwargs) if kwargs.get("json_mode") else "## 参考文献\n\n[1]"
+
+    clients = ResearchClients(config, arxiv=LiteratureAPI(), llm=Model(), conferences=SimpleNamespace(
+        discover=lambda *a, **kw: ([], {})))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        with pytest.raises(ValueError, match="正文生成失败"):
+            generator.generate(profile)
+    assert store.read(profile)["markdown"] == "# 原有文章"

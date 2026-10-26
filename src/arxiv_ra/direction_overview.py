@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from .config import AppConfig, DiscoveryConfig
 from .conference_scope import CONFERENCES
-from .paper_data import base_id
+from .paper_data import base_id, matches
 from .profiles import PROFILE_ID_RE, _reference_error_reason
 from .reading_state import _locked
 from .render import render_report
@@ -188,8 +188,7 @@ class OverviewGenerator:
             task_checkpoint()
             try:
                 paper = self.clients.arxiv.get(aid)
-                version = re.search(r"v(\d+)$", aid)
-                if base_id(paper.arxiv_id) != base_id(aid) or version and paper.version != int(version[1]):
+                if not matches(paper, aid):
                     raise ValueError("未取得所指定的参考论文版本")
                 if not paper.title or not paper.abstract:
                     raise ValueError("参考论文缺少题名或摘要")
@@ -325,6 +324,8 @@ class OverviewGenerator:
             return f"[{number}]({sources[number - 1]['url']})" if 1 <= number <= len(sources) else ""
 
         body = re.sub(r"\[(\d+)\]", citation, body)
+        if not body.strip():
+            raise ValueError("综述正文生成失败：模型未返回方向介绍，请重试")
         date = datetime.now(ZoneInfo(self.config.timezone)).date().isoformat()
         markdown = f"# {profile['name']} · 方向小综述\n\n文献检索日期：{date}。本篇依据实际取得的文献材料生成，选材范围独立于日常推荐。\n\n{body}\n\n"
         if warnings:

@@ -70,7 +70,10 @@ class ProfileDraftWorkflow:
         except Exception:
             output = Path(self.config.output_dir)
             store = OverviewStore(output if output.is_absolute() else self.profiles.root.parent / output)
-            store.fail(store.start(draft), "综述任务提交失败，可从方向小综述入口重试")
+            try:
+                store.fail(store.start(draft), "综述任务提交失败，可从方向小综述入口重试")
+            except (OSError, ValueError):
+                pass  # The same unavailable storage must not invalidate the saved draft.
         return draft
 
     def mutate(self, draft_id, action, data):

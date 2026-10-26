@@ -20,7 +20,11 @@ def register_overview_routes(app, profiles, current_config, templates, context, 
             raise HTTPException(404, "研究方向不存在") from exc
 
     def overview_for(profile):
-        overview = store.read(profile)
+        try:
+            overview = store.read(profile)
+        except (OSError, ValueError):
+            return {"status": "failed", "error": "暂时无法读取小综述，检索草稿仍可使用；请检查输出目录后重试。",
+                    "job_id": None, "article": None, "stale": False, "markdown": ""}
         other_jobs = overview.pop("other_job_ids")
         job = jobs.get(overview["job_id"]) if overview["job_id"] else None
         if (not job or job.status not in {"queued", "running", "cancelling"}) and (not overview["article"] or overview["stale"]):
