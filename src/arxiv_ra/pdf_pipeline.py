@@ -10,7 +10,7 @@ from .config import PDFConfig
 from .models import FigureCandidate, ParsedPaper
 from .task_runtime import task_checkpoint, task_progress, task_warning
 from .utils import normalize_space
-from .figure_sections import EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE, is_body_end
+from .figure_sections import END_EXPERIMENT_RE, is_body_end, is_experiment_heading
 
 CAPTION_RE = re.compile(r"^(?:figure|fig\.?|图)\s*\d+[.:：\s]", re.I)
 FIGURE_CAPTION_RE = re.compile(r"^(?:figure|fig\.?)\s*(\d+)\s*[:.]", re.I)
@@ -124,7 +124,9 @@ def _extract_report_figures(
                 text = normalize_space("".join(span.get("text", "") for span in line.get("spans", [])))
                 spans = line.get("spans", [])
                 heading_style = any(span.get("size", 0) > body_size * 1.1 or span.get("flags", 0) & 16 for span in spans)
-                if is_body_end(text, allow_lettered=heading_style) or any(pattern.match(text) for pattern in (EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE)):
+                if (is_body_end(text, allow_lettered=heading_style)
+                        or is_experiment_heading(text, heading_style=heading_style)
+                        or END_EXPERIMENT_RE.match(text)):
                     headings.append((fitz.Rect(line["bbox"]), text))
         events: list[tuple[fitz.Rect, str | tuple[int, str, fitz.Rect]]] = list(headings)
         events.extend((rect, (number, caption, rect))
@@ -149,7 +151,7 @@ def _extract_report_figures(
                 section = value
                 if is_body_end(section, allow_lettered=role != "method"):
                     return extracted
-                if EXPERIMENT_HEADING_RE.match(section):
+                if is_experiment_heading(section):
                     role = "experiment"
                 elif END_EXPERIMENT_RE.match(section):
                     role = "other"

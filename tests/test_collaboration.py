@@ -384,9 +384,10 @@ def test_unknown_pdf_version_requires_attention_without_download(workspace, zote
         assert zotero_server['writes'] == 0
 
 
-def test_restored_receipts_require_external_verification(workspace):
+def test_restored_receipts_require_external_verification(workspace, zotero_server):
     import json
     config, _ = workspace
+    zotero_server['fail'] = False
     with TestClient(create_app(config)) as client:
         first = collect(client).json()
     path = config.parent / 'run/collaboration.json'

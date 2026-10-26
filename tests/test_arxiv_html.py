@@ -1,4 +1,14 @@
 from arxiv_ra.arxiv_html import parse_html_figure_specs
+import pytest
+
+
+@pytest.mark.parametrize('heading', ['4 Experiments on ImageNet', '4 Results and Analysis',
+                                  'Experimental Evaluation on Benchmarks'])
+def test_descriptive_experiment_headings_keep_figures_in_results(heading):
+    html = (f'<h2>{heading}</h2><figure class="ltx_figure"><img src="f9.png">'
+            '<figcaption>Figure 9: Benchmark results.</figcaption></figure>')
+    figures = parse_html_figure_specs(html, 'https://arxiv.org/html/example')
+    assert [figure.role for figure in figures] == ['experiment']
 
 
 def test_parse_html_figures_preserves_experiments_and_split_caption_before_appendix() -> None:

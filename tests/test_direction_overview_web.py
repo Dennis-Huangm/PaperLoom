@@ -39,6 +39,60 @@ def wait_overview(client, profile_id, source="saved"):
     raise AssertionError("overview task did not finish")
 
 
+@pytest.mark.parametrize('edited', [False, True])
+@pytest.mark.parametrize('when', ['snapshot', 'response'])
+def test_completion_between_article_and_job_reads_returns_published_article(tmp_path, monkeypatch, edited, when):
+    from fastapi import FastAPI
+    from arxiv_ra import web_direction_overview
+    from arxiv_ra.direction_overview import OverviewStore
+    from arxiv_ra.web_jobs import BackgroundJob
+
+    before = {'id': 'svg', 'name': 'SVG', 'description': 'SVG editing'}
+    current = {**before, 'description': 'Only SVG optimization'} if edited else before
+    store = OverviewStore(tmp_path)
+    run = store.start(before)
+    store.attach_job(before, 'job')
+    job = BackgroundJob('job', 'direction-overview', 'Overview', 'running', '', '')
+    original_read = store.read
+    completed = False
+
+    def complete():
+        nonlocal completed
+        if not completed:
+            completed = True
+            store.publish(run, '# Saved article\n\nOriginal topic.', [], [])
+            job.status = 'succeeded'
+
+    def complete_after_snapshot(profile):
+        snapshot = original_read(profile)
+        if when == 'snapshot':
+            complete()
+        return snapshot
+
+    original_asdict = web_direction_overview.asdict
+    def complete_before_response(job):
+        complete()
+        return original_asdict(job)
+
+    monkeypatch.setattr(store, 'read', complete_after_snapshot)
+    monkeypatch.setattr(web_direction_overview, 'OverviewStore', lambda _: store)
+    if when == 'response':
+        monkeypatch.setattr(web_direction_overview, 'asdict', complete_before_response)
+    app = FastAPI()
+    web_direction_overview.register_overview_routes(
+        app, SimpleNamespace(get=lambda _: current), lambda: None, None, None,
+        SimpleNamespace(output_root=tmp_path, get=lambda _: job), tmp_path)
+    with TestClient(app) as client:
+        result = client.get('/api/direction-overviews/svg').json()
+        if when == 'response':
+            assert result['status'] == 'running'
+            assert result['job']['status'] == 'running'
+            result = client.get('/api/direction-overviews/svg').json()
+    assert result['article']['id'] == run['id']
+    assert 'Original topic.' in result['markdown']
+    assert result['stale'] is edited
+
+
 def test_existing_direction_can_generate_read_and_download_overview(workspace):
     client, app = workspace
     original = deepcopy(app.state.profiles.get("svg"))

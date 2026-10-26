@@ -862,6 +862,7 @@ def test_redesigned_ui_uses_research_workspace_and_local_icon_library(tmp_path: 
         settings = client.get("/settings")
         icon_css = client.get("/static/vendor/fontawesome/css/all.min.css")
         app_css = client.get("/static/app.css")
+        scale_css = client.get("/static/ui-scale.css")
         app_icon = client.get("/static/app-icon.ico")
 
     assert "primary-nav" in home.text
@@ -876,8 +877,8 @@ def test_redesigned_ui_uses_research_workspace_and_local_icon_library(tmp_path: 
     assert icon_css.status_code == 200
     assert app_css.status_code == 200
     assert "@media(min-width:2000px)" in app_css.text
-    assert "max-width:2400px" in app_css.text
-    assert "max-height:none" in app_css.text
+    assert "ui-scale.css" in app_css.text
+    assert scale_css.status_code == 200
     assert "Font Awesome 5 Free" in icon_css.text
     assert app_icon.status_code == 200
     assert app_icon.headers["content-type"] in {"image/vnd.microsoft.icon", "image/x-icon"}

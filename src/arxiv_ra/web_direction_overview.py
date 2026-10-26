@@ -19,27 +19,40 @@ def register_overview_routes(app, profiles, current_config, templates, context, 
         except (KeyError, ValueError) as exc:
             raise HTTPException(404, "研究方向不存在") from exc
 
-    def overview_for(profile):
+    def read_overview_state(profile):
         try:
-            overview = store.read(profile)
+            return store.read(profile)
         except (OSError, ValueError):
             return {"status": "failed", "error": "暂时无法读取小综述，检索草稿仍可使用；请检查输出目录后重试。",
-                    "job_id": None, "article": None, "stale": False, "markdown": ""}
+                    "job_id": None, "article": None, "stale": False, "markdown": "", "other_job_ids": []}
+
+    def overview_for(profile):
+        overview = read_overview_state(profile)
         other_jobs = overview.pop("other_job_ids")
         job = jobs.get(overview["job_id"]) if overview["job_id"] else None
-        if (not job or job.status not in {"queued", "running", "cancelling"}) and (not overview["article"] or overview["stale"]):
+        job_status = job.status if job else None
+        terminal_seen = bool(job and job_status not in {"queued", "running", "cancelling"})
+        if (not job or job_status not in {"queued", "running", "cancelling"}) and (not overview["article"] or overview["stale"]):
             for other_id in other_jobs:
                 other = jobs.get(other_id)
-                if other and other.status in {"queued", "running", "cancelling"}:
+                other_status = other.status if other else None
+                if other and other_status in {"queued", "running", "cancelling"}:
                     job = other
+                    job_status = other_status
                     overview["generation_outdated"] = True
                     break
+                terminal_seen = terminal_seen or bool(other)
+        if terminal_seen:
+            # Publication precedes terminal job status. A job can finish after
+            # the first article read, including a run for the previous topic.
+            overview.update(read_overview_state(profile))
+            overview.pop("other_job_ids")
         if job:
-            overview["job"] = asdict(job)
-            if job.status in {"queued", "running", "cancelling"}:
-                overview["status"] = job.status
-            elif job.status in {"failed", "cancelled", "interrupted"}:
-                overview["status"] = job.status
+            overview["job"] = {**asdict(job), "status": job_status}
+            if job_status in {"queued", "running", "cancelling"}:
+                overview["status"] = job_status
+            elif job_status in {"failed", "cancelled", "interrupted"}:
+                overview["status"] = job_status
                 overview["error"] = overview["error"] or job.detail
         elif overview["status"] == "running":
             overview.update(status="interrupted", error="任务已中断，可重新生成；已有文章仍然保留")

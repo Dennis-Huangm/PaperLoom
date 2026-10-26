@@ -106,6 +106,23 @@ def test_plot_labels_do_not_start_experiments_and_columns_keep_complete_figures(
     assert all(f.image_available for f in figures)
 
 
+@pytest.mark.parametrize(('heading', 'fontsize', 'expected'), [
+    ('4 Experiments on ImageNet', 14, 'experiment'),
+    ('4 Results and Analysis', 14, 'experiment'),
+    ('Experiments on ImageNet', 14, 'experiment'),
+    ('Experiments on ImageNet', 10, 'method'),
+])
+def test_descriptive_experiment_headings_require_structure(tmp_path, heading, fontsize, expected):
+    pdf = tmp_path / 'descriptive-heading.pdf'
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_text((70, 80), heading, fontsize=fontsize)
+        page.draw_rect(fitz.Rect(70, 120, 400, 260))
+        page.insert_text((70, 285), 'Figure 9: Benchmark results and comparison.', fontsize=10)
+        document.save(pdf)
+    assert [figure.role for figure in extract_report_figures(pdf, tmp_path / 'out')] == [expected]
+
+
 def test_pdf_experiment_boundary_follows_columns_before_vertical_position(tmp_path: Path) -> None:
     pdf = tmp_path / "column-transition.pdf"
     with fitz.open() as doc:

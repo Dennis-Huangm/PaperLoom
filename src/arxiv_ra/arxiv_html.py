@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup, Tag
 from . import __version__
 from .models import FigureCandidate
 from .utils import normalize_space
-from .figure_sections import EXPERIMENT_HEADING_RE, END_EXPERIMENT_RE, is_body_end
+from .figure_sections import END_EXPERIMENT_RE, is_body_end, is_experiment_heading
 
 
 FIGURE_NUMBER_RE = re.compile(r"^(?:Figure|Fig\.?)\s*(\d+)\s*[:.]", re.I)
@@ -41,7 +41,7 @@ def parse_html_figure_specs(html_text: str, base_url: str) -> list[HtmlFigureSpe
             section = normalize_space(node.get_text(" ", strip=True))
             if is_body_end(section, allow_lettered=role != "method"):
                 break
-            if EXPERIMENT_HEADING_RE.match(section):
+            if is_experiment_heading(section):
                 role = "experiment"
             elif END_EXPERIMENT_RE.match(section):
                 role = "other"
