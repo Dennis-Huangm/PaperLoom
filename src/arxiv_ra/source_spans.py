@@ -34,6 +34,11 @@ def normalize_grouped_source_ids(text: str) -> str:
     # Table annotations may omit the prefix and retain only a source-span ID.
     text = re.sub(r'\[\[([SQ]1-[A-Za-z0-9-]+)\]\]',
                   lambda match: f'[[证据ID:{match[1]}]]', text)
+    # Prose may use a bare ID with a single bracket pair as well. Require the
+    # complete span-ID shape and leave Markdown links/definitions untouched.
+    # This only repairs syntax; stale or invented IDs still fail source lookup.
+    text = re.sub(r'(?<![\[\\])\[([SQ]1-[a-f0-9]{24}-\d+-\d+-\d+)\](?![\](:\[])',
+                  lambda match: f'[[证据ID:{match[1]}]]', text)
     # Some models emit a single bracket pair even with double-bracket guidance.
     # Repair only the delimiter; the ordinary binder still validates the ID.
     return re.sub(r'(?<!\[)\[证据ID:\s*([A-Za-z0-9-]+)\s*\](?!\])',
@@ -172,6 +177,7 @@ def span_batches(spans: dict[str, dict], count: int) -> list[list[dict]]:
 
 def cited_span_material(notes: list[str], spans: dict[str, dict]) -> tuple[list[str], str]:
     """Keep known IDs within 32k, sharing space across pages and late formulas."""
+    notes = [normalize_grouped_source_ids(note) for note in notes]
     selected, size = {}, 0
 
     def keys(text):

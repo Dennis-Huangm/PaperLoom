@@ -3,6 +3,8 @@ import json
 import re
 from types import SimpleNamespace
 
+import pytest
+
 from arxiv_ra.config import LLMConfig
 from arxiv_ra.evidence import attach_evidence
 from arxiv_ra.models import Author, Paper, ParsedPaper, VerifiedMetadata
@@ -131,16 +133,18 @@ def test_long_first_page_cannot_crowd_out_table_on_next_page_of_same_note():
     assert {spans[s['id']]['page'] for s in json.loads(material)} == {1, 2}
 
 
-def test_production_generation_carries_ids_into_final_report_and_protects_names():
+@pytest.mark.parametrize('marker', ['[[证据ID:{key}]]', '[{key}]'])
+def test_production_generation_carries_ids_into_final_report_and_protects_names(marker):
     parsed = ParsedPaper(SOURCE, [SOURCE])
     key = next(iter(source_spans(parsed)))
     calls = []
     def chat(system, user):
         calls.append(user)
         if len(calls) == 1:
-            return f'GPT-4o mini MSE 8526 [[证据ID:{key}]]'
+            return 'GPT-4o mini MSE 8526 ' + marker.format(key=key)
         assert key in user and 'GPT-4o mini 0.9040 0.8058 8526 14' in user
-        return f'# Wrong title\n\n| 字段 | 内容 |\n| --- | --- |\n| 作者 | Marek K駆lcík |\n| 机构 | Masaryk University |\n\n## 关键结果\nGPT-4o mini MSE 8526 [[证据ID:{key}]]'
+        assert f'"id": "{key}"' in user
+        return '# Wrong title\n\n| 字段 | 内容 |\n| --- | --- |\n| 作者 | Marek K駆lcík |\n| 机构 | Masaryk University |\n\n## 关键结果\nGPT-4o mini MSE 8526 ' + marker.format(key=key)
     raw = ReportGenerator(SimpleNamespace(enabled=True, chat=chat), LLMConfig()).generate(paper(), VerifiedMetadata(), parsed, None)
     final, evidence = attach_evidence(finalize_report_structure(raw, None), parsed, pdf_available=True, full_report=True)
     assert len(calls) == 2
@@ -148,6 +152,7 @@ def test_production_generation_carries_ids_into_final_report_and_protects_names(
     assert '机构（论文摘录，未核实） | Masaryk University' in final
     assert final.startswith('# VectorEdits')
     assert 'numeric_audit' not in evidence and 'publication_gate' not in evidence
+    assert evidence['validated_citations'] == 1
 
 
 def test_structured_front_matter_handles_missing_authors_and_combined_model_row():

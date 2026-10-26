@@ -75,3 +75,33 @@ def test_library_progress_editor_filter_and_note_search(tmp_path, monkeypatch):
             'reading_status': 'reading', 'notes': 'overwrite', 'expected_updated_at': ''})
         assert conflict.status_code == 409
         assert library.state.snapshot()['reading']['2407.05600']['notes'] == '<script>MY_NOTE</script>'
+
+
+def test_library_progress_counts_cover_direction_and_preserve_search(tmp_path):
+    from bs4 import BeautifulSoup
+    config = tmp_path / 'config.yaml'
+    config.write_text('output_dir: run\ndiscovery:\n  interest_description: alpha\n', encoding='utf-8')
+    app = create_app(config)
+    library = PaperLibraryStore(tmp_path / 'run', 'alpha')
+    for index, reading_status in enumerate(('unread', 'reading', 'read', 'paused')):
+        aid = f'2407.{5600 + index:05}'
+        library.add({'paper': {'arxiv_id': aid, 'version': 1, 'title': f'Paper {index}',
+            'authors': [], 'abstract_zh': '摘要', 'recommendation_detail': '依据'}}, 'Alpha')
+        if reading_status != 'unread':
+            library.state.update_reading(aid, status=reading_status, notes='自己的笔记', tags=[],
+                read_version=1, expected_updated_at='')
+    PaperLibraryStore(tmp_path / 'run', 'beta').add({'paper': {'arxiv_id': '2407.09999'}}, 'Beta')
+    with TestClient(app) as client:
+        page = client.get('/library?q=Paper&reading_status=read')
+        soup = BeautifulSoup(page.text, 'html.parser')
+        assert soup.select_one('[data-library-count="all"]').text == '4'
+        for value in ('unread', 'reading', 'read', 'paused'):
+            assert soup.select_one(f'[data-library-count="{value}"]').text == '1'
+        assert len(soup.select('.saved-paper-card')) == 1
+        assert soup.select_one('.library-status-tabs [aria-current]')['href'].endswith('q=Paper&reading_status=read')
+        assert soup.select_one('.library-search [name="reading_status"]')['value'] == 'read'
+        assert all('q=Paper' in link['href'] for link in soup.select('.library-status-tabs a'))
+        assert not soup.select_one('.reading-editor').has_attr('open')
+        empty = client.get('/library?q=not-found&reading_status=read')
+        assert '没有匹配的已保存论文' in empty.text and '文献库还是空的' not in empty.text
+        assert 'data-library-count="all">4' in empty.text

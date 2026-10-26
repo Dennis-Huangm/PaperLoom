@@ -78,3 +78,41 @@ def test_same_excerpt_in_another_version_has_a_distinct_identity(source):
     revised = other.execute('read_pages', {'start': 1, 'end': 1})
     assert original['pages'][0]['text'] == revised['pages'][0]['text']
     assert original['pages'][0]['citation_id'] != revised['pages'][0]['citation_id']
+
+
+@pytest.mark.parametrize('available', [True, False])
+def test_startup_recovers_only_exact_legacy_ids_from_recorded_cached_reads(source, available):
+    from arxiv_ra.reading_chat import ReadingService
+    result = source.execute('read_pages', {'start': 1, 'end': 1})
+    cid = result['pages'][0]['citation_id']
+    paper = source.session['paper']
+    pid = f"{paper['arxiv_id']}v{paper['version']}"
+    sid = 'f' * 32
+    text = f'结论（`{cid}`），普通未知哈希 0123456789abcdef。'
+    value = {'id': sid, 'references': [], 'messages': [
+        {'role': 'user', 'status': 'completed', 'text': '问题', 'references': [{
+            'paper': paper, 'report_id': '2026-10-01/reports/fixture-v1',
+            'report': {'source_id': source.source_id}}]},
+        {'role': 'assistant', 'status': 'completed', 'text': text, 'citations': [],
+         'steps': [{'name': 'read_pages', 'status': 'completed', 'paper_id': pid,
+                    'label': pid + ' · 读取原文第 1–1 页'}]},
+    ]}
+    service = ReadingService(source.root, None)
+    service.save(value)
+    before = service.get(sid)
+    if not available:
+        source.pdf.unlink()
+    service = ReadingService(source.root, None)
+    after = service.get(sid)
+    assert after['updated_at'] == before['updated_at']
+    assert after['messages'][1]['text'] == text
+    if available:
+        assert [c['id'] for c in after['messages'][1]['evidence']] == [cid]
+        assert after['messages'][1]['citations'][0]['paper_id'] == pid
+        html = service.present(sid)['messages'][1]['html']
+        assert cid not in html and '第1页' in html
+        assert '0123456789abcdef' in html
+        # Repeated startup must not mutate the recovered record again.
+        assert ReadingService(source.root, None).get(sid) == after
+    else:
+        assert after == before

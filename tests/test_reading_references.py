@@ -144,6 +144,25 @@ def test_unavailable_pdf_keeps_report_readable_and_context_names_each_paper(conf
     assert '2401.12345v1' in context[1]['content'] and '2402.12345v1' in context[1]['content']
 
 
+def test_invalid_tool_parameters_are_rejected_before_downloading_original(config_path):
+    from types import SimpleNamespace as NS
+    import pytest
+    from arxiv_ra.reading_sources import ReferencedSources
+    from arxiv_ra.reading_references import ReadingReferences
+    root = config_path.parent / 'run'
+    refs = ReadingReferences(root)
+    materials = refs.snapshot(refs.resolve([report(config_path)]))
+
+    def download(*args):
+        pytest.fail('Invalid tool parameters must not trigger a PDF download')
+
+    sources = ReferencedSources(root, {}, {'references': materials},
+                                NS(arxiv=NS(download_pdf=download)), lambda **kw: None)
+    with pytest.raises(ValueError, match='越界'):
+        sources.execute('read_pages', {'paper_id': '2401.12345v1',
+                                      'start': 1, 'end': 1, 'path': 'another.pdf'})
+
+
 def test_streaming_model_receives_multi_paper_tools_and_report_results(config_path, monkeypatch):
     from types import SimpleNamespace as NS
     from openai.resources.chat.completions import Completions

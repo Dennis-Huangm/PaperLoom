@@ -122,7 +122,11 @@ class ReadingSources:
             return {'text': text[offset:offset + 12000], 'total_chars': len(text), 'source': '生成报告，非原文'}
         if name == 'page_image' and not self.images:
             raise ValueError('当前阅读模型未启用图片能力，请更换配置')
-        with fitz.open(self.ensure_pdf()) as doc:
+        try:
+            pdf = self.ensure_pdf()
+        except (OSError, RuntimeError, ValueError, httpx.HTTPError):
+            return {'error': '该论文原文暂不可用；可用 read_report 查阅报告，原文未核实'}
+        with fitz.open(pdf) as doc:
             if name == 'search':
                 found = []
                 query = args['query'].casefold()
@@ -225,10 +229,5 @@ class ReferencedSources:
         if pid not in self.sources:
             raise ValueError('论文不在本轮引用范围内，请使用 metadata 中的 paper_id')
         source = self.sources[pid]
-        if name in {'search', 'read_pages', 'page_image', 'cite'}:
-            try:
-                source.ensure_pdf()
-            except (OSError, RuntimeError, ValueError, httpx.HTTPError):
-                return {'error':'该论文原文暂不可用；可用 read_report 查阅报告，原文未核实', 'paper_id':pid}
         result = source.execute(name, args)
         return {**result, 'paper_id':pid, 'paper_title':source.session['paper']['title']}

@@ -7,6 +7,7 @@ from arxiv_ra.config import LLMConfig
 from arxiv_ra.models import Paper, ParsedPaper, VerifiedMetadata
 from arxiv_ra.report import ReportGenerator
 from arxiv_ra.report_citations import attach_citations
+from arxiv_ra.render import report_document
 from arxiv_ra.source_spans import source_spans
 
 
@@ -111,6 +112,40 @@ def test_single_bracket_model_ids_bind_or_disappear_without_changing_prose(avail
     assert data['validated_citations'] == int(available)
 
 
+def test_bare_source_ids_render_as_page_links_and_reject_stale_ids():
+    parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
+    key = next(iter(source_spans(parsed)))
+    precise = key.replace('S1-', 'Q1-')
+    stale = key.replace(key.split('-')[1], 'f' * 24)
+    raw = f'## 核心方法\n对象池 [{key}]，精确片段 [{precise}]，过期 [{stale}]。'
+    report, data = attach_citations(raw, parsed, pdf_available=True, full_report=True)
+    html = report_document(report, 'Paper')
+    assert 'href="paper.pdf#page=1"' in html
+    assert key not in html and precise not in html and stale not in html
+    assert data['validated_citations'] == 1 and data['rejected_citations'] == 1
+
+
+def test_bare_source_id_cleanup_also_runs_when_locator_fails(monkeypatch):
+    import arxiv_ra.report_citations as module
+    parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
+    key = next(iter(source_spans(parsed)))
+    monkeypatch.setattr(module, 'source_spans', Mock(side_effect=RuntimeError('unavailable')))
+    report, _ = attach_citations(f'对象池 [{key}]。', parsed, pdf_available=True, full_report=True)
+    assert report == '对象池 。'
+
+
+def test_bare_id_normalization_is_idempotent_and_preserves_markdown_links():
+    from arxiv_ra.source_spans import normalize_grouped_source_ids
+    key = 'S1-' + 'a' * 24 + '-3-0-490'
+    raw = (f'[{key}](https://example.org) [{key}][ref]\n'
+           f'[{key}]: https://example.org\n'
+           f'\\[{key}] 普通 [text] [41]，未闭合 [{key}')
+    assert normalize_grouped_source_ids(raw) == raw
+    normalized = normalize_grouped_source_ids(f'[{key}]')
+    assert normalized == f'[[证据ID:{key}]]'
+    assert normalize_grouped_source_ids(normalized) == normalized
+
+
 @pytest.mark.parametrize('available', [True, False])
 def test_bare_span_ids_in_table_annotations_bind_or_disappear(available):
     parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
@@ -119,4 +154,15 @@ def test_bare_span_ids_in_table_annotations_bind_or_disappear(available):
     report, data = attach_citations(raw, parsed, pdf_available=available, full_report=True)
     expected = '[1](paper.pdf#page=1)' if available else ''
     assert report == f'**说明：** 实验条件。证据：{expected} 。'
+    assert data['validated_citations'] == int(available)
+
+
+@pytest.mark.parametrize('available', [True, False])
+def test_single_bracket_bare_source_ids_bind_or_disappear(available):
+    parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
+    key = next(iter(source_spans(parsed)))
+    raw = f'对象池初始化 [{key}]。普通 [text] 和论文引用 [41]。'
+    report, data = attach_citations(raw, parsed, pdf_available=available, full_report=True)
+    expected = '[1](paper.pdf#page=1)' if available else ''
+    assert report == f'对象池初始化 {expected}。普通 [text] 和论文引用 [41]。'
     assert data['validated_citations'] == int(available)

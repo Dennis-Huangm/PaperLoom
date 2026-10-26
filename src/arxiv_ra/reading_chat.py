@@ -18,23 +18,8 @@ from .task_runtime import TaskCancelled, task_checkpoint
 from .reading_sources import ReferencedSources
 from .reading_references import ReadingReferences
 from .reading_model import run_reading, create_completion, failure_message
-
-
-SOURCE_MARKER = re.compile(r'\[\[来源:([^\]\r\n]*)\]\]')
-SOURCE_GROUP = re.compile(r'\[(\[来源:[^\[\]\r\n]+\](?:\s*[,，、]\s*\[(?:来源:)?[^\[\]\r\n]+\])+)\]')
-SINGLE_SOURCE_MARKER = re.compile(r'(?<!\[)\[来源:([^\[\]\r\n]+)\](?!\])')
-
-
-def normalize_source_markers(text):
-    """Accept grouped model citations before validation and evidence selection."""
-    def expand_group(match):
-        # Only inherit the prefix inside an explicitly source-labelled group.
-        # Bare brackets elsewhere may be ordinary prose or Markdown links.
-        return re.sub(r'\[(?:来源:)?([^\[\]\r\n]+)\]',
-                      lambda item: '[[来源:' + item[1].strip() + ']]', match[1])
-
-    text = SOURCE_GROUP.sub(expand_group, text)
-    return SINGLE_SOURCE_MARKER.sub(lambda match: '[[来源:' + match[1] + ']]', text)
+from .reading_citations import (SOURCE_MARKER, normalize_source_markers, registered_evidence,
+                               recover_legacy_evidence, prepare_source_text)
 
 
 def timestamp():
@@ -90,13 +75,29 @@ class ReadingService:
         for path in self.folder.glob('*.json'):
             value = read_json(path, {})
             changed = False
+            recovered = False
+            user = {}
             for message in value.get('messages', []):
+                if message.get('role') == 'user':
+                    user = message
+                evidence = recover_legacy_evidence(root, user, message)
+                if evidence:
+                    registry = registered_evidence(message)
+                    registry.update({c['id']: c for c in evidence})
+                    message['evidence'] = list(registry.values())
+                    normalized = prepare_source_text(message['text'], registry)
+                    used = set(SOURCE_MARKER.findall(normalized))
+                    message['citations'] = [c for cid, c in registry.items() if cid in used]
+                    recovered = True
                 if message.get('status') in {'queued', 'running'}:
                     message.update(status='interrupted', detail='服务重启，回答已中断；可重试',
                                    finished_at=message.get('progress_at', value.get('updated_at')))
                     changed = True
             if changed:
                 self.save(value)
+            elif recovered:
+                # Migration must not reorder old chats or change answer text.
+                write_json(path, value)
 
     def path(self, sid):
         if not re.fullmatch(r'[a-f0-9]{32}', sid):
@@ -161,10 +162,14 @@ class ReadingService:
             if message.get('status') == 'running' and message.get('started_at'):
                 message['elapsed_seconds'] = max(0, (datetime.now(timezone.utc) -
                     datetime.fromisoformat(message['started_at'])).total_seconds())
-            citations = {c['id']: c for c in message.get('citations', [])}
-            text = normalize_source_markers(message['text'])
-            # Do not render provider-generated URLs as trustworthy source links.
-            text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', text)
+            citations = registered_evidence(message)
+            text = prepare_source_text(message['text'], citations,
+                                       streaming=message.get('status') in {'queued', 'running'})
+            used = set(SOURCE_MARKER.findall(text))
+            message['citations'] = [c for cid, c in citations.items() if cid in used]
+            # The full registry is durable server state, not the visible list of
+            # excerpts actually referenced by this answer.
+            message.pop('evidence', None)
             def citation(match):
                 item = citations.get(match[1])
                 if not item:
@@ -398,7 +403,17 @@ class ReadingService:
             message = next(m for m in value['messages'] if m['id'] == mid)
             if message['status'] not in {'queued', 'running'}:
                 raise TaskCancelled()
+            if 'citations' in fields or 'evidence' in fields:
+                evidence = registered_evidence(message)
+                for item in [*fields.get('evidence', []), *fields.get('citations', [])]:
+                    evidence[item['id']] = deepcopy(item)
+                fields['evidence'] = list(evidence.values())
             message.update(deepcopy(fields))
+            evidence = registered_evidence(message)
+            normalized = prepare_source_text(message.get('text', ''), evidence,
+                                             streaming=message['status'] in {'queued', 'running'})
+            used = set(SOURCE_MARKER.findall(normalized))
+            message['citations'] = [c for cid, c in evidence.items() if cid in used]
             self.save(value)
 
     def generate(self, sid, mid, value, user, config, settings, model, key, url):
@@ -450,13 +465,14 @@ class ReadingService:
                 answer, limited = run_reading(client, model, messages, sources, update, checkpoint,
                     max_tools=settings['max_tools'], max_tokens=output_budget,
                     reasoning_effort=settings['reasoning_effort'])
-                answer = normalize_source_markers(answer)
                 known = {c['id'] for c in sources.citations}
+                answer = prepare_source_text(answer, known)
                 # A paper ID or invented marker cannot be repaired by guessing which
                 # excerpt supports a claim. Keep the limitation visible in saved text.
                 answer = SOURCE_MARKER.sub(lambda m: m[0] if m[1] in known else '（引用未核实）', answer)
                 used = set(SOURCE_MARKER.findall(answer))
                 update(text=answer, status='completed', limited=limited,
+                       evidence=sources.citations,
                        citations=[c for c in sources.citations if c['id'] in used],
                        detail='本轮查阅或输出已停止，可发送“继续”' if limited else '回答完成')
         except TaskCancelled:
