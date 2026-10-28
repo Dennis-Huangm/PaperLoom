@@ -217,38 +217,40 @@
     document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>closeDock(false));
   }
   function installWorkspaceResize() {
+    const historyPanel=$('.reading-history');
     const resize=document.createElement('div');
     resize.className='reading-workspace-resize';resize.tabIndex=0;
     resize.setAttribute('role','separator');resize.setAttribute('aria-label','调整对话区域宽度');
-    resize.setAttribute('aria-controls',host.id);resize.setAttribute('aria-orientation','vertical');
-    resize.title='拖拽调整宽度，双击恢复默认；方向键微调';
+    historyPanel.id='reading-workspace-history';
+    resize.setAttribute('aria-controls',historyPanel.id);resize.setAttribute('aria-orientation','vertical');
+    resize.title='拖拽会话记录与对话之间的分隔线调整宽度，双击恢复默认；方向键微调';
     host.append(resize);
-    const defaultWidth=1180, minimum=600, key='paperloom.reading.workspace-width';
+    const defaultWidth=320, minimum=220, key='paperloom.reading.history-width';
     let preferred=defaultWidth;
     try {const saved=Number(localStorage.getItem(key));if(Number.isFinite(saved) && saved>0)preferred=saved;}catch{}
-    function maximum(){return host.parentElement.clientWidth-parseFloat(getComputedStyle(host.parentElement).paddingLeft || 0)-parseFloat(getComputedStyle(host.parentElement).paddingRight || 0);}
+    function maximum(){return Math.max(0,Math.min(host.clientWidth*.55,host.clientWidth-360));}
     function size(value,remember=false) {
       const max=maximum(), min=Math.min(minimum,max);
       const width=Math.max(min,Math.min(max,value));
-      host.style.setProperty('--reading-workspace-width',width+'px');
+      host.style.setProperty('--reading-history-width',width+'px');
       resize.setAttribute('aria-valuemin',Math.round(min));resize.setAttribute('aria-valuemax',Math.round(max));resize.setAttribute('aria-valuenow',Math.round(width));
       if(remember){preferred=width;try{localStorage.setItem(key,String(width));}catch{}}
     }
     size(preferred);
-    new ResizeObserver(()=>size(preferred)).observe(host.parentElement);
+    new ResizeObserver(()=>size(preferred)).observe(host);
     resize.onpointerdown=event=>{
       if(event.button!==0)return;
       event.preventDefault();resize.setPointerCapture(event.pointerId);
-      const x=event.clientX,width=host.offsetWidth,scale=host.getBoundingClientRect().width/width;
+      const x=event.clientX,width=historyPanel.offsetWidth,scale=host.getBoundingClientRect().width/host.offsetWidth;
       document.body.classList.add('reading-resizing');
-      resize.onpointermove=e=>size(width+(x-e.clientX)/scale,true);
+      resize.onpointermove=e=>size(width+(e.clientX-x)/scale,true);
     };
     resize.onpointerup=event=>{if(resize.hasPointerCapture(event.pointerId))resize.releasePointerCapture(event.pointerId);};
     resize.onlostpointercapture=()=>{resize.onpointermove=null;document.body.classList.remove('reading-resizing');};
     resize.onkeydown=event=>{
       if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
       event.preventDefault();
-      size(event.key==='Home'?minimum:event.key==='End'?maximum():host.offsetWidth+(event.key==='ArrowLeft'?20:-20),true);
+      size(event.key==='Home'?minimum:event.key==='End'?maximum():historyPanel.offsetWidth+(event.key==='ArrowRight'?20:-20),true);
     };
     resize.ondblclick=()=>size(defaultWidth,true);
   }
