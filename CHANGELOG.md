@@ -6,6 +6,7 @@
 
 ### Changed
 
+- 改为直接从仓库源码安装与更新，移除 GitHub Release 下载入口、专用发布说明与附件打包脚本。
 - Python 包、发行包、命令、启动脚本、资源文件及内部标识统一为 `paperloom` / `PaperLoom`，移除旧名称入口。
 - 新配置的 Zotero 分类、Obsidian 根目录及 Windows 定时任务默认使用 `PaperLoom`；已有外部资料和系统任务保留原样，升级与单独迁移说明见 `docs/CLI.md`。
 

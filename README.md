@@ -11,7 +11,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dennis-Huangm/PaperLoom/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/Dennis-Huangm/PaperLoom"></a>
   <img alt="Python 3.11 或更新版本" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-green"></a>
 </p>
@@ -26,14 +25,21 @@
 
 PaperLoom 是面向个人研究者的论文助手：根据研究方向发现 arXiv 和会议论文，生成中文阅读报告，记录笔记，再将材料收录到 Zotero 或 Obsidian。推荐、文献库、相关工作地图、论文比较、版本跟进和周报都可以在网页中完成。
 
-**当前正式版本：v1.6.0。** [发布说明](docs/RELEASE_NOTES.md) · [变更记录](CHANGELOG.md)。应用和研究数据保存在本机；联网检索与模型生成使用你配置的服务。
-
-v1.6.0 改进了报告阅读与后台运行：实验表格按原文数据保全并放在对应讨论处，长表可以展开，打印时包含完整矩阵；报告目录和本地论文侧栏支持收起、搜索和切换。Windows 可在登录后无终端启动，任务页可直接调整并行任务数。
+项目通过仓库源码安装与更新，近期变化见 [变更记录](CHANGELOG.md)。应用和研究数据保存在本机；联网检索与模型生成使用你配置的服务。
 
 <a id="quick-start"></a>
 ## 安装与启动
 
-需要 **Python 3.11+** 和可用的网络。从 [最新 Release](https://github.com/Dennis-Huangm/PaperLoom/releases/latest) 下载 **`paperloom-1.6.0-source.zip`**，解压到固定目录。发布包需要安装 Python，首次安装会下载依赖。
+需要 **Python 3.11+** 和可用的网络。先获取源码，首次安装会下载依赖。
+
+使用 Git 克隆仓库：
+
+```bash
+git clone https://github.com/Dennis-Huangm/PaperLoom.git
+cd PaperLoom
+```
+
+也可在仓库首页选择 **Code → Download ZIP**，或直接 [下载 main 分支源码](https://github.com/Dennis-Huangm/PaperLoom/archive/refs/heads/main.zip)，解压到固定目录。以下操作都在源码目录中进行。
 
 ### Windows
 
@@ -54,7 +60,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\manage_gui.ps1 -Acti
 
 ### Linux / macOS
 
-在解压目录打开终端，安装并启动：
+在源码目录打开终端，安装并启动：
 
 ```bash
 python3 -m venv .venv
@@ -178,14 +184,17 @@ paperloom gui
 ## 从旧版升级
 
 1. 等待任务结束，停止旧版服务与调度，备份 **`.env`、`config.yaml`、`profiles/` 和输出目录**（默认 `run/`）。
-2. 将新版解压到独立目录，复制上述数据，重新运行安装与启动入口。安装脚本会保留已有配置。
-3. 检查方向、文献库和历史报告，再恢复调度；新旧程序不要同时写入同一输出目录。
+2. Git 安装可在项目目录执行 `git pull --ff-only` 更新源码；ZIP 安装则重新下载源码，解压到独立目录并复制上述数据。
+3. Windows 重新运行 `Setup-PaperLoom.cmd`；Linux / macOS 激活环境后执行 `python -m pip install -e '.[gui]'`。安装脚本会保留已有配置。
+4. 启动后检查方向、文献库和历史报告，再恢复调度；新旧程序不要同时写入同一输出目录。
 
-使用 Windows 登录任务的用户，应先从旧目录停止后台服务，再从新目录重新注册登录任务并启动，确保计划任务指向新版安装。
+如果更换了安装目录，使用 Windows 登录任务的用户应先从旧目录停止后台服务，再从新目录重新注册登录任务并启动，确保计划任务指向新版安装。
+
+从旧名称安装迁移时，包名与外部资料的单独迁移要求见 [旧环境升级说明](docs/CLI.md#从旧环境升级)。
 
 ## 数据与问题反馈
 
-配置与凭据保存在 `config.yaml` / `.env`，研究方向在 `profiles/`，推荐、报告、笔记和任务记录在 `run/` 或自定义输出目录。这些个人数据不进入 Git 仓库与发布包。
+配置与凭据保存在 `config.yaml` / `.env`，研究方向在 `profiles/`，推荐、报告、笔记和任务记录在 `run/` 或自定义输出目录。这些个人数据不进入 Git 仓库；克隆或下载的源码不包含个人配置和研究数据。
 
 网页默认在 `127.0.0.1:8000` 供本机单用户使用。网页打不开时先检查服务窗口；检索或模型任务失败时先看 **任务 / 状态** 的提示。更多运行规则见 [功能与配置说明](docs/USAGE.md)。
 

@@ -24,7 +24,6 @@ release/
 docs/*
 !docs/USAGE.md
 !docs/CLI.md
-!docs/RELEASE_NOTES.md
 AGENTS.md
 CLAUDE.md
 CONTEXT.md

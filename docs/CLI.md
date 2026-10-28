@@ -62,19 +62,13 @@ paperloom --config config.yaml doctor
 paperloom --config config.yaml gui
 ```
 
-wheel 安装适用于已有 Python 环境：
-
-```bash
-python -m pip install './paperloom-1.6.0-py3-none-any.whl[gui]'
-```
-
-wheel 不包含用户配置和启动脚本，需要另外下载源码包或从仓库取得 [配置模板](../config.example.yaml) 与 [环境变量模板](../.env.example)，保存为 `config.yaml` / `.env` 后启动。
+源码获取方式见 [README 的安装说明](../README.md#quick-start)。安装时使用源码中的 [配置模板](../config.example.yaml) 与 [环境变量模板](../.env.example)，保存为 `config.yaml` / `.env` 后启动。
 
 下面的 `paperloom` 命令需在已激活环境中执行，也可使用 `python -m paperloom`。Windows 还可使用 `scripts/run.ps1 <命令>`。Python 包、发行包与命令统一命名为 `paperloom`，不再提供旧名称入口。
 
 ### 从旧环境升级
 
-建议新建虚拟环境，再按上面的步骤安装当前源码或 wheel；现有 `config.yaml`、`.env`、`profiles/` 和 `run/` 可继续使用。安装新发行包不会自动卸载旧发行包或清除旧命令；复用环境时应先确认并卸载旧发行包，再重新安装当前项目。
+建议新建虚拟环境，再按上面的步骤安装当前源码；现有 `config.yaml`、`.env`、`profiles/` 和 `run/` 可继续使用。安装新发行包不会自动卸载旧发行包或清除旧命令；复用环境时应先确认并卸载旧发行包，再重新安装当前项目。
 
 新配置的 Zotero 默认分类和 Obsidian 默认根目录均为 `PaperLoom`；显式保存的自定义配置继续生效。本次命名调整不改写已有 Zotero 分类、Obsidian 笔记或 Windows 已注册任务。
 
