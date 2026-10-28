@@ -43,7 +43,7 @@ class DiscoveryConfig:
     search_plan: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        from .conference_scope import validate_scope
+        from .discovery.conference_scope import validate_scope
         self.conferences = validate_scope(self.mode, self.conferences,
                                          self.conference_year_from, self.conference_year_to)
         if not isinstance(self.search_plan, dict) or (self.search_plan and self.search_plan.get("version") != 2):

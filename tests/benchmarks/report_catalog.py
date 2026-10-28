@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from arxiv_ra.profiles import ProfileManager
+from arxiv_ra.profiles.profiles import ProfileManager
 from arxiv_ra.utils import write_json
 from arxiv_ra.web import create_app
 

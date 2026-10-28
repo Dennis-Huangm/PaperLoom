@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from arxiv_ra.config import load_config
-from arxiv_ra.profiles import ProfileManager
+from arxiv_ra.profiles.profiles import ProfileManager
 
 
 def workspace(tmp_path):

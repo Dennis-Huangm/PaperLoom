@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from jinja2 import Environment, FileSystemLoader
-from arxiv_ra.render import report_document
-from arxiv_ra.task_result import task_document
+from arxiv_ra.reports.render import report_document
+from arxiv_ra.runtime.task_result import task_document
 
 env = Environment(loader=FileSystemLoader(Path('src/arxiv_ra/templates')), autoescape=True)
 reading = env.get_template('reading.html').render(

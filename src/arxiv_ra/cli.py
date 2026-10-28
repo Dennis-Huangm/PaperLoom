@@ -11,15 +11,15 @@ from pathlib import Path
 
 from . import __version__
 from .config import load_config
-from .emailer import send_test_email
-from .pipeline import DailyPipeline
-from .profiles import ProfileManager
-from .weekly import WeeklySynthesizer
-from .comparison import ComparisonService
-from .version_tracker import VersionTracker
-from .version_sync import PaperVersionSync
-from .citation_graph import CitationExplorer
-from .obsidian import ObsidianExporter
+from .integrations.emailer import send_test_email
+from .discovery.pipeline import DailyPipeline
+from .profiles.profiles import ProfileManager
+from .reports.weekly import WeeklySynthesizer
+from .reports.comparison import ComparisonService
+from .versions.version_tracker import VersionTracker
+from .versions.version_sync import PaperVersionSync
+from .related_work.citation_graph import CitationExplorer
+from .integrations.obsidian import ObsidianExporter
 
 
 def _load_dotenv(path: Path) -> None:
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             raise SystemExit(f"配置文件不存在：{config_path}")
     if args.command == "backup":
-        from .backup import BackupService
+        from .papers.backup import BackupService
         try:
             service = BackupService(config_path)
             if args.backup_action == "create":
@@ -201,8 +201,8 @@ def main(argv: list[str] | None = None) -> None:
         return
     config = load_config(config_path)
     if args.command == "schedule":
-        from .scheduler import ProfileScheduler
-        from .web_jobs import JobManager
+        from .runtime.jobs.scheduler import ProfileScheduler
+        from .runtime.jobs.manager import JobManager
         output = Path(config.output_dir)
         output = (output if output.is_absolute() else config_path.parent / output).resolve()
         if args.status:

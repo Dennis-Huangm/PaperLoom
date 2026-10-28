@@ -6,14 +6,14 @@ import time
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import uvicorn
 
 from arxiv_ra.web import create_app
-from arxiv_ra.research_clients import ResearchClients
-from arxiv_ra.direction_overview import OverviewGenerator
+from arxiv_ra.runtime.research_clients import ResearchClients
+from arxiv_ra.profiles.direction_overview import OverviewGenerator
 from arxiv_ra.config import load_config
-from test_direction_overview import direction, LiteratureAPI, OverviewModel
+from tests.profiles.test_direction_overview import direction, LiteratureAPI, OverviewModel
 
 
 class Model(OverviewModel):

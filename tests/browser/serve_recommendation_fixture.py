@@ -6,10 +6,10 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 import uvicorn
-from arxiv_ra.models import Paper
+from arxiv_ra.papers.models import Paper
 from arxiv_ra.utils import write_json
 from arxiv_ra.web import create_app
-from arxiv_ra.web_jobs import JobManager, BackgroundJob
+from arxiv_ra.runtime.jobs.manager import JobManager, BackgroundJob
 
 fixture = TemporaryDirectory(prefix="paperloom-recommendation-qa-")
 root = Path(fixture.name)

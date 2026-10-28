@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import uvicorn
 
-from arxiv_ra.library import PaperLibraryStore
-from arxiv_ra.search import SearchIndex
+from arxiv_ra.papers.library import PaperLibraryStore
+from arxiv_ra.papers.search import SearchIndex
 from arxiv_ra.web import create_app
 
 fixture_directory = TemporaryDirectory(prefix="paperloom-search-preview-")
@@ -17,7 +17,7 @@ root = Path(fixture_directory.name)
 config_path = root / "config.yaml"
 config_path.write_text("output_dir: run\ndiscovery:\n  interest_description: alpha\n", encoding="utf-8")
 app = create_app(config_path)
-helpers = runpy.run_path(str(Path(__file__).resolve().parents[1] / "test_search.py"))
+helpers = runpy.run_path(str(Path(__file__).resolve().parents[1] / "papers/test_search.py"))
 helpers["report"](root / "run", "alpha")
 store = PaperLibraryStore(root / "run", "alpha")
 for i in range(26):

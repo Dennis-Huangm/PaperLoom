@@ -6,7 +6,7 @@ import httpx
 import uvicorn
 from arxiv_ra.web import create_app
 from arxiv_ra.config import load_config
-from arxiv_ra.citation_graph import CitationExplorer
+from arxiv_ra.related_work.citation_graph import CitationExplorer
 root = Path('work/graph-preview').resolve(); root.mkdir(parents=True, exist_ok=True)
 config_path = root / 'config.yaml'
 config_path.write_text('output_dir: run\ncitations:\n  max_references: 50\n  max_citations: 50\n  max_similar: 50\n  max_nodes: 50\n  max_candidates: 150\n  min_interval: 0\n  max_retries: 0\n', encoding='utf-8')

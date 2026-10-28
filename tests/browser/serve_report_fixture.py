@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import uvicorn
 
-from arxiv_ra.render import render_report
+from arxiv_ra.reports.render import render_report
 from arxiv_ra.utils import write_json
 from arxiv_ra.web import create_app
 

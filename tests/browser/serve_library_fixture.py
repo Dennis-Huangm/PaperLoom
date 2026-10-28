@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 import uvicorn
 
-from arxiv_ra.library import PaperLibraryStore
-from arxiv_ra.profiles import ProfileManager
+from arxiv_ra.papers.library import PaperLibraryStore
+from arxiv_ra.profiles.profiles import ProfileManager
 from arxiv_ra.utils import write_json
 from arxiv_ra.web import create_app
 

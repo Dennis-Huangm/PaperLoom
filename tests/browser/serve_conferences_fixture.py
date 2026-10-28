@@ -8,8 +8,8 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 import uvicorn
 
-from arxiv_ra.profiles import ProfileManager
-from arxiv_ra.task_runtime import task_warning
+from arxiv_ra.profiles.profiles import ProfileManager
+from arxiv_ra.runtime.jobs.task_runtime import task_warning
 from arxiv_ra.utils import read_json, write_json
 from arxiv_ra.web import create_app
 
@@ -19,7 +19,7 @@ config = root / 'config.yaml'
 config.write_text('output_dir: run\n', encoding='utf-8')
 app = create_app(config)
 active = ProfileManager(root).active_id()
-seed = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'test_conference_history.py'))['seed_result']
+seed = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'discovery/test_conference_history.py'))['seed_result']
 seed(root / 'run', active, 'a' * 32)
 success = seed(root / 'run', active, 'b' * 32, failed=False)
 payload = read_json(success)
