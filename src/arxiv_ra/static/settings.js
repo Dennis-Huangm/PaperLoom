@@ -53,8 +53,69 @@ document.querySelectorAll('.credential-visibility').forEach((button) => {
 
 const connectionForm = document.querySelector('#model-connection-form');
 const connectionTest = document.querySelector('#test-model-connection');
+const presetSwitcher = document.querySelector('#model-preset-switcher');
+const presetName = document.querySelector('#model-preset-name');
+let connectionEdited = false;
+let presetPending = false;
+connectionForm?.addEventListener('input', () => {
+  connectionEdited = true;
+  presetName.setCustomValidity('');
+});
+
+const updatePresetButtons = () => {
+  if (!presetSwitcher) return;
+  const selected = presetSwitcher.querySelector('select').selectedOptions[0];
+  presetSwitcher.querySelectorAll('button').forEach((button) => {
+    button.disabled = !selected.value || (!button.hasAttribute('formaction') && selected.dataset.available !== 'true');
+  });
+};
+presetSwitcher?.addEventListener('change', updatePresetButtons);
+updatePresetButtons();
+
+// Keep drafts visible when a preset request fails validation or the service
+// cannot be reached. Normal credential saves retain their existing form flow.
+async function submitPreset(event) {
+  const form = event.currentTarget;
+  const button = event.submitter;
+  const action = button?.getAttribute('formaction') || form.getAttribute('action');
+  if (!action.startsWith('/settings/model-presets')) return;
+  event.preventDefault();
+  if (presetPending) return;
+  if (form === connectionForm && !presetName.value.trim()) {
+    presetName.setCustomValidity('请填写配置名称。');
+    presetName.reportValidity();
+    presetName.setCustomValidity('');
+    return;
+  }
+  if (action.endsWith('/delete')) {
+    const selected = presetSwitcher.querySelector('select').selectedOptions[0];
+    if (!window.confirm(`删除已保存的配置“${selected.textContent}”？当前连接仍可使用。`)) return;
+  }
+  if (form === presetSwitcher && connectionEdited
+      && !window.confirm('当前表单有未保存的修改，继续后将丢弃这些修改。是否继续？')) return;
+  presetPending = true;
+  button.disabled = true;
+  try {
+    const response = await scopedFetch(action, {method: 'POST', body: new FormData(form)});
+    if (!response.ok) {
+      const payload = await response.json();
+      throw new Error(typeof payload.detail === 'string' ? payload.detail : '无法保存模型配置，请稍后重试。');
+    }
+    const destination = response.url + '#credentials';
+    if (window.location.href === destination) window.location.reload();
+    else window.location.assign(destination);
+  } catch (error) {
+    toast(error.message);
+    presetPending = false;
+    button.disabled = false;
+    updatePresetButtons();
+  }
+}
+connectionForm?.addEventListener('submit', submitPreset);
+presetSwitcher?.addEventListener('submit', submitPreset);
 if (connectionForm && connectionTest) {
   const result = document.querySelector('#connection-test-result');
+  const idleTestLabel = connectionTest.innerHTML;
   let generation = 0;
   connectionForm.addEventListener('input', () => {
     generation += 1;
@@ -85,7 +146,7 @@ if (connectionForm && connectionTest) {
     } finally {
       clearTimeout(timeout);
       connectionTest.disabled = false;
-      connectionTest.textContent = '测试连接';
+      connectionTest.innerHTML = idleTestLabel;
     }
   });
 }
@@ -110,14 +171,32 @@ zoteroConnect?.addEventListener('click', async () => {
 
 const settingsLinks = [...document.querySelectorAll('.settings-section-nav a')];
 if (settingsLinks.length) {
+  const nav = document.querySelector('.settings-section-nav');
+  const activateLink = (activeLink) => {
+    settingsLinks.forEach((link) => {
+      link.classList.toggle('active', link === activeLink);
+      if (link === activeLink) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+    // Reveal the active section within the horizontal navigation without
+    // changing the document's vertical scroll position.
+    const item = activeLink.getBoundingClientRect();
+    const frame = nav.getBoundingClientRect();
+    if (item.left < frame.left || item.right > frame.right) {
+      const delta = item.left < frame.left ? item.left - frame.left - 6 : item.right - frame.right + 6;
+      const scale = frame.width / nav.offsetWidth;
+      nav.scrollLeft += delta / scale;
+    }
+  };
   settingsLinks.forEach((link) => link.addEventListener('click', () => {
-    settingsLinks.forEach((item) => item.classList.toggle('active', item === link));
+    activateLink(link);
   }));
   const sections = settingsLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
   const observer = new IntersectionObserver((entries) => {
     const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
     if (!visible) return;
-    settingsLinks.forEach((link) => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+    const activeLink = settingsLinks.find((link) => link.getAttribute('href') === `#${visible.target.id}`);
+    if (activeLink) activateLink(activeLink);
   }, {rootMargin: '-15% 0px -70% 0px', threshold: [0, .2, .5]});
   sections.forEach((section) => observer.observe(section));
 }

@@ -14,6 +14,7 @@ from fastapi import Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from ...runtime.model_access.model_connection import connection_values, probe_connection
+from ...runtime.model_access.model_presets import ModelPresets
 from ...integrations.obsidian import ObsidianExporter, discover_obsidian_vaults
 from ...discovery.conference_scope import scope_from_form
 from ...integrations.zotero import ZoteroClient
@@ -59,6 +60,7 @@ def register_routes(
                 "settings",
                 saved=saved,
                 credentials=credential_specs(current),
+                model_presets=ModelPresets(config_path).list(current.llm),
                 zotero_connection=zotero_connection,
                 obsidian_connection=obsidian_connection,
                 obsidian_vaults=discover_obsidian_vaults(),
@@ -136,6 +138,35 @@ def register_routes(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return RedirectResponse("/settings?saved=credentials", status_code=status.HTTP_303_SEE_OTHER)
+
+    @app.post("/settings/model-presets")
+    async def save_model_preset(request: Request) -> RedirectResponse:
+        form = await request.form()
+        current = current_config()
+        presets = ModelPresets(config_path)
+        try:
+            values = connection_values(form, current.llm)
+            preset_id = presets.save(str(form.get("model_preset_name", "")), values)
+            presets.activate(preset_id, current.llm)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse("/settings?saved=model-preset", status_code=303)
+
+    @app.post("/settings/model-presets/activate")
+    async def activate_model_preset(model_preset_id: str = Form(...)) -> RedirectResponse:
+        try:
+            ModelPresets(config_path).activate(model_preset_id, current_config().llm)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse("/settings?saved=model-switched", status_code=303)
+
+    @app.post("/settings/model-presets/delete")
+    async def delete_model_preset(model_preset_id: str = Form(...)) -> RedirectResponse:
+        try:
+            ModelPresets(config_path).delete(model_preset_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return RedirectResponse("/settings?saved=model-deleted", status_code=303)
 
     @app.post("/settings/connection-test")
     async def test_model_connection(request: Request) -> JSONResponse:

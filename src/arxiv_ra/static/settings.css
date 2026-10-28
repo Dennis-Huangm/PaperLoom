@@ -1,0 +1,115 @@
+/* Settings keep a comfortable reading width even on large displays. */
+.page-settings .app-main{max-width:1500px;padding:30px 32px 48px}
+.page-settings .page-heading{margin-bottom:26px}
+.page-settings .page-heading h1{font-size:28px;margin:4px 0 8px}
+.page-settings .page-heading p:not(.section-kicker){font-size:14px;color:var(--muted)}
+.settings-heading-actions{display:flex;align-items:center;gap:20px}
+.settings-local-note{display:inline-flex;align-items:center;gap:6px;color:var(--green);font-size:12px;white-space:nowrap}
+.page-settings .settings-shell{display:block}
+.page-settings .settings-section-nav{position:sticky;top:62px;z-index:20;display:flex;align-items:center;gap:4px;padding:6px;margin-bottom:20px;border-radius:8px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;box-shadow:0 3px 12px #20262d05}
+.page-settings .settings-section-nav a{flex:0 0 auto;min-width:max-content;min-height:38px;font-size:13px;padding:0 12px;border:0;border-radius:5px;white-space:nowrap}
+.page-settings .settings-section-nav a.active{box-shadow:none;background:var(--accent-soft);color:var(--accent)}
+.page-settings .settings-content{padding:0;border:0;background:transparent;overflow:visible;min-width:0}
+.page-settings .form-section{padding:28px;margin-bottom:20px;border:1px solid var(--line);border-radius:10px;background:var(--surface);scroll-margin-top:134px}
+.page-settings .form-section h2{font-size:20px;margin:3px 0 20px}
+.page-settings .form-section small{font-size:12px;line-height:1.65}
+.page-settings .form-section>label,.page-settings .form-columns>label,.page-settings .config-grid>label{font-size:13px;gap:8px}
+.page-settings .form-section input:not([type=checkbox]):not([type=hidden]),
+.page-settings .form-section select,.page-settings .form-section textarea{font-size:14px;min-width:0;border-radius:6px}
+.page-settings .form-section input:not([type=checkbox]):not([type=hidden]),.page-settings .form-section select{height:44px}
+.page-settings .button{height:42px;border-radius:6px;font-size:13px;white-space:nowrap}
+.page-settings .button:disabled{opacity:.42;cursor:not-allowed}
+.page-settings .button:disabled:hover{background:var(--surface);border-color:var(--line-strong)}
+.page-settings .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.page-settings .settings-card-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+.settings-card-title{display:flex;align-items:center;gap:13px;min-width:0}
+.settings-card-icon{width:44px;height:44px;display:grid;place-items:center;flex-shrink:0;color:var(--accent);background:var(--accent-soft);border-radius:10px;font-size:18px}
+.page-settings .settings-card-heading h2{margin:0 0 5px}
+.settings-card-heading p{font-size:13px;color:var(--muted);margin:0;line-height:1.6}
+.settings-scope{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;font-size:11px;color:var(--muted);background:var(--surface-subtle);border:1px solid var(--line);padding:6px 9px;border-radius:5px}
+.page-settings .model-preset-panel{display:grid;gap:12px;padding:18px 20px;margin:0 0 24px;border:1px solid #ebdfd1;border-radius:8px;background:#fdfaf6}
+.model-preset-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.model-preset-heading label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650}
+.model-preset-heading label i{color:var(--accent)}
+.model-preset-heading>span{font-size:11px;color:var(--muted)}
+.page-settings .model-preset-controls{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
+.page-settings .model-preset-controls select{flex:1;width:100%;min-width:0;background:var(--surface)}
+.page-settings .model-preset-controls .button{flex-shrink:0}
+.page-settings .model-preset-controls .preset-delete{padding:0;width:42px;color:var(--muted);background:transparent;border-color:transparent}
+.page-settings .preset-delete:not(:disabled):hover{color:var(--red);background:#fff1f1;border-color:#f0d6d6}
+.connection-editor-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.connection-editor-heading h3{margin:0;font-size:15px}
+.connection-editor-heading>span{font-size:12px;color:var(--muted)}
+.model-name-field{display:grid;gap:8px;font-size:13px;font-weight:650}
+.page-settings #model-connection-form>.credential-grid{margin-top:20px}
+.page-settings .credential-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.page-settings #model-connection-form .credential-card{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto 44px auto;gap:8px 12px;padding:0;border:0;align-items:center;align-content:start;min-width:0}
+.page-settings .credential-title{grid-column:1/-1;justify-content:space-between;gap:12px;margin-bottom:2px}
+.page-settings .credential-title label{font-size:13px;font-weight:650}
+.page-settings .credential-title em{font-size:11px}
+.page-settings .credential-input-control{grid-column:1/-1}
+.page-settings .credential-input-control input{border-top-right-radius:0!important;border-bottom-right-radius:0!important}
+.page-settings .credential-visibility{flex-basis:72px;font-size:12px;border-radius:0 6px 6px 0}
+.page-settings .credential-card small{display:block;font-size:11px;line-height:1.6;min-width:0}
+.page-settings .clear-option{justify-self:end;font-size:11px;display:flex;align-items:center;gap:4px;color:var(--muted)}
+.page-settings .clear-option:has(input:checked){color:var(--red)}
+.page-settings .clear-option input{margin:0;width:13px;height:13px}
+.credential-hint{display:flex;align-items:baseline;gap:7px;font-size:12px;line-height:1.7;color:var(--muted);margin:18px 0 0}
+.credential-hint i{font-size:11px;color:var(--green)}
+.connection-footer{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:20px 0;margin-top:6px}
+.connection-footer>p{font-size:11px;color:var(--muted);line-height:1.7;margin:0;max-width:330px}
+.connection-footer>p i{margin-right:4px}
+.page-settings .connection-actions{margin:0;gap:10px;flex-wrap:nowrap;flex-shrink:0}
+.page-settings .model-preset-save{display:grid;grid-template-columns:auto minmax(120px,1fr) auto;align-items:center;gap:10px 18px;margin:0;padding:20px 0;border-top:1px solid var(--line)}
+.model-preset-save-copy{display:grid;gap:4px;min-width:155px}
+.model-preset-save-copy strong{font-size:13px;font-weight:650}
+.model-preset-save-copy strong i{color:var(--accent);margin-right:7px}
+.page-settings .model-preset-save-copy small{font-size:11px}
+.page-settings .model-preset-save-note{grid-column:2/-1;font-size:11px}
+.page-settings .settings-advanced{margin-top:0;padding:16px;border-radius:8px;background:var(--surface-subtle)}
+.page-settings .settings-advanced>summary{font-size:13px;font-weight:550;color:var(--muted)}
+.page-settings .settings-advanced[open]>.credential-grid{padding-top:6px;gap:22px}
+.page-settings .settings-advanced .section-save{padding-bottom:0;margin-top:20px}
+.page-settings .settings-form .settings-advanced{margin-top:18px}
+.page-settings .form-section>p:not(.section-kicker){line-height:1.75}
+.page-settings .notice{font-size:13px;border-radius:6px;line-height:1.7}
+.page-settings .notice p{font-size:12px}
+.page-settings .form-section fieldset{border:1px solid var(--line);border-radius:8px;padding:18px;margin:0 0 18px;min-width:0}
+.page-settings .form-section legend{font-size:13px;font-weight:650;padding:0 8px}
+.page-settings .save-bar{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:18px 24px}
+.page-settings .save-bar p{font-size:12px;line-height:1.7}
+
+@media(max-width:1100px){
+  .page-settings .app-main{padding:24px}
+  .page-settings .form-section{padding:24px}
+  .settings-scope{display:none}
+  .connection-footer{align-items:flex-start;flex-direction:column;gap:12px}
+  .connection-footer>p{max-width:none}
+  .page-settings .model-preset-save{grid-template-columns:minmax(0,1fr) auto}
+  .model-preset-save-copy{grid-column:1/-1}
+  .page-settings .model-preset-save-note{grid-column:1/-1}
+}
+@media(max-width:760px){
+  .page-settings .app-main{padding:22px 16px 32px}
+  .page-settings .page-heading{gap:16px;margin-bottom:20px}
+  .settings-heading-actions{gap:16px;flex-wrap:wrap}
+  .settings-local-note{font-size:11px}
+  .page-settings .settings-section-nav{top:58px;margin-bottom:16px}
+  .page-settings .form-section{scroll-margin-top:126px}
+  .page-settings .form-section{padding:20px;margin-bottom:16px;border-radius:8px}
+  .page-settings .credential-grid{grid-template-columns:1fr;gap:20px}
+  .page-settings .settings-card-heading{margin-bottom:20px}
+  .settings-card-icon{display:none}
+  .page-settings .model-preset-panel{padding:16px;margin-bottom:22px}
+  .page-settings .model-preset-controls{flex-wrap:wrap;gap:8px}
+  .page-settings .model-preset-controls select{flex-basis:100%}
+  .page-settings .model-preset-controls .button:not(.preset-delete){flex:1}
+  .page-settings .model-preset-save{grid-template-columns:minmax(0,1fr);gap:12px}
+  .page-settings .model-preset-save>input,.page-settings .model-preset-save>.button{width:100%}
+  .page-settings .model-preset-save-note{grid-column:1}
+  .page-settings .connection-actions{width:100%;flex-wrap:wrap}
+  .page-settings .connection-actions .button{flex:1;padding:0 12px}
+  .connection-editor-heading>span{font-size:11px}
+  .page-settings .form-columns,.page-settings .config-grid{grid-template-columns:1fr}
+  .page-settings .save-bar{padding:18px}
+}

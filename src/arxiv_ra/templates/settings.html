@@ -2,27 +2,30 @@
 {% block title %}设置 · PaperLoom{% endblock %}
 {% macro credential_card(item) %}
         <div class="credential-card">
-          <span class="credential-title"><strong>{{ item.label }}</strong><em class="{% if item.configured %}configured{% endif %}">{% if item.configured %}<i class="fas fa-check-circle" aria-hidden="true"></i>已配置{% else %}未配置{% endif %}</em></span>
+          <span class="credential-title"><label for="credential-{{ item.field }}">{{ item.label }}</label><em class="{% if item.configured %}configured{% endif %}">{% if item.configured %}<i class="fas fa-check-circle" aria-hidden="true"></i>已配置{% else %}未配置{% endif %}</em></span>
           <div class="credential-input-control">
             <input class="credential-value" type="hidden" name="{{ item.field }}" value="">
-            <input id="credential-{{ item.field }}" type="password" value="" placeholder="{% if item.configured %}********{% else %}输入新值{% endif %}" aria-label="{{ item.label }}" autocomplete="new-password" spellcheck="false" data-configured="{{ 'true' if item.configured else 'false' }}">
+            <input id="credential-{{ item.field }}" type="password" value="" placeholder="{% if item.configured %}********{% else %}输入新值{% endif %}" aria-label="{{ item.label }}" aria-describedby="credential-help-{{ item.field }}" autocomplete="new-password" spellcheck="false" data-configured="{{ 'true' if item.configured else 'false' }}">
             <button class="credential-visibility" type="button" aria-controls="credential-{{ item.field }}" aria-label="显示 {{ item.label }}" aria-pressed="false" data-label="{{ item.label }}"><i class="far fa-eye" aria-hidden="true"></i><span>显示</span></button>
           </div>
-          <small>{{ item.help }}</small>
+          <small id="credential-help-{{ item.field }}">{{ item.help }}</small>
           <label class="clear-option"><input type="checkbox" name="clear_{{ item.field }}" value="true"> 清除此项</label>
         </div>
 {% endmacro %}
 {% block content %}
   <header class="page-heading compact-heading">
-    <div><p class="section-kicker">CONFIGURATION</p><h1>设置</h1><p>先连接模型即可开始使用；其余设置已提供默认值，可按需调整。</p></div>
-    <a class="button secondary" href="/backups">备份与恢复</a>
+    <div><p class="section-kicker">PREFERENCES</p><h1>设置</h1><p>管理模型连接，按你的研究习惯调整工作环境。</p></div>
+    <div class="settings-heading-actions"><span class="settings-local-note"><i class="fas fa-lock" aria-hidden="true"></i>仅限本机访问</span><a class="button secondary" href="/backups"><i class="fas fa-history" aria-hidden="true"></i>备份与恢复</a></div>
   </header>
   {% if saved == 'config' %}<div class="notice success">✓ 全局设置已写入 config.yaml，检索与排序参数已写入当前研究方向档案。</div>{% endif %}
   {% if saved == 'credentials' %}<div class="notice success">✓ 模型与凭据已保存，新创建的任务立即生效。</div>{% endif %}
+  {% if saved == 'model-preset' %}<div class="notice success">✓ 模型配置已另存并启用，之后可快捷切换。</div>{% endif %}
+  {% if saved == 'model-switched' %}<div class="notice success">✓ 已切换模型配置，新创建的任务立即生效。</div>{% endif %}
+  {% if saved == 'model-deleted' %}<div class="notice success">✓ 已删除保存的模型配置，当前连接仍可使用。</div>{% endif %}
 
   <div class="settings-shell">
-    <aside class="settings-section-nav" aria-label="配置分区">
-      <a href="#credentials" class="active"><i class="fas fa-key" aria-hidden="true"></i>模型与 API</a>
+    <nav class="settings-section-nav" aria-label="配置分区">
+      <a href="#credentials" class="active" aria-current="location"><i class="fas fa-key" aria-hidden="true"></i>模型与 API</a>
       <a href="#general"><i class="fas fa-cog" aria-hidden="true"></i>常规</a>
       <a href="#discovery"><i class="fas fa-search" aria-hidden="true"></i>检索</a>
       <a href="#ranking"><i class="fas fa-sort-amount-down" aria-hidden="true"></i>排序</a>
@@ -34,23 +37,47 @@
       <a href="#delivery"><i class="far fa-envelope" aria-hidden="true"></i>邮件</a>
       <a href="#weekly-config"><i class="fas fa-chart-line" aria-hidden="true"></i>周报</a>
       <a href="#research-tracking"><i class="fas fa-code-branch" aria-hidden="true"></i>追踪</a>
-      <p><i class="fas fa-lock" aria-hidden="true"></i>仅限本机访问<br><small>凭据默认隐藏，点击可显示</small></p>
-    </aside>
+    </nav>
     <div class="settings-content">
 
   <section class="form-section credential-section" id="credentials">
-    <p class="section-kicker">MODEL CONNECTION</p><h2>模型与 API</h2>
-    <div class="notice secret-notice"><strong>查看与修改</strong><p>已配置的值默认显示为 ********，点击“显示”可查看明文并修改。留空表示保持不变；勾选“清除此项”后保存会删除该值。无需配置环境变量名。API 地址请填写服务商提供的完整基础地址（通常以 /v1 结尾）；使用官方 OpenAI 时可留空。</p></div>
+    <header class="settings-card-heading">
+      <div class="settings-card-title"><span class="settings-card-icon"><i class="fas fa-plug" aria-hidden="true"></i></span><div><h2>模型与 API</h2><p>连接远程服务或本地模型，随时切换常用配置。</p></div></div>
+      <span class="settings-scope"><i class="fas fa-globe" aria-hidden="true"></i>所有研究方向共用</span>
+    </header>
+    <form id="model-preset-switcher" class="model-preset-panel" method="post" action="/settings/model-presets/activate">
+      <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+      <div class="model-preset-heading"><label for="model-preset-select"><i class="far fa-bookmark" aria-hidden="true"></i>快捷切换</label><span>{{ model_presets|length }} 个已保存配置</span></div>
+      <div class="model-preset-controls">
+        <select id="model-preset-select" name="model_preset_id" required>
+          <option value="">{% if model_presets %}选择已保存的模型配置{% else %}还没有配置，可在下方命名另存{% endif %}</option>
+          {% for preset in model_presets %}<option value="{{ preset.id }}" {% if preset.active %}selected{% endif %} data-available="{{ 'true' if preset.available else 'false' }}">{{ preset.name }} · {{ preset.model }}{% if preset.active %}（当前使用）{% elif not preset.available %}（凭据缺失）{% endif %}</option>{% endfor %}
+        </select>
+        <button class="button secondary" type="submit" {% if not model_presets %}disabled{% endif %}><i class="fas fa-exchange-alt" aria-hidden="true"></i>启用配置</button>
+        <button class="button secondary preset-delete" type="submit" formaction="/settings/model-presets/delete" aria-label="删除所选配置" title="删除所选配置" {% if not model_presets %}disabled{% endif %}><i class="far fa-trash-alt" aria-hidden="true"></i></button>
+      </div>
+      <small>{% if not model_presets %}将当前连接命名保存，下次无需重新填写。{% else %}同时切换模型、密钥与地址。需要保留当前连接时，请先另存。{% endif %}</small>
+    </form>
     <form id="model-connection-form" method="post" action="/settings/credentials" autocomplete="off"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
-      <label>模型名称<input name="llm_model" value="{{ config.llm.model }}" required placeholder="填写服务商提供的模型 ID"><small>请使用服务商支持的准确模型名称。</small></label>
-      <div class="credential-grid">
+      <div class="connection-editor-heading"><h3>当前连接</h3><span>编辑后保存生效</span></div>
+      <label class="model-name-field" for="llm-model">模型名称<input id="llm-model" name="llm_model" value="{{ config.llm.model }}" required placeholder="例如：gpt-5-mini"><small>填写服务商提供的准确模型 ID。</small></label>
+      <div class="credential-grid model-credential-grid">
         {% for item in credentials if item.field in ["llm_api_key", "llm_base_url"] %}
 {{ credential_card(item) }}
         {% endfor %}
       </div>
-      <div class="connection-actions"><button class="button secondary" id="test-model-connection" type="button">测试连接</button><button class="button primary" type="submit">保存模型与凭据</button></div>
-      <p class="muted">测试当前填写的配置，不会自动保存；将发送一次简短模型请求，可能产生少量 API 费用。</p>
+      <p class="credential-hint"><i class="fas fa-lock" aria-hidden="true"></i>凭据默认隐藏，点击“显示”可查看并修改。留空保留原值，勾选“清除此项”后保存删除。</p>
+      <div class="connection-footer">
+        <p><i class="fas fa-info-circle" aria-hidden="true"></i>测试会发送一次简短请求，可能产生少量 API 费用。</p>
+        <div class="connection-actions"><button class="button secondary" id="test-model-connection" type="button"><i class="fas fa-bolt" aria-hidden="true"></i>测试连接</button><button class="button primary" type="submit">保存模型与凭据</button></div>
+      </div>
       <p id="connection-test-result" role="status" aria-live="polite" hidden></p>
+      <div class="model-preset-save">
+        <div class="model-preset-save-copy"><strong><i class="far fa-bookmark" aria-hidden="true"></i>保留这套连接</strong><small>独立保存，方便下次切换。</small></div>
+        <label class="sr-only" for="model-preset-name">配置名称</label><input id="model-preset-name" name="model_preset_name" maxlength="80" placeholder="起个名字，例如：日常阅读">
+        <button class="button secondary" type="submit" formaction="/settings/model-presets">另存为配置并启用</button>
+        <small class="model-preset-save-note">留空的凭据沿用当前值；普通保存不覆盖已另存的配置。高级参数仍使用全局设置。</small>
+      </div>
       <details class="settings-advanced"><summary>其他服务凭据（按需配置）</summary>
         <div class="credential-grid">{% for item in credentials if item.field not in ["llm_api_key", "llm_base_url"] %}{{ credential_card(item) }}{% endfor %}</div>
         <div class="section-save"><span>留空保持原值。</span><button class="button secondary" type="submit">保存模型与凭据</button></div>
