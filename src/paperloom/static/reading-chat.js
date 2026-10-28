@@ -135,7 +135,10 @@
     }
     requestAnimationFrame(updateReferenceScroll);
     $('[data-action=add-references]').disabled = active || busy || !!value.archived;
-    $('.reading-reference-count').title = refs.length ? '仅查阅这些论文的报告与对应版本原文；移除引用不会删除历史讨论。' : '从报告库选择一篇或多篇论文，开始提问或交叉比较。';
+    $('.reading-reference-count').title = refs.length ? '仅查阅这些论文的报告与对应版本原文；移除引用不会删除历史讨论。' : '可直接进行普通对话，也可以添加论文后查阅原文或交叉比较。';
+    $('.reading-grounded').textContent=refs.length ? '原文查阅' : '普通对话';
+    $('.reading-grounded').title=refs.length ? '按需查阅本轮引用论文原文' : '未引用论文，可直接聊天；添加论文后启用原文查阅';
+    host.querySelectorAll('.reading-suggestions [data-prompt]').forEach(button=>{button.disabled=!refs.length || active || busy || !!value.archived;});
   }
   async function changeReferences(reportIds) {
     if(!session)await start();
@@ -293,7 +296,7 @@
     view.renderPaper(value);
     if(!reportHistory)renderReferences(value);
     const active = value.messages.some(m => ['queued', 'running'].includes(m.status));
-    compose.querySelector('[type=submit]').disabled = active || busy || !!value.archived || (!reportHistory && (!value.references?.length || value.references.some(r=>r.missing)));
+    compose.querySelector('[type=submit]').disabled = active || busy || !!value.archived || (!reportHistory && !!value.references?.some(r=>r.missing));
     input.disabled=!!value.archived;
     if(value.archived)status.textContent='回退前归档 · 只读，可从历史记录查看完整内容';
     $('[data-action=stop]').disabled = !active;
@@ -303,7 +306,7 @@
     $('[data-action=retry]').disabled = !last || !['failed', 'stopped', 'interrupted'].includes(last.status);
     $('[data-action=retry]').hidden = $('[data-action=retry]').disabled;
     view.setSessionActions(!!session);
-    const stamp = JSON.stringify(value.messages);
+    const stamp = JSON.stringify([value.messages,value.references]);
     status.classList.remove('reading-error');
     status.textContent = value.archived ? '回退前归档 · 只读' : active ? (last?.detail || '正在准备回答…') : '';
     if (!reportHistory && value.references?.some(r=>r.missing)) status.textContent = '引用报告已缺失，请移除失效引用或恢复对应版本报告。';
@@ -417,7 +420,7 @@ ${f.text}`));row.append(pieces);}
     while(target.childNodes.length>source.childNodes.length)target.lastChild.remove();
   }
   function showWelcome() {
-    view.showWelcome(prompt=>{input.value=prompt;input.oninput();input.focus();});
+    view.showWelcome(prompt=>{input.value=prompt;input.oninput();input.focus();},!!session?.references?.length);
   }
   async function refresh() {
     if (!session) return;
@@ -790,7 +793,7 @@ ${f.text}`));row.append(pieces);}
         composeTools: `<div class="reading-compose-tools"><div class="reading-suggestions"><button type="button" data-prompt="请分别总结本轮引用论文的研究问题、方法和结论，注明各篇来源。">总结所选论文</button><button type="button" data-prompt="请比较所选论文的研究问题、方法、实验设置和局限，区分可比与不可直接比较的结果，并注明各篇证据。">交叉对比</button></div><section class="reading-reference-bar" aria-label="引用论文"><strong class="reading-reference-count">引用 · 0</strong><div class="reading-reference-rail"><button type="button" class="reading-reference-nav" data-reference-step="-1" aria-label="查看前面的论文" title="查看前面的论文">‹</button><div class="reading-reference-chips" tabindex="0" aria-label="已引用论文，可横向滚动查看"></div><button type="button" class="reading-reference-nav" data-reference-step="1" aria-label="查看后面的论文" title="查看后面的论文">›</button></div><button type="button" data-action="add-references" title="从报告库添加论文">添加论文</button></section></div>`,
         groundedTitle: `按需查阅本轮引用论文原文`,
         dialog: `<dialog class="reading-reference-dialog"><form><div class="reading-history-heading"><strong>从报告库引用论文</strong><button type="button" data-action="close-references" aria-label="关闭论文选择">×</button></div><input type="search" aria-label="搜索报告论文" placeholder="搜索标题或 arXiv ID"><label class="reading-reference-select-all"><input type="checkbox" data-action="select-all-references" disabled><span>全选当前结果</span></label><div class="reading-reference-options"></div><p class="reading-reference-error" role="status"></p><footer><span class="reading-reference-selection-count"></span><button type="submit" class="reading-primary">加入所选</button></footer></form></dialog>`,
-        welcomeTitle: `选几篇论文，一起深入读`,
+        welcomeTitle: `直接聊聊，或添加论文深入读`,
       },
     };
     const adapter=adapters[mode], isReport=mode==='report';
@@ -825,11 +828,12 @@ ${f.text}`));row.append(pieces);}
         if(!isReport)return;
         find('[data-action=rename]').onclick=rename;find('[data-action=delete]').onclick=remove;
       },
-      showWelcome(onPrompt) {
+      showWelcome(onPrompt, hasReferences) {
         const empty=textNode('div','','reading-welcome');
-        empty.append(textNode('div','✦','reading-welcome-icon'),textNode('h2',adapter.welcomeTitle),textNode('p','解释概念、拆解方法、核实实验结论。\n回答会按需查阅原文，并保留可追溯的依据。'));
+        const paperChat=isReport || hasReferences;
+        empty.append(textNode('div','✦','reading-welcome-icon'),textNode('h2',!isReport && hasReferences ? '选几篇论文，一起深入读' : adapter.welcomeTitle),textNode('p',paperChat ? '解释概念、拆解方法、核实实验结论。\n回答会按需查阅原文，并保留可追溯的依据。' : '无需添加论文，也可以直接提问。\n添加论文后，可查阅原文、核实结论或交叉比较。'));
         const tips=textNode('div','','reading-welcome-tips');
-        const prompts=isReport ? ['这篇论文解决了什么问题？','核心方法为什么有效？','实验结论有哪些局限？'] : ['这些论文分别解决了什么问题？','比较它们的方法与实验设置','哪些结论一致，哪些存在分歧？'];
+        const prompts=isReport ? ['这篇论文解决了什么问题？','核心方法为什么有效？','实验结论有哪些局限？'] : hasReferences ? ['这些论文分别解决了什么问题？','比较它们的方法与实验设置','哪些结论一致，哪些存在分歧？'] : ['帮我解释一个概念','一起梳理我的研究思路','帮我改写一段文字'];
         for(const prompt of prompts){const button=textNode('button',prompt+' ↗');button.type='button';button.onclick=()=>onPrompt(prompt);tips.append(button);}
         empty.append(tips);find('.reading-messages').append(empty);
       },

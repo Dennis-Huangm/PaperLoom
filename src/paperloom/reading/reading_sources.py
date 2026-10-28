@@ -188,7 +188,7 @@ class ReferencedSources:
         self.images, self.update = images, update
         self.citations = []
         self.sources = {}
-        self.tools = deepcopy(TOOLS)
+        self.tools = deepcopy(TOOLS) if user['references'] else []
         for definition in self.tools:
             function = definition['function']
             function['description'] = function['description'].replace('当前', '所选')

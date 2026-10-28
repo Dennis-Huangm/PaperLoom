@@ -66,7 +66,61 @@ def test_round_scope_is_preserved_and_deleted_report_blocks_retry(config_path, m
         value = wait_answer(client,sid)
         assert len(value['messages'][-2]['references']) == 1
         client.put(url+'/references',json={'report_ids':[]})
-        assert client.post(url+'/messages',json={'text':'没材料', 'request_id':'empty'}).status_code == 400
+        assert client.post(url+'/messages',json={'text':'没材料，先普通聊聊', 'request_id':'empty'}).status_code == 200
+        value = wait_answer(client, sid)
+        assert value['messages'][-2]['references'] == []
+        assert value['messages'][-1]['status'] == 'completed'
+
+
+def test_chat_without_papers_then_add_paper_and_retry_original_scope(config_path, monkeypatch):
+    from types import SimpleNamespace as NS
+    from openai.resources.chat.completions import Completions
+    monkeypatch.setenv('LLM_API_KEY', 'fixture')
+    requests = []
+
+    def complete(_self, **kwargs):
+        requests.append(kwargs)
+        yield NS(choices=[NS(delta=NS(content='你好，可以直接聊聊。', tool_calls=None), finish_reason='stop')])
+
+    monkeypatch.setattr(Completions, 'create', complete)
+    with TestClient(create_app(config_path)) as client:
+        sid = client.post('/api/reading/sessions', json={'mode':'workspace'}).json()['id']
+        url = '/api/reading/sessions/' + sid
+        assert client.get('/api/reading/sessions').json() == []
+        response = client.post(url+'/messages', json={'text':'hi', 'request_id':'no-papers'})
+        assert response.status_code == 200, response.text
+        value = wait_answer(client, sid)
+        original = value['messages'][0]
+        assert original['references'] == []
+        assert value['messages'][-1]['status'] == 'completed'
+        assert value['messages'][-1]['citations'] == []
+        assert 'tools' not in requests[0] and 'tool_choice' not in requests[0]
+        assert requests[0]['max_tokens'] == 4000
+        assert '普通对话' in requests[0]['messages'][0]['content']
+        assert client.get('/api/reading/sessions').json()[0]['id'] == sid
+
+        rid = report(config_path)
+        assert client.put(url+'/references', json={'report_ids':[rid]}).status_code == 200
+        # Retrying a question originally sent without papers keeps that empty scope.
+        assert client.post(url+'/messages', json={'text':'retry', 'request_id':'retry-empty',
+                                                  'retry_of':original['id']}).status_code == 200
+        value = wait_answer(client, sid)
+        assert value['messages'][-2]['references'] == []
+        assert 'tools' not in requests[1] and 'tool_choice' not in requests[1]
+        assert client.post(url+'/messages', json={'text':'现在讨论这篇论文', 'request_id':'with-paper'}).status_code == 200
+        value = wait_answer(client, sid)
+        assert value['messages'][-2]['references'][0]['report_id'] == rid
+        assert requests[2]['tools'] and requests[2]['tool_choice'] == 'auto'
+        assert client.put(url+'/references', json={'report_ids':[]}).status_code == 200
+        assert client.post(url+'/messages', json={'text':'继续普通聊天', 'request_id':'removed'}).status_code == 200
+        value = wait_answer(client, sid)
+        assert value['messages'][-1]['status'] == 'completed'
+        assert 'tools' not in requests[3]
+    with TestClient(create_app(config_path)) as client:
+        restored = client.get(url).json()
+        assert len(restored['messages']) == 8
+        assert restored['messages'][0]['references'] == []
+        assert restored['messages'][4]['references'][0]['report_id'] == rid
 
 
 def test_tools_route_only_to_selected_papers_and_distinguish_citations(config_path):

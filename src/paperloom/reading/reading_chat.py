@@ -360,8 +360,9 @@ class ReadingService:
                 raise RuntimeError('当前会话正在回答，请等待或停止后发送')
             references = self.materials.references(value)
             if retry_of:
-                references = original.get('references') or references
-            materials = self.materials.snapshot(references)
+                references = original.get('references', references)
+            materials = ([] if not references and value.get('mode') == 'workspace'
+                         else self.materials.snapshot(references))
             # A retry retains its exact earlier materials, but only after today's
             # report availability and version check has succeeded.
             if retry_of and original.get('references'):

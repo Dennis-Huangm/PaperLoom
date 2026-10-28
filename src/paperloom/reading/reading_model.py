@@ -9,6 +9,8 @@ from .reading_sources import TOOLS
 
 
 SYSTEM = '''你是论文阅读助手，优先以通俗中文解释概念。只能查阅本轮引用范围中的论文及其报告，不自动扩展至参考文献。
+未引用论文时可以进行普通对话，依据通用知识回答，不要求用户先添加论文。
+需要查阅或核实具体论文内容时说明需先引用对应论文，不声称查阅了未提供的材料。
 使用 paper_id 区分不同论文，跨论文比较须分别核实依据，不能混用页码或实验条件。
 原文不可用但报告可读时可以仅依据报告回答，明确标注“仅依据报告，原文未核实”。
 较早讨论中的论文不自动成为本轮可查阅材料。
@@ -84,19 +86,19 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
                 elif isinstance(message.get('content'), list):
                     message['content'] = [p for p in message['content'] if p['type'] != 'image_url']
         tools = [t for t in getattr(sources, 'tools', TOOLS) if sources.images or t['function']['name'] != 'page_image']
-        final = calls_used >= max_tools or remaining <= reserve or stalled_citations >= 2
+        final = bool(tools) and (calls_used >= max_tools or remaining <= reserve or stalled_citations >= 2)
         if final:
             stop_reason = '连续核实摘录未新增有效依据。' if stalled_citations >= 2 else '本轮查阅或输出预算已用完。'
             messages.append({'role': 'user', 'content': stop_reason + '请立即根据已读材料回答用户问题，直接使用已有 citation_id，明确尚未核实的部分；不要再调用工具。'})
-        allowance = remaining if final else remaining - reserve
+        allowance = remaining if final or not tools else remaining - reserve
         context_text = json.dumps(messages, ensure_ascii=False)
         update(context={'messages': len(messages), 'characters': sum(len(m.get('content', '')) if isinstance(m.get('content'), str) else sum(len(p.get('text', '')) for p in (m.get('content') or [])) for m in messages),
-                        'tools_used': calls_used, 'tools_limit': max_tools,
+                        'tools_used': calls_used, 'tools_limit': max_tools if tools else 0,
                         'images': context_text.count('"type": "image_url"'),
                         'summarized': any('较早讨论滚动摘要' in str(m.get('content', '')) for m in messages)})
+        tool_options = {'tools': tools, 'tool_choice': 'none' if final else 'auto'} if tools else {}
         stream = create_completion(client, update, checkpoint,
-            model=model, messages=messages, tools=tools,
-            tool_choice='none' if final else 'auto',
+            model=model, messages=messages, **tool_options,
             stream=True, max_tokens=allowance,
             **({'reasoning_effort': reasoning_effort} if reasoning_effort else {}))
         text = ''
@@ -140,6 +142,8 @@ def run_reading(client, model, messages, sources, update, checkpoint, *, max_too
         cost = max(1, len(text) + sum(len(c['function']['arguments']) for c in calls.values()))
         remaining -= min(allowance, cost)
         full += text
+        if calls and not tools:
+            raise RuntimeError('模型在未启用工具时返回工具调用，请检查接口兼容性')
         if not calls:
             if not full.strip():
                 raise RuntimeError('模型返回空内容，请检查工具调用兼容性或更换阅读模型')

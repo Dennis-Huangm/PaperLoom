@@ -11,10 +11,17 @@ if(path.includes('/api/reading/')){
 if(path.endsWith('/events'))return r.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
 if(path.endsWith('/reports'))return r.fulfill({json:{reports:refs}});
 if(path.endsWith('/references'))session={...session,references:refs.filter(x=>r.request().postDataJSON().report_ids.includes(x.report_id))};
-if(path.endsWith('/messages')){sent=r.request().postDataJSON();session={...session,messages:[{id:'u',role:'user',text:sent.text,status:'completed',references:session.references},{id:'a',role:'assistant',status:'completed',limited:true,text:'原文第 3 页',html:'<p>结论 <a href="/source.pdf#page=3">原文第 3 页</a></p>',citations:[{id:'c',quote:'Source excerpt',source_note:'fixture',available:true,url:'/source.pdf#page=3',page:3}]}]};}
+if(path.endsWith('/messages')){sent=r.request().postDataJSON();const grounded=session.references.length>0;session={...session,messages:[{id:'u',role:'user',text:sent.text,status:'completed',references:session.references},{id:'a',role:'assistant',status:'completed',limited:grounded,text:grounded?'原文第 3 页':'你好，可以直接聊天。',html:grounded?'<p>结论 <a href="/source.pdf#page=3">原文第 3 页</a></p>':'<p>你好，可以直接聊天。</p>',citations:grounded?[{id:'c',quote:'Source excerpt',source_note:'fixture',available:true,url:'/source.pdf#page=3',page:3}]:[]} ]};}
 return r.fulfill({json:path.endsWith('/settings')?{model:'fixture'}:path.endsWith('/sessions')&&r.request().method()==='GET'?(session.archived?[session]:[]):session});}
 return r.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><div id="reading-panel" style="height:880px"></div><link rel="stylesheet" href="/reading-chat.css"><script src="/reading-chat.js"></script>'});});
-await page.goto('http://localhost/');await page.getByRole('button',{name:'添加论文',exact:true}).click();
+await page.goto('http://localhost/');await page.waitForFunction(()=>!document.querySelector('[data-action=add-references]').disabled);
+const send=page.getByRole('button',{name:'发送问题',exact:true});
+assert.equal(await send.isEnabled(),true,'empty references allow ordinary chat');
+assert.match(await page.locator('.reading-welcome').textContent(),/直接/);
+assert.equal(await page.locator('.reading-grounded').textContent(),'普通对话');
+await page.getByRole('textbox',{name:'向论文提问'}).fill('hi');await page.getByRole('textbox',{name:'向论文提问'}).press('Enter');
+await page.getByText('你好，可以直接聊天。',{exact:true}).waitFor();assert.equal(sent.text,'hi');assert.deepEqual(session.messages[0].references,[]);
+await page.getByRole('button',{name:'添加论文',exact:true}).click();
 const all=page.locator('[data-action=select-all-references]');
 await all.check();assert.equal(await page.locator('.reading-reference-option input:checked').count(),2);
 await page.getByRole('searchbox',{name:'搜索报告论文'}).fill('2401');await all.uncheck();
@@ -25,7 +32,9 @@ await page.waitForFunction(()=>document.querySelectorAll('.reading-reference-chi
 await page.getByRole('button',{name:'添加论文',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-action=select-all-references]').disabled);assert.equal(await all.isChecked(),true);
 await all.uncheck();assert.equal(await page.locator('.reading-reference-selection-count').textContent(),'已选 0 篇');
 await page.getByRole('button',{name:'保存引用',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.reading-reference-chip').length===0);
-assert.equal(await page.getByRole('button',{name:'发送问题',exact:true}).isDisabled(),true);
+await page.waitForFunction(()=>!document.querySelector('.reading-compose [type=submit]').disabled);
+assert.equal(await send.isEnabled(),true,'removing all papers returns to ordinary chat');
+assert.equal(await page.locator('.reading-grounded').textContent(),'普通对话');
 await page.getByRole('button',{name:'添加论文',exact:true}).click();await all.check();await page.getByRole('button',{name:'加入所选',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.reading-reference-chip').length===2);
 await page.getByRole('button',{name:'添加论文',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-action=select-all-references]').disabled);await all.uncheck();await page.getByRole('button',{name:'关闭论文选择',exact:true}).click();assert.equal(await page.locator('[aria-label="历史范围"]').count(),0);assert.equal(await page.locator('#reading-aid').count(),0);
 await page.getByRole('textbox',{name:'向论文提问'}).fill('比较两篇的实验设计');await page.getByRole('button',{name:'发送问题',exact:true}).click();await page.locator('.reading-message.user').waitFor();assert.equal(sent.text,'比较两篇的实验设计');assert.equal(await page.locator('.reading-citations').count(),0);assert.equal(await page.getByText('本轮已达查阅或输出上限，可以继续追问。',{exact:true}).count(),0);assert.equal(await page.locator('.reading-message.assistant a').getAttribute('href'),'/source.pdf#page=3');
