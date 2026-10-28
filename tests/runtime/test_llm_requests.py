@@ -6,13 +6,13 @@ import httpx
 import pytest
 from openai import APIStatusError, APITimeoutError, OpenAI
 
-from arxiv_ra.config import AppConfig, LLMConfig
-from arxiv_ra.runtime.model_access.llm import LLMClient
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
-from arxiv_ra.runtime.model_access.model_budget import ModelBudgetExceeded, model_request_budget
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+from paperloom.config import AppConfig, LLMConfig
+from paperloom.runtime.model_access.llm import LLMClient
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator
+from paperloom.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
+from paperloom.runtime.model_access.model_budget import ModelBudgetExceeded, model_request_budget
+from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 
 
 def completion():
@@ -41,7 +41,7 @@ def offline_llm(monkeypatch):
             clients.append(client)
             return client
 
-        monkeypatch.setattr("arxiv_ra.runtime.model_access.llm.OpenAI", factory)
+        monkeypatch.setattr("paperloom.runtime.model_access.llm.OpenAI", factory)
         return LLMClient(config or LLMConfig()), requests, sleeps
 
     yield make

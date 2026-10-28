@@ -5,12 +5,12 @@ import yaml
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.cli import _load_dotenv
-from arxiv_ra.papers.backup import BackupService
-from arxiv_ra.config import load_config
-from arxiv_ra.runtime.model_access.model_presets import ModelPresets
-from arxiv_ra.runtime.model_access.llm import LLMClient
-from arxiv_ra.web import create_app
+from paperloom.cli import _load_dotenv
+from paperloom.papers.backup import BackupService
+from paperloom.config import load_config
+from paperloom.runtime.model_access.model_presets import ModelPresets
+from paperloom.runtime.model_access.llm import LLMClient
+from paperloom.web import create_app
 from tests.web.test_web import _write_config
 
 

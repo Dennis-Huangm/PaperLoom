@@ -1,6 +1,6 @@
 from bs4 import BeautifulSoup
 
-from arxiv_ra.reports.render import summary_html, markdown_with_math
+from paperloom.reports.render import summary_html, markdown_with_math
 
 
 def test_summary_uses_shared_math_markdown_and_preserves_literal_code():

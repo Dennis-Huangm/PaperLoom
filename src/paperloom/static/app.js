@@ -598,7 +598,7 @@ document.querySelectorAll('.zotero-form').forEach((form) => {
       zoteroLocationSelect.replaceChildren();
       const defaultOption = document.createElement('option');
       defaultOption.value = '';
-      defaultOption.textContent = `默认分类：${payload.default_name || 'arXiv Research Assistant'}`;
+      defaultOption.textContent = `默认分类：${payload.default_name || 'PaperLoom'}`;
       zoteroLocationSelect.append(defaultOption);
       const rootOption = document.createElement('option');
       rootOption.value = '__root__';

@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 import pytest
 
-from arxiv_ra.reading.reading_chat import ReadingService
+from paperloom.reading.reading_chat import ReadingService
 
 
 @pytest.mark.parametrize('literal', ['`<path>`', '<path>'])

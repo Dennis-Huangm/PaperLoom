@@ -1,11 +1,11 @@
 """Regressions motivated by the local, real-paper audit (no live requests)."""
 from types import SimpleNamespace
 
-from arxiv_ra.reports.comparison import ComparisonService, select_citations
-from arxiv_ra.config import LLMConfig
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator, source_supplement
+from paperloom.reports.comparison import ComparisonService, select_citations
+from paperloom.config import LLMConfig
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator, source_supplement
 
 
 def test_primary_front_matter_and_wrapped_resource_survive_lossy_chunk_notes():

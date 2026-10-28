@@ -7,15 +7,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from arxiv_ra.config import DiscoveryConfig
-from arxiv_ra.discovery.discovery import DiscoveryService
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.papers.paper_data import PaperResolver, local_paper_item
-from arxiv_ra.utils import write_json
-from arxiv_ra.config import AppConfig
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.runtime.research_clients import ResearchClients
-from arxiv_ra.papers.models import VerifiedMetadata
+from paperloom.config import DiscoveryConfig
+from paperloom.discovery.discovery import DiscoveryService
+from paperloom.papers.models import Author, Paper
+from paperloom.papers.paper_data import PaperResolver, local_paper_item
+from paperloom.utils import write_json
+from paperloom.config import AppConfig
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.runtime.research_clients import ResearchClients
+from paperloom.papers.models import VerifiedMetadata
 
 
 def paper(version=2):

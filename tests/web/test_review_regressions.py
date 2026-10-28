@@ -9,16 +9,16 @@ import pytest
 from fastapi.testclient import TestClient
 from bs4 import BeautifulSoup
 
-from arxiv_ra.discovery.abstracts import localize_abstracts
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.reports.render import markdown_with_math
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
+from paperloom.discovery.abstracts import localize_abstracts
+from paperloom.config import AppConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.reports.render import markdown_with_math
+from paperloom.reports.report import ReportGenerator
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
 
 
 def paper(version=1):
@@ -67,7 +67,7 @@ def test_empty_replacement_runs_optional_tasks_without_sending_old_papers(tmp_pa
     integrations = Mock()
     monkeypatch.setattr(pipeline, '_run_optional_integrations', integrations)
     delivery = Mock()
-    monkeypatch.setattr('arxiv_ra.discovery.pipeline.send_digest', delivery)
+    monkeypatch.setattr('paperloom.discovery.pipeline.send_digest', delivery)
     result = pipeline.run(deliver=True)
     assert result.is_file()
     integrations.assert_called_once()
@@ -83,7 +83,7 @@ def test_fallback_abstract_retries_only_on_explicit_generation(tmp_path, monkeyp
     cfg = AppConfig(profile_id='a')
     llm = SimpleNamespace(enabled=True, client=SimpleNamespace(close=lambda: None), chat=Mock(
         side_effect=[TimeoutError('temporary'), '{"papers":[{"id":"2407.05600","abstract_zh":"中文摘要","recommendation_detail":"推荐依据"}]}']))
-    monkeypatch.setattr('arxiv_ra.discovery.abstracts.LLMClient', lambda _: llm)
+    monkeypatch.setattr('paperloom.discovery.abstracts.LLMClient', lambda _: llm)
     original = {'paper': paper().to_dict()}
     localize_abstracts(cfg, tmp_path, [deepcopy(original)])
     localize_abstracts(cfg, tmp_path, [deepcopy(original)], generate=False)
@@ -106,7 +106,7 @@ def web_context(tmp_path, monkeypatch):
     for profile in ('alpha', 'beta'):
         for day, version in [('2026-09-23', 1), ('2026-09-24', 2)]:
             write_json(output / day / f'recommendations-{profile}.json', [{'paper': paper(version).to_dict()}])
-    monkeypatch.setattr('arxiv_ra.discovery.abstracts.localize_abstracts', lambda *a, **k: None)
+    monkeypatch.setattr('paperloom.discovery.abstracts.localize_abstracts', lambda *a, **k: None)
     with TestClient(app) as client:
         yield client, output, profiles
 
@@ -150,7 +150,7 @@ def test_report_save_uses_exact_artifact_without_downgrading_existing(web_contex
 
 def test_report_artifact_has_csp_and_regeneration_keeps_selected_version(web_context, monkeypatch):
     client, output, _ = web_context
-    from arxiv_ra.reports.render import render_report
+    from paperloom.reports.render import render_report
     folder = output / '2026-09-24/reports/selected'
     write_json(folder / 'metadata.json', {'paper': paper(1).to_dict(), 'profile_id': 'alpha', 'report_quality': 'abstract'})
     report_id = '2026-09-24/reports/selected/report.html'
@@ -174,8 +174,8 @@ def test_report_artifact_has_csp_and_regeneration_keeps_selected_version(web_con
 
 
 def test_zotero_trackable_papers_are_parsed_in_adapter(monkeypatch):
-    from arxiv_ra.integrations.zotero import ZoteroClient
-    from arxiv_ra.config import ZoteroConfig
+    from paperloom.integrations.zotero import ZoteroClient
+    from paperloom.config import ZoteroConfig
     adapter = ZoteroClient(ZoteroConfig(), client=SimpleNamespace())
     monkeypatch.setattr(adapter, 'status', lambda: {'ready': True, 'server_id': 'TEST-LIBRARY'})
     monkeypatch.setattr(adapter, '_get_items', lambda *a: [
@@ -187,8 +187,8 @@ def test_zotero_trackable_papers_are_parsed_in_adapter(monkeypatch):
 
 
 def test_failed_regeneration_retains_previous_full_artifact_and_evidence(tmp_path):
-    from arxiv_ra.reports.report_store import matching_report
-    from arxiv_ra.web.web_catalog import preferred_report_index, report_library
+    from paperloom.reports.report_store import matching_report
+    from paperloom.web.web_catalog import preferred_report_index, report_library
     cfg = AppConfig(output_dir=str(tmp_path / 'run'), profile_id='alpha')
     cfg.obsidian.enabled = False
     llm = SimpleNamespace(enabled=True, chat=Mock(return_value='# Successful full report\n\n## 核心方法\nSource evidence'))

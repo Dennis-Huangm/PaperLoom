@@ -10,9 +10,9 @@ import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.utils import write_json
-from arxiv_ra.web import create_app
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.utils import write_json
+from paperloom.web import create_app
 
 with tempfile.TemporaryDirectory(prefix='paperloom-catalog-benchmark-') as directory:
     root = Path(directory)

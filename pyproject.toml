@@ -3,8 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-# Keep the installed distribution identity stable during the PaperLoom rebrand.
-name = "arxiv-research-assistant"
+name = "paperloom"
 version = "1.6.0"
 description = "PaperLoom: local-first paper discovery, source-grounded reading, and research knowledge management."
 readme = "README.md"
@@ -37,17 +36,17 @@ gui = [
 ]
 
 [project.scripts]
-paperloom = "arxiv_ra.cli:main"
-arxiv-ra = "arxiv_ra.cli:main"
+paperloom = "paperloom.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["paperloom", "paperloom.*"]
 
 [tool.setuptools.package-data]
-arxiv_ra = [
+paperloom = [
   "templates/*.html",
   "static/*",
   "static/vendor/fontawesome/LICENSE.txt",

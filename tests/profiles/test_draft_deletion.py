@@ -2,9 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.profiles.profile_plan import new_draft
-from arxiv_ra.profiles.profiles import ProfileManager, DraftConflict
+from paperloom.config import AppConfig
+from paperloom.profiles.profile_plan import new_draft
+from paperloom.profiles.profiles import ProfileManager, DraftConflict
 from tests.profiles.test_profile_drafts import workspace
 
 

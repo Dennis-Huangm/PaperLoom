@@ -4,8 +4,8 @@ import os
 import pytest
 import yaml
 
-from arxiv_ra.config import load_config
-from arxiv_ra.profiles.profiles import ProfileManager
+from paperloom.config import load_config
+from paperloom.profiles.profiles import ProfileManager
 
 
 def workspace(tmp_path):

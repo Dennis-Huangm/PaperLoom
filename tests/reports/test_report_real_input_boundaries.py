@@ -1,7 +1,7 @@
-from arxiv_ra.reports.evidence import source_table_inventory
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.sources.source_spans import cited_span_material
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.evidence import source_table_inventory
+from paperloom.papers.models import ParsedPaper
+from paperloom.sources.source_spans import cited_span_material
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_period_caption_inventory_ignores_inline_references():
@@ -23,7 +23,7 @@ def test_malformed_reference_with_nested_brackets_and_pipes_cannot_erase_table()
 
 
 def test_unclosed_reference_cannot_swallow_prose_before_the_next_reference():
-    from arxiv_ra.reports.evidence import TOKEN
+    from paperloom.reports.evidence import TOKEN
     text = 'Score 91.2 [[证据ID:broken]；temperature=0.8 and gain=42 [[证据ID:unknown]]'
     cleaned, _ = cited_span_material([text], {})
     assert 'temperature=0.8 and gain=42' in cleaned[0]
@@ -56,8 +56,8 @@ def test_model_scheme_header_alias_does_not_duplicate_identical_detection_result
 
 def test_layout_reconciliation_keeps_group_references_and_distinct_categories():
     from dataclasses import replace
-    from arxiv_ra.reports.tables.report_tables import TableVariant, TableRow
-    from arxiv_ra.reports.tables.table_layouts import reconcile_layouts
+    from paperloom.reports.tables.report_tables import TableVariant, TableRow
+    from paperloom.reports.tables.table_layouts import reconcile_layouts
     wide = TableVariant('w', '', ('training data', 'Train A', 'Train A'), (
         TableRow('test', ('test data', 'Val', 'Val'), ''),
         TableRow('metric', ('mAP', '@.5', '@.75'), ''),

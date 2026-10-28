@@ -20,10 +20,10 @@ Windows 也可运行 `scripts/setup_environment.ps1 -Dev`，再使用 `.venv/Scr
 
 ## 源码导航
 
-`src/arxiv_ra/` 按研究任务组织实现，先从对应领域目录进入：
+`src/paperloom/` 按研究任务组织实现，先从对应领域目录进入：
 
 ```text
-src/arxiv_ra/
+src/paperloom/
 ├── discovery/       # 论文发现、筛选与每日推荐
 ├── profiles/        # 研究方向、检索草稿与方向小综述
 ├── sources/         # 原文解析、图示与来源定位
@@ -49,21 +49,21 @@ src/arxiv_ra/
 
 `tests/` 按对应领域归组，`browser/` 与 `fixtures/` 保留原位置。
 `scripts/maintenance/` 保存报告修复及维护工具；Windows 启动、安装与发布脚本
-保留原位置。内部 Python 导入随领域目录迁移，`paperloom`、`arxiv-ra`、
-`python -m arxiv_ra` 和 `arxiv_ra.web.create_app` 入口保持不变。
+保留原位置。Python 包和发行包统一命名为 `paperloom`；命令入口为
+`paperloom` 或 `python -m paperloom`，网页入口为 `paperloom.web.create_app`。
 
 ## 构建发布
 
 请克隆完整 Git 仓库进行构建；面向普通用户的源码 ZIP 不附带测试和发布工具。
 
-版本由 `pyproject.toml` 和 `src/arxiv_ra/__init__.py` 共同声明。更新它们、`CHANGELOG.md`、`docs/RELEASE_NOTES.md` 和 README 的下载名后，在 Windows 项目环境中执行：
+版本由 `pyproject.toml` 和 `src/paperloom/__init__.py` 共同声明。更新它们、`CHANGELOG.md`、`docs/RELEASE_NOTES.md` 和 README 的下载名后，在 Windows 项目环境中执行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_release.ps1 -Version 1.6.0
 ```
 
-构建读取 Git 跟踪文件并应用用户源码包的内容白名单，生成 ZIP、wheel 和 SHA-256 校验文件到 `release/v<version>/`。源码包包含用户指南、配置模板、启动入口与运行代码；测试和构建工具在 Git 仓库中维护。新增运行文件需先加入 Git 跟踪。
+构建读取 Git 跟踪文件并应用用户源码包的内容白名单，生成 ZIP、wheel 和 SHA-256 校验文件到 `release/v<version>/`。源码包包含用户指南、配置模板、启动入口与运行代码；测试和构建工具在 Git 仓库中维护。新增或重命名的运行文件需先加入 Git 跟踪。
 
-发布前运行完整测试及依赖检查，验证 ZIP 无个人配置、缓存或内部记录；从解压包和干净环境安装 wheel，检查网页、模板与资源，以及 `paperloom` / `arxiv-ra` 入口。校验所有用户文档相对链接和截图来源。发布 commit 与版本 tag 后上传同一构建的附件，核对下载后的 SHA-256。
+发布前运行完整测试及依赖检查，验证 ZIP 无个人配置、缓存或内部记录；从解压包和干净环境安装 wheel，检查网页、模板与资源，以及 `paperloom` / `python -m paperloom` 入口。校验所有用户文档相对链接和截图来源。发布 commit 与版本 tag 后上传同一构建的附件，核对下载后的 SHA-256。
 
 已发布附件和历史 tag 保持原样；后续修正使用新版本。构建预览可用 `-OutputDirectory work/package-preview`，不要覆盖已有发布目录。

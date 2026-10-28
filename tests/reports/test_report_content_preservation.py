@@ -1,9 +1,9 @@
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
 
 
 def test_existing_report_row_keeps_sources_from_matching_note():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = '### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n| A | 1 | |'
     note = report.replace('| A | 1 | |', '| A | 1 | [[证据ID:p1-s1]] |')
     restored = restore_note_tables(report, [note], [{'number': 2}])
@@ -13,9 +13,9 @@ def test_existing_report_row_keeps_sources_from_matching_note():
 
 
 def test_restored_categories_remain_correct_across_repeated_chunk_headings():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
-    from arxiv_ra.reports.tables.table_quality import tables
-    from arxiv_ra.reports.evidence import TOKEN
+    from paperloom.reports.report_completeness import restore_note_tables
+    from paperloom.reports.tables.table_quality import tables
+    from paperloom.reports.evidence import TOKEN
     header = '### Table 2\n| Model | Score |\n|---|---|\n'
     note = header + '| Open-source Models | |\n| A | 1 |\n| Closed Models | |\n| B | 2 |'
     other = header + '| Open-source Models | |\n| C | 3 |'
@@ -33,9 +33,9 @@ def test_restored_categories_remain_correct_across_repeated_chunk_headings():
 
 
 def test_source_merging_pads_short_rows_without_changing_experimental_values():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
-    from arxiv_ra.reports.tables.table_quality import tables
-    from arxiv_ra.reports.evidence import TOKEN
+    from paperloom.reports.report_completeness import restore_note_tables
+    from paperloom.reports.tables.table_quality import tables
+    from paperloom.reports.evidence import TOKEN
     short = '### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n| A | 1 |'
     note = short.replace('| A | 1 |', '| A | 1 | [[证据ID:p1-s1]] |')
     for report, notes in [(short, [note]), ('## 关键结果', [short, note])]:
@@ -48,7 +48,7 @@ def test_source_merging_pads_short_rows_without_changing_experimental_values():
 
 
 def test_restored_tables_ignore_emphasis_and_citations_and_use_one_section():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = ('### Table 6\n\nSize is reported in SVG samples.\n\n'
             '| Dataset | Size | 原文依据 |\n|---|---|---|\n'
             '| **Alpha** | 6.5k | [[证据ID:p23-s1]] |')
@@ -60,7 +60,7 @@ def test_restored_tables_ignore_emphasis_and_citations_and_use_one_section():
 
 
 def test_restored_table_keeps_conflicting_values_as_separate_conditions():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = '### Table 3\n\n| Model | Split | Score |\n|---|---|---|\n| A | test | 91.2 |'
     other = note.replace('91.2', '87.1')
     restored = restore_note_tables('## 关键结果', [note, other], [{'number': 3}])
@@ -68,7 +68,7 @@ def test_restored_table_keeps_conflicting_values_as_separate_conditions():
 
 
 def test_restored_task_table_preserves_merged_labels_and_source_candidates():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = ('### Table 7\n\n| Task | Generator | Score | 原文依据 |\n|---|---|---|---|\n'
             '| Sketch | A | 1.0 | [[证据ID:p1-s1]] |\n| | Ground Truth | 5.0 | |\n'
             '| Edit | A | 1.0 | |\n| | Ground Truth | 5.0 | |')
@@ -80,8 +80,8 @@ def test_restored_task_table_preserves_merged_labels_and_source_candidates():
 
 
 def test_report_view_keeps_numeric_source_links_compact_with_page_tooltip():
-    from arxiv_ra.reports.report_presentation import compact_report
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.report_presentation import compact_report
+    from paperloom.reports.render import report_document
     from bs4 import BeautifulSoup
     output = compact_report('*Size means SVG samples.* [48](paper.pdf#page=23)')
     assert '[48](paper.pdf#page=23 "原文第 23 页")' in output
@@ -92,7 +92,7 @@ def test_report_view_keeps_numeric_source_links_compact_with_page_tooltip():
 
 
 def test_category_column_and_group_row_are_equivalent_but_test_splits_are_not():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = ('### Table 2\n| Model | Sketch: Score |\n|---|---|\n'
               '| **Open-source Models** | |\n| A | 91.2 |')
     note = ('### Table 2\n| 模型分类 | Model | Sketch Score |\n|---|---|---|\n'
@@ -101,7 +101,7 @@ def test_category_column_and_group_row_are_equivalent_but_test_splits_are_not():
 
 
 def test_note_table_survives_synthesis_omission_without_claiming_verified():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = '### Table 3 主结果\n\n| Model | Score |\n|---|---|\n| Alpha | 91.2 |\n| Beta | 87.1 |'
     report = '# Paper\n\n## 关键结果\n\n模型表现良好。\n\n## 局限性\n限制。'
     inventory = [{'number': 3, 'page': 1, 'title': 'Results'}]
@@ -114,7 +114,7 @@ def test_note_table_survives_synthesis_omission_without_claiming_verified():
 
 
 def test_note_table_fills_synthesis_excerpt_and_preserves_conditions():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     table = '| Model | Test split | Score |\n|---|---|---|\n| Alpha | held-out | 91.2 |'
     note = '### Table 3 Main\n\n' + table + '\n| Beta | held-out | 87.1 |'
     report = '## 关键结果\n\n### Table 3 节选\n\n' + table
@@ -127,7 +127,7 @@ def test_note_table_fills_synthesis_excerpt_and_preserves_conditions():
 
 
 def test_rewritten_headers_and_model_labels_merge_into_body_table():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = ('## 关键结果\n\n### 主实验（Table 2）\n\n'
               '| Method | Illustration CLIP ↑ | 原文依据 |\n|---|---|---|\n'
               '| **RULER (本文)** | 0.249 | |\n\n结果分析。\n\n## 局限性\n限制。')
@@ -142,7 +142,7 @@ def test_rewritten_headers_and_model_labels_merge_into_body_table():
 
 
 def test_missing_table_joins_existing_discussion_and_costs_join_reproducibility():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = ('## 关键结果\n\n### 规模鲁棒性（Table 5）\n\n规模对比。\n\n'
               '## 可复现性\n\n### 数据与成本\n\n成本说明。')
     notes = ['### Table 5\n| Model | Score |\n|---|---|\n| A | 1 |',
@@ -154,7 +154,7 @@ def test_missing_table_joins_existing_discussion_and_costs_join_reproducibility(
 
 
 def test_legacy_appendix_merges_bilingual_reordered_tables_and_keeps_links():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = ('## 关键结果\n\n### 人类评价（Table 3）\n\n'
               '| 对比项 (Baseline) | Win | 原文依据 |\n|---|---|---|\n'
               '| **vs. Qwen3-8B** | 122 | [1](paper.pdf#page=7) |\n\n'
@@ -172,7 +172,7 @@ def test_legacy_appendix_merges_bilingual_reordered_tables_and_keeps_links():
 
 
 def test_restoring_citation_to_uncited_existing_table_does_not_drop_source():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = '### Table 2\n| Model | Score |\n|---|---|\n| A | 1 |'
     note = '### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n| A | 1 | [[证据ID:p1-s1]] |'
     restored = restore_note_tables(report, [note], [{'number': 2}])
@@ -182,7 +182,7 @@ def test_restoring_citation_to_uncited_existing_table_does_not_drop_source():
 
 
 def test_different_conditions_and_explicit_categories_never_collapse():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = ('### Table 2\n| Model | Split | Score |\n|---|---|---|\n'
             '| A | validation | 1 |\n| A | test | 1 |')
     report = restore_note_tables('## 关键结果', [note], [{'number': 2}])
@@ -193,7 +193,7 @@ def test_different_conditions_and_explicit_categories_never_collapse():
 
 
 def test_duplicate_extraction_keeps_footnotes_and_legacy_unknown_tables():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = '## 关键结果\n\n### Table 2\n| Model | Score |\n|---|---|\n| A | 1 |'
     note = '### Table 2\n五次运行。\n\n| Model | Score |\n|---|---|\n| A | 1 |\n\n脚注：不包含失败样本。'
     restored = restore_note_tables(report, [note], [{'number': 2}])
@@ -205,8 +205,8 @@ def test_duplicate_extraction_keeps_footnotes_and_legacy_unknown_tables():
 
 
 def test_merged_task_body_keeps_column_offsets_when_sources_are_added():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.report_completeness import restore_note_tables
+    from paperloom.reports.render import report_document
     report = ('## 关键结果\n\n### Table 7\n| Task | Generator | Score |\n|---|---|---|\n'
               '| Sketch | A | 1.0 |\n| | Ground Truth | 5.0 |')
     note = ('### Table 7\n| Task | Generator | Score | 原文依据 |\n|---|---|---|---|\n'
@@ -219,7 +219,7 @@ def test_merged_task_body_keeps_column_offsets_when_sources_are_added():
 
 
 def test_rubric_generator_dash_variants_do_not_duplicate_baseline_rows():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     note = '### Table 9\n| Method | Rubric Generator | Score |\n|---|---|---|\n| A | - | 0.266 ± 0.003 |'
     other = note.replace(' - ', ' – ').replace('0.266 ± 0.003', '0.266±0.003')
     restored = restore_note_tables('## 关键结果', [note, other], [{'number': 9}])
@@ -227,7 +227,7 @@ def test_rubric_generator_dash_variants_do_not_duplicate_baseline_rows():
 
 
 def test_ambiguous_category_and_repeated_columns_are_preserved():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = '## 关键结果\n\n### Table 2\n| Model | Score |\n|---|---|\n| A | 1 |'
     note = '### Table 2\n| Model | Score |\n|---|---|\n| Open Models | |\n| A | 1 |\n| Closed Models | |\n| A | 1 |'
     restored = restore_note_tables(report, [note], [{'number': 2}])
@@ -238,7 +238,7 @@ def test_ambiguous_category_and_repeated_columns_are_preserved():
 
 
 def test_neutral_table_heading_does_not_certify_completeness():
-    from arxiv_ra.reports.report_completeness import normalize_table_titles
+    from paperloom.reports.report_completeness import normalize_table_titles
     report = ('## 关键结果\n\n### Table 5（部分摘录）\n\n'
               '| Model | Score |\n|---|---|\n| A | 1 |\n\n'
               '### 主实验（Table 2 部分数据重现）\n\n说明。')
@@ -254,10 +254,10 @@ def test_neutral_table_heading_does_not_certify_completeness():
 
 def test_generator_preserves_extracted_table_when_final_model_omits_it():
     from types import SimpleNamespace
-    from arxiv_ra.config import LLMConfig
-    from arxiv_ra.papers.models import Paper, VerifiedMetadata
-    from arxiv_ra.reports.report import ReportGenerator
-    from arxiv_ra.sources.source_spans import source_spans
+    from paperloom.config import LLMConfig
+    from paperloom.papers.models import Paper, VerifiedMetadata
+    from paperloom.reports.report import ReportGenerator
+    from paperloom.sources.source_spans import source_spans
     source = 'Table 3: Results\n| Model | Score |\n|---|---|\n| Alpha | 91.2 |\n| Beta | 87.1 |'
     parsed = ParsedPaper(source, [source])
     key = next(iter(source_spans(parsed)))
@@ -292,7 +292,7 @@ def test_numeric_summary_is_published_without_review():
 
 
 def test_partial_table_is_distinct_from_reproduced_and_remains_in_index():
-    from arxiv_ra.reports.evidence import report_table_coverage, source_table_index
+    from paperloom.reports.evidence import report_table_coverage, source_table_index
     inventory = [{'number': 3, 'page': 2, 'title': 'Main results'}]
     report = '## 关键结果\n\n### Table 3（分片摘录，完整性待核对）\n\n| Model | Score |\n|---|---|\n| A | 91.2 |'
     coverage = report_table_coverage(report, inventory)
@@ -318,7 +318,7 @@ def test_missing_table_citation_keeps_cells_without_flags():
 
 
 def test_legacy_recovery_is_idempotent_and_does_not_guess_duplicate_locations():
-    from arxiv_ra.reports.report_recovery import recover_numeric_content
+    from paperloom.reports.report_recovery import recover_numeric_content
     old = '定量陈述暂不展示。'
     evidence = {'citations': [], 'numeric_audit': {'checked_claims': 1, 'issues': [
         {'action': 'withhold_claim', 'original': '解释文字，结果为 91.2%。',

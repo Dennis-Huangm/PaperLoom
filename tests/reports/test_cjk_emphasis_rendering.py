@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 import pytest
 
-from arxiv_ra.reports.render import markdown_with_math
+from paperloom.reports.render import markdown_with_math
 
 
 def test_report_renders_cjk_bold_followed_by_prose():

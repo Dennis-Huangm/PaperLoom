@@ -20,7 +20,7 @@ const assert = require('node:assert/strict');
         const request = route.request(), path = new URL(request.url()).pathname;
         if (path.startsWith('/static/')) return route.fulfill({
           contentType:path.endsWith('.js') ? 'application/javascript' : 'text/css',
-          body:fs.readFileSync('src/arxiv_ra'+path,'utf8')});
+          body:fs.readFileSync('src/paperloom'+path,'utf8')});
         if (path.endsWith('/settings')) {
           if (request.method() === 'PUT') settings = {...settings, ...request.postDataJSON()};
           return route.fulfill({json:{...settings,

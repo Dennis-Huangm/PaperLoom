@@ -1,6 +1,6 @@
 """History search through the public session-list API."""
 from fastapi.testclient import TestClient
-from arxiv_ra.web import create_app
+from paperloom.web import create_app
 from tests.reading.test_reading_chat import config_path
 
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from arxiv_ra.papers.models import FigureCandidate
-from arxiv_ra.reports.report import CORE_METHOD_GUIDANCE, ReportGenerator, finalize_report_structure
+from paperloom.papers.models import FigureCandidate
+from paperloom.reports.report import CORE_METHOD_GUIDANCE, ReportGenerator, finalize_report_structure
 
 
 def test_experiment_figures_stay_with_discussion_and_survive_repeated_finalization() -> None:
@@ -46,8 +46,8 @@ def test_experiment_image_follows_its_discussion_when_model_omits_slot() -> None
 
 def test_generation_keeps_text_evidence_when_both_figure_interpretations_fail() -> None:
     from types import SimpleNamespace
-    from arxiv_ra.config import LLMConfig
-    from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
+    from paperloom.config import LLMConfig
+    from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
 
     def chat(system, prompt):
         if "你是论文图示讲解助手" in system:

@@ -2,12 +2,12 @@ import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
-from arxiv_ra.papers.storage import clear_recommendations, read_recommendations
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
-from arxiv_ra.web.web_catalog import recommendation_history
-from arxiv_ra.papers.models import Paper
-from arxiv_ra.discovery.pipeline import DailyPipeline
+from paperloom.papers.storage import clear_recommendations, read_recommendations
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
+from paperloom.web.web_catalog import recommendation_history
+from paperloom.papers.models import Paper
+from paperloom.discovery.pipeline import DailyPipeline
 from types import SimpleNamespace
 
 
@@ -138,7 +138,7 @@ def test_clear_route_validates_profile_and_date_and_redirects(tmp_path, monkeypa
     config = tmp_path / "config.yaml"
     config.write_text("output_dir: run\ndiscovery:\n  interest_description: alpha\n", encoding="utf-8")
     app = create_app(config)
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.localize_abstracts", lambda *a, **kw: None)
+    monkeypatch.setattr("paperloom.discovery.abstracts.localize_abstracts", lambda *a, **kw: None)
     row = item()
     now = datetime.now(timezone.utc)
     row["paper"] = Paper("2407.05600", "Test", [], "Abstract", ["cs.AI"], "cs.AI",
@@ -156,7 +156,7 @@ def test_clear_route_validates_profile_and_date_and_redirects(tmp_path, monkeypa
         assert client.post("/recommendations/clear", data={**data, "profile_id": "beta"}).status_code == 409
         assert client.post("/recommendations/clear", data={**data, "date_label": "2026-02-30"}).status_code == 400
         with monkeypatch.context() as patch:
-            patch.setattr("arxiv_ra.runtime.jobs.manager.JobManager.active_for", lambda *args: True)
+            patch.setattr("paperloom.runtime.jobs.manager.JobManager.active_for", lambda *args: True)
             assert client.post("/recommendations/clear", data=data).status_code == 409
             assert read_json(path) == [row]
         response = client.post("/recommendations/clear", data=data, follow_redirects=False)
@@ -199,7 +199,7 @@ def test_delete_selection_route_checks_scope_and_active_jobs(tmp_path, monkeypat
     with TestClient(app) as client:
         assert client.post("/api/recommendations/delete", data={**data, "profile_id": "beta"}).status_code == 409
         with monkeypatch.context() as patch:
-            patch.setattr("arxiv_ra.runtime.jobs.manager.JobManager.active_for", lambda *args: True)
+            patch.setattr("paperloom.runtime.jobs.manager.JobManager.active_for", lambda *args: True)
             assert client.post("/api/recommendations/delete", data=data).status_code == 409
         assert read_json(path) == [item(), second]
         assert client.post("/api/recommendations/delete", data=data).status_code == 200

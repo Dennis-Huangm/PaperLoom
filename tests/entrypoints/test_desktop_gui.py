@@ -21,9 +21,9 @@ def desktop(tmp_path):
     (project / 'scripts').mkdir(parents=True)
     shutil.copy2(ROOT / 'scripts/gui_background.pyw', project / 'scripts/gui_background.pyw')
     (project / 'config.yaml').write_text('output_dir: run\n', encoding='utf-8')
-    stub = tmp_path / 'stub/arxiv_ra'
+    stub = tmp_path / 'stub/paperloom'
     stub.mkdir(parents=True)
-    (stub / '__init__.py').write_text(f'__path__.append({str(ROOT / "src/arxiv_ra")!r})\n', encoding='utf-8')
+    (stub / '__init__.py').write_text(f'__path__.append({str(ROOT / "src/paperloom")!r})\n', encoding='utf-8')
     (stub / 'cli.py').write_text('def _load_dotenv(path): pass\n', encoding='utf-8')
     (stub / 'web.py').write_text(
         'from fastapi import FastAPI\nimport sys\n'
@@ -38,7 +38,7 @@ def desktop(tmp_path):
         port = reservation.getsockname()[1]
 
     def invoke(action, config=None):
-        return subprocess.run([sys.executable, '-m', 'arxiv_ra.desktop_gui', action,
+        return subprocess.run([sys.executable, '-m', 'paperloom.desktop_gui', action,
                                '--config', str(config or project / 'config.yaml'), '--port', str(port),
                                '--launcher', str(project / 'scripts/gui_background.pyw'), '--timeout', '10'],
                               env=env, capture_output=True, text=True, timeout=20)
@@ -93,7 +93,7 @@ def test_stop_waits_for_background_workers_before_releasing_instance(desktop, tm
     project, port, invoke = desktop
     # Exercise the real CLI/process boundary with a worker still unwinding after
     # ASGI shutdown, the same gap that leaves the scheduled parent Running.
-    stub = tmp_path / 'stub/arxiv_ra/web.py'
+    stub = tmp_path / 'stub/paperloom/web.py'
     stub.write_text('''from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor

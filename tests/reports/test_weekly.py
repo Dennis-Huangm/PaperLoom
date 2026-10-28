@@ -2,10 +2,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from arxiv_ra.config import AppConfig, WeeklyConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.reports.weekly import WeeklySynthesizer
+from paperloom.config import AppConfig, WeeklyConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.utils import read_json, write_json
+from paperloom.reports.weekly import WeeklySynthesizer
 
 
 def test_weekly_fallback_collects_recommendations_and_feedback(tmp_path: Path, monkeypatch) -> None:

@@ -5,9 +5,9 @@ import hashlib
 import json
 from pathlib import Path
 
-from arxiv_ra.reports.comparison import ComparisonService
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
+from paperloom.reports.comparison import ComparisonService
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
 
 
 def evaluate(case):

@@ -1,7 +1,7 @@
-from arxiv_ra.reports.evidence import attach_evidence, source_table_inventory, report_table_coverage
-from arxiv_ra.papers.models import Paper, VerifiedMetadata, ParsedPaper
-from arxiv_ra.reports.report_metadata import protect_metadata
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.evidence import attach_evidence, source_table_inventory, report_table_coverage
+from paperloom.papers.models import Paper, VerifiedMetadata, ParsedPaper
+from paperloom.reports.report_metadata import protect_metadata
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_reference_column_typography_cannot_block_publication():
@@ -27,7 +27,7 @@ def test_metadata_accepts_bullets_but_emits_one_complete_table():
 
 
 def test_model_metadata_pipe_is_one_cell_and_roundtrips():
-    from arxiv_ra.reports.render import markdown_with_math
+    from paperloom.reports.render import markdown_with_math
     from bs4 import BeautifulSoup
     paper = Paper.from_dict({'arxiv_id':'1234.56789', 'title':'Test'})
     for front in ['- 中文标题：A | B\n- 机构：Lab | Institute',
@@ -52,7 +52,7 @@ def test_visual_tables_are_a_distinct_coverage_kind():
 def test_column_roles_are_explicit_and_old_catalogues_remain_readable():
     import hashlib
     import json
-    from arxiv_ra.reports.tables.table_schema import column_role
+    from paperloom.reports.tables.table_schema import column_role
     for header in ['原文依据 (证据 ID)', '**原文依据（证据ID）**', '支持依据（摘录）', '依据']:
         assert column_role(header) == 'reference'
     for header in ['Evidence Score', '依据准确率', '原文依据(Score)', 'CLIP ↑']:
@@ -71,8 +71,8 @@ def test_column_roles_are_explicit_and_old_catalogues_remain_readable():
 
 def test_source_page_display_preserves_visuals_once_per_page(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from arxiv_ra.reports.report_publication import present_source_pages
-    from arxiv_ra.reports.render import markdown_with_math
+    from paperloom.reports.report_publication import present_source_pages
+    from paperloom.reports.render import markdown_with_math
     from bs4 import BeautifulSoup
     import fitz
     class PDF:
@@ -97,7 +97,7 @@ def test_source_page_display_preserves_visuals_once_per_page(tmp_path, monkeypat
 
 
 def test_metadata_layout_is_full_width_without_changing_result_matrices():
-    from arxiv_ra.reports.render import report_document, REPORT_STYLE
+    from paperloom.reports.render import report_document, REPORT_STYLE
     from bs4 import BeautifulSoup
     paper = Paper.from_dict({'arxiv_id':'2603.29852','title':'VectorGym'})
     report = protect_metadata('# Test\n\n## 关键结果\n\n| Model | Score |\n|---|---|\n| A | 91.2 |',paper,VerifiedMetadata())

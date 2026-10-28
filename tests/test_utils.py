@@ -5,7 +5,7 @@ import threading
 
 import pytest
 
-from arxiv_ra.utils import read_json, write_json
+from paperloom.utils import read_json, write_json
 
 
 def test_write_json_replaces_atomically_without_temporary_files(tmp_path: Path) -> None:
@@ -43,7 +43,7 @@ def test_atomic_write_survives_a_reader_temporarily_holding_destination(tmp_path
 
 
 def test_atomic_write_persistent_denial_is_bounded_and_keeps_original(tmp_path, monkeypatch):
-    import arxiv_ra.utils as utils
+    import paperloom.utils as utils
     destination = tmp_path / "state.json"
     write_json(destination, {"version": 1})
     attempts = []

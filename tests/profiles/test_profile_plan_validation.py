@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.profiles.profile_plan import new_draft
+from paperloom.config import AppConfig
+from paperloom.profiles.profile_plan import new_draft
 
 
 def make_draft(basis, *, reference_id='2604.20730', abstract='Render feedback for SVG.'):

@@ -1,4 +1,4 @@
-from arxiv_ra.sources.arxiv_html import parse_html_figure_specs
+from paperloom.sources.arxiv_html import parse_html_figure_specs
 import pytest
 
 

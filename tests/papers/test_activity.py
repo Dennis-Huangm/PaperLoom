@@ -3,13 +3,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
-from arxiv_ra.papers.activity import activity_markdown, collect_activity, literal
-from arxiv_ra.reports.render import markdown_with_math
+from paperloom.papers.activity import activity_markdown, collect_activity, literal
+from paperloom.reports.render import markdown_with_math
 from bs4 import BeautifulSoup
-from arxiv_ra.config import AppConfig, WeeklyConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.reports.weekly import WeeklySynthesizer
+from paperloom.config import AppConfig, WeeklyConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.utils import read_json, write_json
+from paperloom.reports.weekly import WeeklySynthesizer
 
 
 def paper(aid="2407.05600", version=1):

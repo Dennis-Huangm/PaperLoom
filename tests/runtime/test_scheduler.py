@@ -9,14 +9,14 @@ import time
 from fastapi.testclient import TestClient
 import pytest
 
-from arxiv_ra.papers.backup import BackupService
-from arxiv_ra.cli import main
-from arxiv_ra.config import load_config
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.runtime.jobs.scheduler import ProfileScheduler
-from arxiv_ra.utils import write_json, read_json
-from arxiv_ra.web import create_app
-from arxiv_ra.runtime.jobs.manager import JobManager
+from paperloom.papers.backup import BackupService
+from paperloom.cli import main
+from paperloom.config import load_config
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.runtime.jobs.scheduler import ProfileScheduler
+from paperloom.utils import write_json, read_json
+from paperloom.web import create_app
+from paperloom.runtime.jobs.manager import JobManager
 
 
 def at(value):
@@ -62,7 +62,7 @@ def env(tmp_path, monkeypatch):
             path = Path(self.config.output_dir) / f"{self.config.profile_id}.html"
             path.write_text("fake digest")
             return path
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.DailyPipeline", Pipeline)
+    monkeypatch.setattr("paperloom.discovery.pipeline.DailyPipeline", Pipeline)
     jobs = JobManager(tmp_path / "run", 2)
     scheduler = ProfileScheduler(config, tmp_path / "run", jobs)
     yield SimpleNamespace(root=tmp_path, config=config, profiles=profiles, calls=calls, jobs=jobs, scheduler=scheduler)
@@ -245,7 +245,7 @@ def test_cli_once_respects_existing_queue_and_does_not_enable_plans(env, capsys)
 def test_standalone_cli_once_runs_due_profiles_and_persists_final_status(env, capsys, monkeypatch):
     enable(env)
     env.jobs.close()
-    monkeypatch.setattr("arxiv_ra.runtime.jobs.scheduler.utc_now", lambda: at("2026-09-25T00:05:00"))
+    monkeypatch.setattr("paperloom.runtime.jobs.scheduler.utc_now", lambda: at("2026-09-25T00:05:00"))
     main(["--config", str(env.config), "schedule", "--once"])
     result = json.loads(capsys.readouterr().out)
     assert len(result["submitted"]) == 1 and result["schedule"]["history"][0]["status"] == "succeeded"

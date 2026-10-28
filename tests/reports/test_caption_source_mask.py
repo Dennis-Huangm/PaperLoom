@@ -1,7 +1,7 @@
 import pytest
 
-from arxiv_ra.reports.tables.report_tables import ReportTables
-from arxiv_ra.reports.report_completeness import _headings
+from paperloom.reports.tables.report_tables import ReportTables
+from paperloom.reports.report_completeness import _headings
 
 
 @pytest.mark.parametrize('citation', ['[[证据ID:S1-example-28-766-1266]]',

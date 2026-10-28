@@ -18,7 +18,7 @@ try:
                                      cwd=project, stdin=stdin, stdout=output, stderr=output,
                                      creationflags=subprocess.CREATE_NO_WINDOW)
             raise SystemExit(child.wait())
-    from arxiv_ra.desktop_gui import main
+    from paperloom.desktop_gui import main
     raise SystemExit(main())
 except Exception:
     fallback = project / 'run' / '.desktop-gui'

@@ -6,7 +6,7 @@ const page=await browser.newPage({viewport:{width:1280,height:900}});const error
 const refs=['2401.12345','2402.12345'].map((aid,i)=>({report_id:'report-'+i,paper:{title:'Paper '+aid,arxiv_id:aid,version:1}}));
 let session={id:'fixture',paper:{},mode:'workspace',title:'新阅读对话',references:[],messages:[]};let sent;
 await page.route('http://localhost/**',async r=>{const path=new URL(r.request().url()).pathname;
-if(path.endsWith('.css')||path.endsWith('.js'))return r.fulfill({contentType:path.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('src/arxiv_ra/static/'+path.split('/').pop(),'utf8')});
+if(path.endsWith('.css')||path.endsWith('.js'))return r.fulfill({contentType:path.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('src/paperloom/static/'+path.split('/').pop(),'utf8')});
 if(path.includes('/api/reading/')){
 if(path.endsWith('/events'))return r.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
 if(path.endsWith('/reports'))return r.fulfill({json:{reports:refs}});

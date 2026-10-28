@@ -2,12 +2,12 @@ from types import SimpleNamespace
 import pytest
 import httpx
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.utils import write_json
-from arxiv_ra.versions.version_tracker import VersionTracker
-from arxiv_ra.versions.version_batch import VersionSyncBatch
-from arxiv_ra.web.web_catalog import version_tracking_data
+from paperloom.config import AppConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.utils import write_json
+from paperloom.versions.version_tracker import VersionTracker
+from paperloom.versions.version_batch import VersionSyncBatch
+from paperloom.web.web_catalog import version_tracking_data
 from tests.versions.test_version_sync import Arxiv, paper
 
 
@@ -63,7 +63,7 @@ def test_scoped_check_preserves_other_sources_and_offline_zotero(tmp_path, monke
     write_json(tmp_path / "version-state-test.json", {"items": {
         "2501.00002": {"arxiv_id": "2501.00002", "sources": ["Zotero"], "latest_version": 2,
                        "zotero_version": 1, "zotero_keys": ["KEY"], "zotero_library": "library"}}})
-    from arxiv_ra.integrations.zotero import ZoteroClient
+    from paperloom.integrations.zotero import ZoteroClient
     def offline(self):
         raise OSError("offline")
     monkeypatch.setattr(ZoteroClient, "list_trackable_papers", offline)
@@ -84,8 +84,8 @@ def test_scoped_check_preserves_other_sources_and_offline_zotero(tmp_path, monke
 
 def test_page_filters_statistics_and_preview_by_source(tmp_path):
     from fastapi.testclient import TestClient
-    from arxiv_ra.profiles.profiles import ProfileManager
-    from arxiv_ra.web import create_app
+    from paperloom.profiles.profiles import ProfileManager
+    from paperloom.web import create_app
     config = tmp_path / "config.yaml"
     config.write_text("output_dir: run\n", encoding="utf-8")
     profiles = ProfileManager(tmp_path)
@@ -117,8 +117,8 @@ def test_page_filters_statistics_and_preview_by_source(tmp_path):
     ({"title": "paper", "version": 99}, None),
 ])
 def test_check_uses_pdf_evidence_not_zotero_object_or_parent_version(tmp_path, monkeypatch, attachment, expected):
-    from arxiv_ra.integrations.zotero import ZoteroClient
-    from arxiv_ra.config import ZoteroConfig
+    from paperloom.integrations.zotero import ZoteroClient
+    from paperloom.config import ZoteroConfig
     def handler(request):
         if request.url.path == "/api/":
             return httpx.Response(200, headers={"Zotero-Server-ID": "TEST"})
@@ -128,7 +128,7 @@ def test_check_uses_pdf_evidence_not_zotero_object_or_parent_version(tmp_path, m
         if request.url.path.endswith("/children"):
             return httpx.Response(200, json=[{"data": {"contentType": "application/pdf", **attachment}}])
         return httpx.Response(404)
-    monkeypatch.setattr("arxiv_ra.versions.version_tracker.ZoteroClient", lambda *a, **k:
+    monkeypatch.setattr("paperloom.versions.version_tracker.ZoteroClient", lambda *a, **k:
                         ZoteroClient(ZoteroConfig(), client=httpx.Client(transport=httpx.MockTransport(handler))))
     config = AppConfig(output_dir=str(tmp_path), profile_id="test")
     with VersionTracker(config, tmp_path, clients=SimpleNamespace(arxiv=Arxiv())) as tracker:

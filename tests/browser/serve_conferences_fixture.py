@@ -8,10 +8,10 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 import uvicorn
 
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.runtime.jobs.task_runtime import task_warning
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.runtime.jobs.task_runtime import task_warning
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
 
 directory = TemporaryDirectory(prefix='paperloom-conferences-preview-')
 root = Path(directory.name)

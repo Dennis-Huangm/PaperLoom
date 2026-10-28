@@ -18,7 +18,7 @@ $taskMatches = $task -and @($task.Actions | Where-Object {
 }).Count -eq 1
 if ($taskMatches -and $Action -in @('start', 'restart')) {
     if ($Action -eq 'restart') {
-        & $python -m arxiv_ra.desktop_gui stop --config $ConfigPath --port $Port
+        & $python -m paperloom.desktop_gui stop --config $ConfigPath --port $Port
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         # Let the windowless parent exit before asking IgnoreNew to start it.
         $deadline = (Get-Date).AddSeconds(15)
@@ -27,12 +27,12 @@ if ($taskMatches -and $Action -in @('start', 'restart')) {
             Start-Sleep -Milliseconds 100
         }
     }
-    $current = & $python -m arxiv_ra.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
+    $current = & $python -m paperloom.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
     if ($current.stopping) { throw 'GUI shutdown is still in progress; waiting for background work to reach a safe checkpoint. No new instance was started.' }
     if (-not $current.running) { Start-ScheduledTask -TaskName $task.TaskName }
     $deadline = (Get-Date).AddSeconds(45)
     do {
-        $current = & $python -m arxiv_ra.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
+        $current = & $python -m paperloom.desktop_gui status --config $ConfigPath --port $Port | ConvertFrom-Json
         if ($current.running -and -not $current.stopping -and $current.instance.config -eq $ConfigPath -and $current.instance.nonce) {
             Write-Output "PaperLoom runs at http://127.0.0.1:$Port (user logon task)."
             exit 0
@@ -41,5 +41,5 @@ if ($taskMatches -and $Action -in @('start', 'restart')) {
     } while ((Get-Date) -lt $deadline)
     throw 'GUI did not become ready. Inspect run\.desktop-gui for startup errors or port conflicts.'
 }
-& $python -m arxiv_ra.desktop_gui $Action --config $ConfigPath --port $Port --launcher $launcher
+& $python -m paperloom.desktop_gui $Action --config $ConfigPath --port $Port --launcher $launcher
 exit $LASTEXITCODE

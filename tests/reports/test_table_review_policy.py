@@ -1,5 +1,5 @@
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
 
 
 def test_missing_table_citation_is_diagnostic_not_cell_warning():
@@ -26,10 +26,10 @@ def test_uncited_table_and_prose_are_published_without_review():
 def test_pipeline_does_not_report_component_failure_for_uncited_table(tmp_path):
     from pathlib import Path
     from types import SimpleNamespace
-    from arxiv_ra.config import AppConfig
-    from arxiv_ra.papers.models import Paper, VerifiedMetadata
-    from arxiv_ra.discovery.pipeline import DailyPipeline
-    from arxiv_ra.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
+    from paperloom.config import AppConfig
+    from paperloom.papers.models import Paper, VerifiedMetadata
+    from paperloom.discovery.pipeline import DailyPipeline
+    from paperloom.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
 
     config = AppConfig(output_dir=str(tmp_path / 'run'), profile_id='test')
     config.obsidian.enabled = False

@@ -1,6 +1,6 @@
-from arxiv_ra.config import LLMConfig
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.reports.report import ReportGenerator
+from paperloom.config import LLMConfig
+from paperloom.papers.models import ParsedPaper
+from paperloom.reports.report import ReportGenerator
 
 
 def test_chunk_boundary_preserves_table_caption_headers_and_every_row():
@@ -38,7 +38,7 @@ def test_prose_table_reference_does_not_attach_an_unrelated_page():
                          ['Table 11: Scores\n' + 'Original table text ' * 300, 'Other page ' * 400])
     generator = ReportGenerator(None, LLMConfig(max_chunk_chars=4000))
     chunks, banks, spans = generator.analysis_inputs(parsed)
-    from arxiv_ra.sources.source_spans import span_batches
+    from paperloom.sources.source_spans import span_batches
     baseline = span_batches(spans, len(chunks))
     assert banks[0] == baseline[0][:len(banks[0])]
     assert sum(len(span['quote']) for span in banks[0]) <= 4000

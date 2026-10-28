@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.reports.tables.report_tables import ReportTables
-from arxiv_ra.sources.source_spans import source_spans
-from arxiv_ra.utils import read_json, write_json
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
+from paperloom.reports.tables.report_tables import ReportTables
+from paperloom.sources.source_spans import source_spans
+from paperloom.utils import read_json, write_json
 from scripts.maintenance.repair_report_annotations import OUTPUTS, repair
 
 

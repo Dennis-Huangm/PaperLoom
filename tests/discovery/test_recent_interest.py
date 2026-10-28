@@ -7,17 +7,17 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import AppConfig, DiscoveryConfig, load_config
-from arxiv_ra.discovery.discovery import DiscoveryService
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.runtime.model_access.llm import LLMClient
-from arxiv_ra.papers.models import Paper, VerifiedMetadata
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.discovery.recent_interest import RecentInterest, build_recent_interest, direction_description, prefilter_candidates
-from arxiv_ra.utils import read_json
-from arxiv_ra.web import create_app
+from paperloom.config import AppConfig, DiscoveryConfig, load_config
+from paperloom.discovery.discovery import DiscoveryService
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.runtime.model_access.llm import LLMClient
+from paperloom.papers.models import Paper, VerifiedMetadata
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.discovery.recent_interest import RecentInterest, build_recent_interest, direction_description, prefilter_candidates
+from paperloom.utils import read_json
+from paperloom.web import create_app
 
 
 def paper(aid="2609.00100", title="Robot manipulation with tactile feedback", **kwargs):
@@ -256,7 +256,7 @@ def test_daily_run_publishes_profile_scoped_guidance_and_uses_one_snapshot(tmp_p
 
     clients = SimpleNamespace(llm=llm, arxiv=SimpleNamespace(search=search), alphaxiv=SimpleNamespace(),
                               verifier=SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title)))
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.localize_abstracts", lambda *a: None)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *a: None)
     result = DailyPipeline(config, tmp_path, clients=clients).run(deliver=False)
     rows = read_json(result.with_name("recommendations-robotics.json"))
     assert len(calls) == (2 if enabled else 1)

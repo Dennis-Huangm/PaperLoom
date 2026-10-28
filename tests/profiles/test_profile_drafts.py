@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.runtime.research_clients import ResearchClients
-from arxiv_ra.web import create_app
+from paperloom.runtime.research_clients import ResearchClients
+from paperloom.web import create_app
 from tests.profiles.test_profile_plan_discovery import paper
 
 
@@ -26,8 +26,8 @@ def workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
     # Newly created directions now start a background overview. Keep its
     # external literature sources offline without replacing the workflow.
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.ArxivClient.search_literature", lambda *a, **kw: [])
-    monkeypatch.setattr("arxiv_ra.discovery.conference_discovery.ConferenceClient.discover", lambda *a, **kw: ([], {}))
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.ArxivClient.search_literature", lambda *a, **kw: [])
+    monkeypatch.setattr("paperloom.discovery.conference_discovery.ConferenceClient.discover", lambda *a, **kw: ([], {}))
     app = create_app(config)
     with TestClient(app) as client:
         yield client, model, tmp_path
@@ -121,7 +121,7 @@ def test_preview_range_is_validated_and_passed_without_editing_daily_config(work
     def preview(saved, config, *, references_only=False, lookback_days=90):
         calls.append(lookback_days)
         return {'revision': saved['revision'], 'status': 'empty', 'sources': {}, 'selected': [], 'rejected': []}
-    monkeypatch.setattr('arxiv_ra.profiles.profile_drafts.preview_profile', preview)
+    monkeypatch.setattr('paperloom.profiles.profile_drafts.preview_profile', preview)
     url = f"/api/profile-drafts/{draft['id']}/preview"
     assert client.post(url, json={'revision': 1, 'lookback_days': 366}).status_code == 400
     assert client.post(url, json={'revision': 1, 'lookback_days': True}).status_code == 400
@@ -230,11 +230,11 @@ def test_preview_shares_constraints_and_has_no_recommendation_side_effects(works
     assert not list((root / "run").glob("state-*.json"))
     assert not list((root / "run").glob("reading-state-*.json"))
     # The same external responses must give the same hard-constraint outcome in a real daily run.
-    from arxiv_ra.config import load_config
-    from arxiv_ra.discovery.pipeline import DailyPipeline
-    from arxiv_ra.papers.models import VerifiedMetadata
+    from paperloom.config import load_config
+    from paperloom.discovery.pipeline import DailyPipeline
+    from paperloom.papers.models import VerifiedMetadata
     monkeypatch.setattr(ResearchClients, "verifier", property(lambda self: SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))))
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", lambda cfg: SimpleNamespace(enabled=False))
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", lambda cfg: SimpleNamespace(enabled=False))
     client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1})
     with DailyPipeline(load_config(root / "config.yaml"), root) as pipeline:
         pipeline.run(deliver=False)
@@ -243,7 +243,7 @@ def test_preview_shares_constraints_and_has_no_recommendation_side_effects(works
 
 
 def test_copy_legacy_and_save_settings_preserve_versioned_intent(workspace):
-    from arxiv_ra.config import load_config
+    from paperloom.config import load_config
     from tests.web.test_web import _full_settings_form
     client, _, root = workspace
     original = (root / "profiles" / "original.yaml").read_bytes()
@@ -323,7 +323,7 @@ def test_reference_check_ignores_date_and_old_results_are_marked_stale(workspace
 
 def test_new_direction_uses_application_ranking_defaults(workspace):
     from tests.web.test_web import _full_settings_form
-    from arxiv_ra.config import RankingConfig
+    from paperloom.config import RankingConfig
     from dataclasses import asdict
     client, _, _ = workspace
     settings = _full_settings_form()

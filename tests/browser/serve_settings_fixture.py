@@ -4,8 +4,8 @@ from pathlib import Path
 
 import uvicorn
 import yaml
-from arxiv_ra import web
-from arxiv_ra.web.routes import settings as settings_routes
+from paperloom import web
+from paperloom.web.routes import settings as settings_routes
 
 root = Path(tempfile.mkdtemp(prefix='paperloom-settings-'))
 config = root / 'config.yaml'

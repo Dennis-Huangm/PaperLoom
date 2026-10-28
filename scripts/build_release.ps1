@@ -14,7 +14,7 @@ $actualVersion = & $projectPython -c "import pathlib,sys,tomllib; print(tomllib.
 if ($LASTEXITCODE -ne 0) { throw "Unable to read project version." }
 if (-not $Version) { $Version = $actualVersion }
 if ($actualVersion -ne $Version) { throw "Requested version does not match pyproject.toml." }
-$moduleVersion = & $projectPython -c "import arxiv_ra; print(arxiv_ra.__version__)"
+$moduleVersion = & $projectPython -c "import paperloom; print(paperloom.__version__)"
 if ($LASTEXITCODE -ne 0 -or $moduleVersion -ne $Version) { throw "Module version mismatch." }
 $notesPath = Join-Path $projectRoot "docs\RELEASE_NOTES.md"
 if (-not (Test-Path -LiteralPath $notesPath) -or (Get-Content -LiteralPath $notesPath -Raw -Encoding UTF8) -notmatch "^# PaperLoom v$([regex]::Escape($Version))\b") {
@@ -84,8 +84,9 @@ root, manifest, archive = map(Path, sys.argv[1:])
 files = manifest.read_text(encoding="utf-8").splitlines()
 for name in files:
     parts = Path(name).parts
-    forbidden = {".env", "config.yaml", "profiles", "run", "work", "build", "release", "backups", "tests", ".git", "__pycache__"}
-    if any(p in forbidden or p.endswith(".egg-info") for p in parts) or name.endswith((".pyc", ".pyo")):
+    forbidden = {".env", "config.yaml", "run", "work", "build", "release", "backups", "tests", ".git", "__pycache__"}
+    # Personal profiles live at the project root; src/paperloom/profiles is code.
+    if parts[0] == "profiles" or any(p in forbidden or p.endswith(".egg-info") for p in parts) or name.endswith((".pyc", ".pyo")):
         raise SystemExit("Forbidden release file: " + name)
 with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as out:
     for name in sorted(files):

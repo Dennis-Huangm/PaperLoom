@@ -1,7 +1,7 @@
 .env
 config.yaml
 config.agentict2i.example.yaml
-profiles/
+/profiles/
 backups/
 restored/
 .venv/

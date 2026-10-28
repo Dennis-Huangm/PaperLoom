@@ -3,14 +3,14 @@ from unittest.mock import Mock
 
 import fitz
 
-from arxiv_ra.config import PDFConfig, AppConfig
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper, Paper, VerifiedMetadata
-from arxiv_ra.sources.pdf_pipeline import PDFParser
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.reports.render import markdown_with_math
-from arxiv_ra.utils import read_json
+from paperloom.config import PDFConfig, AppConfig
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper, Paper, VerifiedMetadata
+from paperloom.sources.pdf_pipeline import PDFParser
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.reports.report import ReportGenerator
+from paperloom.reports.render import markdown_with_math
+from paperloom.utils import read_json
 
 
 QUOTE = "Our method improves accuracy by ten percent on the test benchmark."

@@ -11,15 +11,15 @@ import json
 from pathlib import Path
 import re
 
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.reports.quality import normalized_excerpt
-from arxiv_ra.reports.render import _local_asset_base, report_document
-from arxiv_ra.reports.report_completeness import _headings
-from arxiv_ra.reports.report_checkpoint import CheckpointWriteError
-from arxiv_ra.reports.tables.report_tables import ReportTables
-from arxiv_ra.sources.source_spans import exact_span, source_spans
-from arxiv_ra.utils import atomic_write_text, read_json, write_json
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
+from paperloom.reports.quality import normalized_excerpt
+from paperloom.reports.render import _local_asset_base, report_document
+from paperloom.reports.report_completeness import _headings
+from paperloom.reports.report_checkpoint import CheckpointWriteError
+from paperloom.reports.tables.report_tables import ReportTables
+from paperloom.sources.source_spans import exact_span, source_spans
+from paperloom.utils import atomic_write_text, read_json, write_json
 
 
 OUTPUTS = ('report.md', 'report.html', 'tables.json', 'evidence.json',
@@ -142,8 +142,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     chat = None
     if args.localize:
-        from arxiv_ra.config import load_config
-        from arxiv_ra.runtime.model_access.llm import LLMClient
+        from paperloom.config import load_config
+        from paperloom.runtime.model_access.llm import LLMClient
         from scripts.maintenance.rebuild_reports import _load_dotenv
         _load_dotenv(Path('.env'))
         llm = LLMClient(load_config(Path('config.yaml')).llm)

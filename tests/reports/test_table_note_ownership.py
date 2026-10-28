@@ -1,4 +1,4 @@
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_trailing_note_stays_with_its_table_when_restoration_nests_headings():

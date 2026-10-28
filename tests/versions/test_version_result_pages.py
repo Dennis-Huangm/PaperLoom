@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from arxiv_ra.web.web_artifacts import ReportStaticFiles
+from paperloom.web.web_artifacts import ReportStaticFiles
 
 
 def test_existing_tracking_result_uses_task_view(tmp_path):
@@ -28,9 +28,9 @@ def test_existing_tracking_result_uses_task_view(tmp_path):
 
 def test_new_check_result_is_scoped_and_has_material_versions(tmp_path):
     from types import SimpleNamespace
-    from arxiv_ra.config import AppConfig
-    from arxiv_ra.utils import write_json
-    from arxiv_ra.versions.version_tracker import VersionTracker
+    from paperloom.config import AppConfig
+    from paperloom.utils import write_json
+    from paperloom.versions.version_tracker import VersionTracker
     from tests.versions.test_tracking_scopes import report
     from tests.versions.test_version_sync import Arxiv
     config = AppConfig(output_dir=str(tmp_path), profile_id='test')
@@ -49,8 +49,8 @@ def test_new_check_result_is_scoped_and_has_material_versions(tmp_path):
 
 def test_sync_and_batch_outputs_use_task_layout(tmp_path):
     from types import SimpleNamespace
-    from arxiv_ra.config import AppConfig
-    from arxiv_ra.versions.version_batch import VersionSyncBatch
+    from paperloom.config import AppConfig
+    from paperloom.versions.version_batch import VersionSyncBatch
     from tests.versions.test_version_sync import Arxiv
     config = AppConfig(output_dir=str(tmp_path), profile_id='test')
     service = VersionSyncBatch(config, tmp_path)
@@ -69,7 +69,7 @@ def test_legacy_html_receipts_and_diff_keep_content_and_http_assets(tmp_path):
     from pathlib import Path
     from bs4 import BeautifulSoup
     from fastapi.staticfiles import StaticFiles
-    package_static = Path(__file__).parents[2] / 'src/arxiv_ra/static'
+    package_static = Path(__file__).parents[2] / 'src/paperloom/static'
     paths = ['version-batches/test/batch/index.html', 'papers/test/2501.00001/index.html',
              'versions/test/2501.00001/v1-to-v2/report.html']
     for relative in paths:

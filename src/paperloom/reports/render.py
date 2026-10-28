@@ -4,7 +4,7 @@ import html
 import hashlib
 import os
 import re
-from arxiv_ra.resources import PACKAGE_ROOT
+from paperloom.resources import PACKAGE_ROOT
 from pathlib import Path
 from urllib.parse import quote
 

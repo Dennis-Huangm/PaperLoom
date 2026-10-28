@@ -8,18 +8,18 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import AppConfig, LLMConfig, VersionSyncConfig, load_config
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.runtime.model_access.llm import LLMClient
-from arxiv_ra.runtime.model_access.model_budget import ModelBudgetExceeded, current_model_budget, model_request_budget
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.versions.version_auto import AutomaticVersionSync
-from arxiv_ra.versions.version_batch import VersionSyncBatch
-from arxiv_ra.versions.version_sync import PaperVersionSync
-from arxiv_ra.versions.version_tracker import VersionTracker
-from arxiv_ra.web import create_app
+from paperloom.config import AppConfig, LLMConfig, VersionSyncConfig, load_config
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.runtime.model_access.llm import LLMClient
+from paperloom.runtime.model_access.model_budget import ModelBudgetExceeded, current_model_budget, model_request_budget
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.runtime.jobs.task_runtime import TaskCancelled
+from paperloom.utils import read_json, write_json
+from paperloom.versions.version_auto import AutomaticVersionSync
+from paperloom.versions.version_batch import VersionSyncBatch
+from paperloom.versions.version_sync import PaperVersionSync
+from paperloom.versions.version_tracker import VersionTracker
+from paperloom.web import create_app
 from tests.versions.test_version_sync import Arxiv, paper, tracked_report
 
 
@@ -34,7 +34,7 @@ def automatic(tmp_path, monkeypatch):
     for index in range(1, 4):
         library.add({"paper": paper(1, f"2501.0000{index}").to_dict()}, "Test")
         tracked_report(tmp_path / "run", f"2501.0000{index}")
-    from arxiv_ra.integrations.zotero import ZoteroClient
+    from paperloom.integrations.zotero import ZoteroClient
     versions = {f"2501.0000{index}": 1 for index in range(1, 4)}
     class Zotero:
         def __init__(self, *args, **kwargs):
@@ -50,8 +50,8 @@ def automatic(tmp_path, monkeypatch):
         def save_paper(self, value, *args, **kwargs):
             versions[value["arxiv_id"]] = value["version"]
             return SimpleNamespace(to_dict=lambda: {"item_key": value["arxiv_id"]})
-    monkeypatch.setattr("arxiv_ra.versions.version_tracker.ZoteroClient", Zotero)
-    monkeypatch.setattr("arxiv_ra.versions.version_sync.ZoteroClient", Zotero)
+    monkeypatch.setattr("paperloom.versions.version_tracker.ZoteroClient", Zotero)
+    monkeypatch.setattr("paperloom.versions.version_sync.ZoteroClient", Zotero)
     tracker = VersionTracker(config, tmp_path, clients=clients)
     return config, clients, tracker, VersionSyncBatch(config, tmp_path)
 
@@ -306,7 +306,7 @@ def test_auto_sync_does_not_touch_another_direction(automatic):
 def test_pending_report_attempt_does_not_block_new_zotero_target(automatic):
     config, clients, tracker, batches = automatic
     tracker.check(auto_sync=False)
-    from arxiv_ra.web.web_catalog import version_tracking_data
+    from paperloom.web.web_catalog import version_tracking_data
     items = version_tracking_data(batches.output_root, "test")["items"]
     batches.preview(["2501.00001"], items, scope="reports", report=True, origin="automatic")
     config.version_sync.enabled = True

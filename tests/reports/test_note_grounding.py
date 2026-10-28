@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from arxiv_ra.config import LLMConfig
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper, Paper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.sources.source_spans import ID_TOKEN, source_spans, ground_note_quotes, exact_span, cited_span_material
+from paperloom.config import LLMConfig
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper, Paper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator
+from paperloom.sources.source_spans import ID_TOKEN, source_spans, ground_note_quotes, exact_span, cited_span_material
 
 
 QUOTE = 'Model A test accuracy is 91.2% on the held-out benchmark.'

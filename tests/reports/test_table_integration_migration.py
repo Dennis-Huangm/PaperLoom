@@ -3,7 +3,7 @@ from pathlib import Path
 
 import fitz
 
-from arxiv_ra.utils import read_json, write_json
+from paperloom.utils import read_json, write_json
 
 
 def test_migration_updates_markdown_html_audit_and_keeps_backup(tmp_path):
@@ -80,8 +80,8 @@ def test_audit_upgrade_restores_suppressed_legacy_prose_without_guessing_locatio
 
 
 def test_audit_upgrade_preserves_valid_id_for_repeated_source_text(tmp_path):
-    from arxiv_ra.papers.models import ParsedPaper
-    from arxiv_ra.sources.source_spans import source_spans
+    from paperloom.papers.models import ParsedPaper
+    from paperloom.sources.source_spans import source_spans
     migrate = runpy.run_path(str(Path(__file__).parents[2] / 'scripts/maintenance/integrate_report_tables.py'))['integrate']
     directory = tmp_path / '2026-10-01' / 'reports' / 'paper'
     directory.mkdir(parents=True)

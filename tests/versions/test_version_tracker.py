@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from arxiv_ra.config import AppConfig, VersionTrackingConfig, ZoteroConfig
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.versions.version_tracker import VersionTracker
+from paperloom.config import AppConfig, VersionTrackingConfig, ZoteroConfig
+from paperloom.papers.models import Author, Paper
+from paperloom.utils import read_json, write_json
+from paperloom.versions.version_tracker import VersionTracker
 
 
 def _paper(version: int) -> Paper:

@@ -2,10 +2,10 @@ import re
 
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import load_config
-from arxiv_ra.profiles.profile_plan import new_draft
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.web import create_app
+from paperloom.config import load_config
+from paperloom.profiles.profile_plan import new_draft
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.web import create_app
 
 
 def _client(tmp_path):

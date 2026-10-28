@@ -5,11 +5,11 @@ from urllib.request import url2pathname
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.related_work.graph_render import render_graph
-from arxiv_ra.related_work.graph_store import publish_graph
-from arxiv_ra.papers.backup import allowed
-from arxiv_ra.reports.render import render_digest, render_recommendations, render_report
-from arxiv_ra.web import create_app
+from paperloom.related_work.graph_render import render_graph
+from paperloom.related_work.graph_store import publish_graph
+from paperloom.papers.backup import allowed
+from paperloom.reports.render import render_digest, render_recommendations, render_report
+from paperloom.web import create_app
 
 
 def icon_path(document: str, page: Path) -> Path:

@@ -2,13 +2,13 @@ from pathlib import Path
 import pytest
 from bs4 import BeautifulSoup
 
-from arxiv_ra.reports.render import markdown_with_math, render_report
+from paperloom.reports.render import markdown_with_math, render_report
 
 
 @pytest.mark.parametrize('container', ['<pre>', '<script>', '```markdown'])
 def test_managed_table_cannot_disappear_inside_a_text_container(tmp_path, container):
-    from arxiv_ra.reports.tables.report_tables import ReportTables
-    from arxiv_ra.reports.markdown_rendering import ReportRenderError
+    from paperloom.reports.tables.report_tables import ReportTables
+    from paperloom.reports.markdown_rendering import ReportRenderError
     catalogue = ReportTables.from_notes(['### Table 1: Scores\n| Model | Score |\n|---|---|\n| A | 91.2 |'], [{'number':1}])
     # The isolated block is valid, but its surrounding prose is not.
     block = catalogue.render('[[表格:table-1]]')
@@ -145,7 +145,7 @@ def test_file_report_math_assets_resolve_to_existing_local_files(tmp_path):
 
 
 def test_report_presentation_omits_verbose_comparison_audit_section():
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.render import report_document
     text = '# Compare\n\n## 比较矩阵\nKeep matrix\n\n## 条目依据与待核对原因\nVerbose detail\n### P1\nQuote\n\n## 固定证据摘录\nKeep sources'
     document = report_document(text, 'Compare')
     assert '条目依据与待核对原因' not in document and 'Verbose detail' not in document
@@ -155,7 +155,7 @@ def test_report_presentation_omits_verbose_comparison_audit_section():
 
 
 def test_legacy_comparison_links_survive_without_repeated_source_text():
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.render import report_document
     text = '''# Compare
 
 ## 比较矩阵
@@ -188,7 +188,7 @@ def test_legacy_comparison_links_survive_without_repeated_source_text():
 
 
 def test_legacy_numeric_audit_keeps_warning_without_duplicating_markdown_claim():
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.render import report_document
     text = '''# Paper
 
 > **实验数值待核对**：1 个条目缺少对应原文依据。请先查看文末“实验数值核对”，再使用这些结果。
@@ -249,7 +249,7 @@ def test_render_report_includes_local_katex_and_sidebar_navigation(tmp_path: Pat
     assert "返回报告库" in page
     assert 'id="report-library-add"' in page
     assert 'data-arxiv-id="2407.05600"' in page
-    script = (Path(__file__).parents[2] / "src/arxiv_ra/static/report.js").read_text(encoding="utf-8")
+    script = (Path(__file__).parents[2] / "src/paperloom/static/report.js").read_text(encoding="utf-8")
     assert "/static/report.js" in page
     assert "/api/library/status" in script
     assert "/api/library/add" in script
@@ -260,7 +260,7 @@ def test_render_report_includes_local_katex_and_sidebar_navigation(tmp_path: Pat
     assert "grid-template-columns:270px minmax(0,1fr)" in page
     assert "window.scrollTo(0,0)" in script
 def test_display_formula_with_adjacent_pdf_citation_still_renders_as_math():
-    from arxiv_ra.reports.render import markdown_with_math
+    from paperloom.reports.render import markdown_with_math
     from bs4 import BeautifulSoup
     source = '### Formula\n\\[\ny = \\mathcal{F}(x) + x\n\\] [21](paper.pdf#page=3)\n\nMeaning.'
     tree = BeautifulSoup(markdown_with_math(source)[0], 'html.parser')
@@ -269,7 +269,7 @@ def test_display_formula_with_adjacent_pdf_citation_still_renders_as_math():
 
 
 def test_report_document_keeps_formula_after_citation_tooltip_decoration():
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.render import report_document
     source = '说明：\n' + r'\[x = y + 1\] [12](paper.pdf#page=3)'
     tree = BeautifulSoup(report_document(source, 'Paper'), 'html.parser')
     assert tree.select_one('.math-block').get_text() == 'x = y + 1'
@@ -277,7 +277,7 @@ def test_report_document_keeps_formula_after_citation_tooltip_decoration():
 
 
 def test_layout_fallback_keeps_pdf_citations_with_hover_titles_clickable():
-    from arxiv_ra.reports.render import report_document
+    from paperloom.reports.render import report_document
     source = '''| A | B |
 |---|---|
 | 1 | 2 | [42](paper.pdf#page=9 "原文第 9 页") |'''

@@ -3,8 +3,8 @@ param(
     [string]$ProjectDir,
     [string]$At = "08:00",
     [switch]$MultiProfile,
-    # Reuse the existing task instead of scheduling a duplicate after the rebrand.
-    [string]$TaskName = "arXiv Research Assistant"
+    # Re-running registration updates this task; migrate older task names separately.
+    [string]$TaskName = "PaperLoom"
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,7 +21,7 @@ if (-not (Test-Path -LiteralPath $config)) {
 
 # Validate the exact interpreter/configuration the task will use. This is an
 # offline check and does not send mail, call a model, or dispatch scheduled work.
-& $python -m arxiv_ra --config $config doctor
+& $python -m paperloom --config $config doctor
 if ($LASTEXITCODE -ne 0) {
     throw "Project environment check failed; scheduled task was not registered."
 }
@@ -29,7 +29,7 @@ if ($LASTEXITCODE -ne 0) {
 $entryCommand = if ($MultiProfile) { "schedule --once" } else { "run" }
 $action = New-ScheduledTaskAction `
     -Execute $python `
-    -Argument "-m arxiv_ra --config `"$config`" $entryCommand" `
+    -Argument "-m paperloom --config `"$config`" $entryCommand" `
     -WorkingDirectory $resolvedProject
 $trigger = if ($MultiProfile) {
     New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)

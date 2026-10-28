@@ -1,4 +1,4 @@
-from arxiv_ra.reports.report_completeness import restore_note_tables, _blocks
+from paperloom.reports.report_completeness import restore_note_tables, _blocks
 
 
 SOURCE = ('Model\nType\n# Params\nMSE ↓\nExtraction ↓\n'

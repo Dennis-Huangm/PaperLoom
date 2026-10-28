@@ -7,8 +7,8 @@ from copy import deepcopy
 from fastapi.testclient import TestClient
 import pytest
 
-from arxiv_ra.runtime.research_clients import ResearchClients
-from arxiv_ra.web import create_app
+from paperloom.runtime.research_clients import ResearchClients
+from paperloom.web import create_app
 from tests.profiles.test_direction_overview import direction, LiteratureAPI, OverviewModel
 from types import SimpleNamespace
 
@@ -43,9 +43,9 @@ def wait_overview(client, profile_id, source="saved"):
 @pytest.mark.parametrize('when', ['snapshot', 'response'])
 def test_completion_between_article_and_job_reads_returns_published_article(tmp_path, monkeypatch, edited, when):
     from fastapi import FastAPI
-    from arxiv_ra.web import web_direction_overview
-    from arxiv_ra.profiles.direction_overview import OverviewStore
-    from arxiv_ra.runtime.jobs.manager import BackgroundJob
+    from paperloom.web import web_direction_overview
+    from paperloom.profiles.direction_overview import OverviewStore
+    from paperloom.runtime.jobs.manager import BackgroundJob
 
     before = {'id': 'svg', 'name': 'SVG', 'description': 'SVG editing'}
     current = {**before, 'description': 'Only SVG optimization'} if edited else before

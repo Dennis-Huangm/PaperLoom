@@ -6,9 +6,9 @@ import hashlib
 import json
 from pathlib import Path
 
-from arxiv_ra.reports.report_cleanup import clean_report_diagnostics
-from arxiv_ra.reports.render import report_document, _local_asset_base
-from arxiv_ra.utils import atomic_write_text
+from paperloom.reports.report_cleanup import clean_report_diagnostics
+from paperloom.reports.render import report_document, _local_asset_base
+from paperloom.utils import atomic_write_text
 
 
 def clean_report(path: Path, root: Path, *, apply=False):
@@ -26,7 +26,7 @@ def clean_report(path: Path, root: Path, *, apply=False):
     if audit.get('issues') and audit.get('publication_policy') not in {
             'preserve_unverified_v1', 'table_diagnostics_v2', 'report_diagnostics_v3'}:
         # Recover old withheld values first, using saved originals only.
-        from arxiv_ra.reports.report_recovery import recover_numeric_content
+        from paperloom.reports.report_recovery import recover_numeric_content
         report, evidence, _ = recover_numeric_content(report, evidence)
     cleaned = clean_report_diagnostics(report)
     # All existing PDF targets outside the removed diagnostic section survive.

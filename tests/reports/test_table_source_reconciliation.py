@@ -1,5 +1,5 @@
 """Conflicting extractions must not become additional experimental rows."""
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.report_tables import ReportTables
 import pytest
 
 

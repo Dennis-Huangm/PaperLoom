@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import asdict
 from datetime import datetime
-from arxiv_ra.resources import PACKAGE_ROOT
+from paperloom.resources import PACKAGE_ROOT
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse

@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from arxiv_ra.papers.models import Paper, Author
-from arxiv_ra.web import create_app
+from paperloom.papers.models import Paper, Author
+from paperloom.web import create_app
 from tests.reading.test_reading_chat import config_path, wait_answer
 
 
@@ -72,8 +72,8 @@ def test_round_scope_is_preserved_and_deleted_report_blocks_retry(config_path, m
 def test_tools_route_only_to_selected_papers_and_distinguish_citations(config_path):
     import fitz
     from types import SimpleNamespace as NS
-    from arxiv_ra.reading.reading_sources import ReferencedSources
-    from arxiv_ra.reading.reading_references import ReadingReferences
+    from paperloom.reading.reading_sources import ReferencedSources
+    from paperloom.reading.reading_references import ReadingReferences
     root = config_path.parent / 'run'
     a, b = report(config_path), report(config_path, '2402.12345')
     for rid, text in [(a,'Alpha reports accuracy of ninety percent.'),(b,'Beta reports accuracy of eighty percent.')]:
@@ -105,8 +105,8 @@ def test_tools_route_only_to_selected_papers_and_distinguish_citations(config_pa
 
 def test_legacy_missing_reports_are_readable_and_workspace_history_stays_out_of_dock(config_path):
     import uuid
-    from arxiv_ra.utils import write_json
-    from arxiv_ra.discovery.arxiv_client import ArxivClient
+    from paperloom.utils import write_json
+    from paperloom.discovery.arxiv_client import ArxivClient
     root = config_path.parent / 'run'
     sid = uuid.uuid4().hex
     paper = ArxivClient.get(None,'9999.99999v1').to_dict()
@@ -126,9 +126,9 @@ def test_legacy_missing_reports_are_readable_and_workspace_history_stays_out_of_
 def test_unavailable_pdf_keeps_report_readable_and_context_names_each_paper(config_path, monkeypatch):
     import httpx
     from types import SimpleNamespace as NS
-    from arxiv_ra.reading.reading_sources import ReferencedSources
-    from arxiv_ra.reading.reading_references import ReadingReferences
-    from arxiv_ra.reading.reading_context import make_context
+    from paperloom.reading.reading_sources import ReferencedSources
+    from paperloom.reading.reading_references import ReadingReferences
+    from paperloom.reading.reading_context import make_context
     root = config_path.parent / 'run'
     a, b = report(config_path), report(config_path, '2402.12345')
     refs = ReadingReferences(root)
@@ -147,8 +147,8 @@ def test_unavailable_pdf_keeps_report_readable_and_context_names_each_paper(conf
 def test_invalid_tool_parameters_are_rejected_before_downloading_original(config_path):
     from types import SimpleNamespace as NS
     import pytest
-    from arxiv_ra.reading.reading_sources import ReferencedSources
-    from arxiv_ra.reading.reading_references import ReadingReferences
+    from paperloom.reading.reading_sources import ReferencedSources
+    from paperloom.reading.reading_references import ReadingReferences
     root = config_path.parent / 'run'
     refs = ReadingReferences(root)
     materials = refs.snapshot(refs.resolve([report(config_path)]))
@@ -193,8 +193,8 @@ def test_streaming_model_receives_multi_paper_tools_and_report_results(config_pa
 def test_tools_reject_malformed_paper_targets_as_recoverable_errors(config_path):
     from types import SimpleNamespace as NS
     import pytest
-    from arxiv_ra.reading.reading_sources import ReferencedSources
-    from arxiv_ra.reading.reading_references import ReadingReferences
+    from paperloom.reading.reading_sources import ReferencedSources
+    from paperloom.reading.reading_references import ReadingReferences
     refs=ReadingReferences(config_path.parent/'run')
     materials=refs.snapshot(refs.resolve([report(config_path)]))
     sources=ReferencedSources(config_path.parent/'run',{}, {'references':materials}, NS(), lambda **kw:None)

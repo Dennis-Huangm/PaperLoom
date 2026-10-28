@@ -6,10 +6,10 @@ from tempfile import TemporaryDirectory
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 import uvicorn
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.profiles.profile_plan import new_draft
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.web import create_app
+from paperloom.config import AppConfig
+from paperloom.profiles.profile_plan import new_draft
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.web import create_app
 
 directory = TemporaryDirectory(prefix='paperloom-profiles-preview-')
 root = Path(directory.name)

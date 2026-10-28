@@ -1,4 +1,4 @@
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_caption_wrappers_do_not_create_experiment_variants():

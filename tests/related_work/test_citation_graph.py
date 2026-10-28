@@ -3,18 +3,18 @@ from pathlib import Path
 import httpx
 import pytest
 
-from arxiv_ra.related_work.citation_graph import CitationExplorer
-from arxiv_ra.config import AppConfig, CitationConfig
-from arxiv_ra.utils import read_json
+from paperloom.related_work.citation_graph import CitationExplorer
+from paperloom.config import AppConfig, CitationConfig
+from paperloom.utils import read_json
 
 
 @pytest.fixture(autouse=True)
 def isolate_mock_graph_requests_from_real_process_quota(monkeypatch):
-    from arxiv_ra.runtime.model_access.rate_limit import _thread_rate_limit
+    from paperloom.runtime.model_access.rate_limit import _thread_rate_limit
     # These tests use MockTransport and often zero intervals. Cross-process
     # timing has its own subprocess regression test; no real quota is consumed.
-    monkeypatch.setattr('arxiv_ra.related_work.graph_source.shared_rate_limit', _thread_rate_limit)
-    monkeypatch.setattr('arxiv_ra.related_work.graph_source.defer_rate_limit', lambda *_: None)
+    monkeypatch.setattr('paperloom.related_work.graph_source.shared_rate_limit', _thread_rate_limit)
+    monkeypatch.setattr('paperloom.related_work.graph_source.defer_rate_limit', lambda *_: None)
 
 
 @pytest.mark.parametrize('kind,http_status,budget', [
@@ -22,8 +22,8 @@ def isolate_mock_graph_requests_from_real_process_quota(monkeypatch):
 ])
 def test_graph_category_conditions_use_bounded_official_metadata(tmp_path, monkeypatch, kind, http_status, budget):
     import json
-    from arxiv_ra.config import DiscoveryConfig
-    from arxiv_ra.profiles.profile_plan import condition
+    from paperloom.config import DiscoveryConfig
+    from paperloom.profiles.profile_plan import condition
     config = AppConfig(output_dir=str(tmp_path),
         citations=CitationConfig(min_interval=0, max_retries=2, max_requests=budget),
         discovery=DiscoveryConfig(search_plan={'version': 2, 'conditions': [condition(kind, 'cs.RO')]}))
@@ -170,8 +170,8 @@ def test_unrelated_recommended_paper_has_no_invented_relationship(tmp_path: Path
 
 def test_snapshot_paginates_and_keeps_previous_publication_on_cancel(tmp_path: Path):
     import pytest
-    from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
-    from arxiv_ra.web.web_catalog import citation_library
+    from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+    from paperloom.web.web_catalog import citation_library
 
     calls = []
     def handler(request):
@@ -211,8 +211,8 @@ def test_snapshot_paginates_and_keeps_previous_publication_on_cancel(tmp_path: P
 
 
 def test_direction_constraints_and_budgets_are_visible(tmp_path: Path):
-    from arxiv_ra.config import DiscoveryConfig
-    from arxiv_ra.profiles.profile_plan import condition
+    from paperloom.config import DiscoveryConfig
+    from paperloom.profiles.profile_plan import condition
     config = AppConfig(output_dir=str(tmp_path), citations=CitationConfig(max_nodes=2, max_candidates=3, max_requests=5, min_interval=0, max_retries=2),
                        discovery=DiscoveryConfig(search_plan={'version': 2, 'conditions': [condition('required', 'Must evaluate clinical outcomes')]}))
     def handler(request):
@@ -239,7 +239,7 @@ def test_real_web_job_publishes_readable_csp_safe_map(tmp_path: Path, monkeypatc
     import json
     import time
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
+    from paperloom.web import create_app
     config_path = tmp_path / 'config.yaml'
     config_path.write_text('output_dir: run\ncitations:\n  min_interval: 0\n  max_retries: 0\n', encoding='utf-8')
     def handle(self, request):
@@ -278,7 +278,7 @@ def test_real_web_job_publishes_readable_csp_safe_map(tmp_path: Path, monkeypatc
 def test_legacy_map_is_adapted_without_rewriting(tmp_path: Path):
     import json
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
+    from paperloom.web import create_app
     folder = tmp_path / 'run' / 'citations' / '2407.05600-default'
     folder.mkdir(parents=True)
     payload = {'arxiv_id': '2407.05600', 'seed': {'paperId': 'S', 'title': 'Seed'},
@@ -397,8 +397,8 @@ def test_duplicate_identity_and_missing_metadata_stay_readable(tmp_path: Path):
 def test_job_cancellation_after_publication_keeps_committed_result(tmp_path: Path):
     import threading
     import time
-    from arxiv_ra.runtime.jobs.manager import JobManager
-    from arxiv_ra.runtime.jobs.task_runtime import task_commit
+    from paperloom.runtime.jobs.manager import JobManager
+    from paperloom.runtime.jobs.task_runtime import task_commit
     manager = JobManager(tmp_path, 1)
     published, finish = threading.Event(), threading.Event()
     result = tmp_path / 'citations' / 'fixture' / 'index.html'
@@ -454,8 +454,8 @@ def test_tiny_candidate_cap_queries_each_source_and_merges_aliases(tmp_path: Pat
 @pytest.mark.parametrize('all_unknown', [False, True])
 def test_configured_model_separates_verified_condition_failure_from_unknown(tmp_path: Path, monkeypatch, all_unknown):
     import json
-    from arxiv_ra.config import DiscoveryConfig, LLMConfig
-    from arxiv_ra.profiles.profile_plan import condition
+    from paperloom.config import DiscoveryConfig, LLMConfig
+    from paperloom.profiles.profile_plan import condition
     requirement = condition('required', 'Evaluates clinical outcomes')
     config = AppConfig(output_dir=str(tmp_path), citations=CitationConfig(min_interval=0, max_retries=0),
                        llm=LLMConfig(api_key_env='GRAPH_TEST_KEY', base_url_env='GRAPH_TEST_URL'),

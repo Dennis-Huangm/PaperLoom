@@ -4,8 +4,8 @@ from types import SimpleNamespace as NS
 import fitz
 import pytest
 
-from arxiv_ra.discovery.arxiv_client import ArxivClient
-from arxiv_ra.reading.reading_sources import ReadingSources
+from paperloom.discovery.arxiv_client import ArxivClient
+from paperloom.reading.reading_sources import ReadingSources
 from tests.reading.test_reading_chat import config_path
 
 
@@ -82,7 +82,7 @@ def test_same_excerpt_in_another_version_has_a_distinct_identity(source):
 
 @pytest.mark.parametrize('available', [True, False])
 def test_startup_recovers_only_exact_legacy_ids_from_recorded_cached_reads(source, available):
-    from arxiv_ra.reading.reading_chat import ReadingService
+    from paperloom.reading.reading_chat import ReadingService
     result = source.execute('read_pages', {'start': 1, 'end': 1})
     cid = result['pages'][0]['citation_id']
     paper = source.session['paper']

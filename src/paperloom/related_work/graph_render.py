@@ -1,7 +1,7 @@
 """Local, CSP-compatible graph document rendering."""
 import html
 import json
-from arxiv_ra.resources import PACKAGE_ROOT
+from paperloom.resources import PACKAGE_ROOT
 from pathlib import Path
 
 

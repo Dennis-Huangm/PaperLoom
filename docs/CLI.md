@@ -65,12 +65,24 @@ paperloom --config config.yaml gui
 wheel 安装适用于已有 Python 环境：
 
 ```bash
-python -m pip install './arxiv_research_assistant-1.6.0-py3-none-any.whl[gui]'
+python -m pip install './paperloom-1.6.0-py3-none-any.whl[gui]'
 ```
 
 wheel 不包含用户配置和启动脚本，需要另外下载源码包或从仓库取得 [配置模板](../config.example.yaml) 与 [环境变量模板](../.env.example)，保存为 `config.yaml` / `.env` 后启动。
 
-下面的 `paperloom` 命令需在已激活环境中执行。Windows 也可使用 `scripts/run.ps1 <命令>`。旧命令 `arxiv-ra`、模块 `arxiv_ra` 和发行包名 `arxiv-research-assistant` 保持兼容。
+下面的 `paperloom` 命令需在已激活环境中执行，也可使用 `python -m paperloom`。Windows 还可使用 `scripts/run.ps1 <命令>`。Python 包、发行包与命令统一命名为 `paperloom`，不再提供旧名称入口。
+
+### 从旧环境升级
+
+建议新建虚拟环境，再按上面的步骤安装当前源码或 wheel；现有 `config.yaml`、`.env`、`profiles/` 和 `run/` 可继续使用。安装新发行包不会自动卸载旧发行包或清除旧命令；复用环境时应先确认并卸载旧发行包，再重新安装当前项目。
+
+新配置的 Zotero 默认分类和 Obsidian 默认根目录均为 `PaperLoom`；显式保存的自定义配置继续生效。本次命名调整不改写已有 Zotero 分类、Obsidian 笔记或 Windows 已注册任务。
+
+Obsidian 新同步使用 `PAPERLOOM_MANAGED_START` / `PAPERLOOM_MANAGED_END` 托管标记、`.paperloom-manifest.json` 清单及 `.paperloom-summary-cache.json` 缓存。已有托管资料需要单独迁移目录、清单路径、标记和内部链接；迁移前请备份知识库并暂停自动同步，避免在新目录重建资料或生成替代笔记。个人笔记内容应原样保留。
+
+Windows 已有任务不会随源码改名；重新注册前应在任务计划程序中核对并停用旧任务，再注册下面的 `PaperLoom` 任务，避免重复执行。
+
+共享限速目录的可选环境变量为 `PAPERLOOM_RATE_LIMIT_DIR`；默认仍使用当前用户的 `PaperLoom/rate-limits` 目录。
 
 ## 常用命令
 
@@ -137,7 +149,7 @@ paperloom schedule
 
 ### Windows 计划任务
 
-以下命令会为当前用户创建或更新兼容任务 `arXiv Research Assistant`；任务需要电脑运行且该用户已登录。注册前会用项目 Python 做本地检查。
+以下命令会为当前用户创建或更新任务 `PaperLoom`；任务需要电脑运行且该用户已登录。注册前会用项目 Python 做本地检查。
 
 ```powershell
 # 推荐：每 5 分钟检查网页中保存的多方向计划

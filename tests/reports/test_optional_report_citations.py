@@ -3,12 +3,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from arxiv_ra.config import LLMConfig
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.reports.report_citations import attach_citations
-from arxiv_ra.reports.render import report_document
-from arxiv_ra.sources.source_spans import source_spans
+from paperloom.config import LLMConfig
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator
+from paperloom.reports.report_citations import attach_citations
+from paperloom.reports.render import report_document
+from paperloom.sources.source_spans import source_spans
 
 
 @pytest.mark.parametrize('content', [
@@ -50,7 +50,7 @@ def test_linking_preserves_disagreeing_values_without_numeric_audit():
 
 
 def test_broken_locator_delivers_original_content_without_internal_tokens(monkeypatch):
-    import arxiv_ra.reports.report_citations as module
+    import paperloom.reports.report_citations as module
     monkeypatch.setattr(module, 'source_spans', Mock(side_effect=RuntimeError('locator unavailable')))
     raw = '# Paper\n\nClaim 99.9 [[证据ID:unknown]]\n\n| A | 10 |'
     report, evidence = attach_citations(raw, ParsedPaper('text', ['text']), pdf_available=True, full_report=True)
@@ -59,7 +59,7 @@ def test_broken_locator_delivers_original_content_without_internal_tokens(monkey
 
 
 def test_single_bad_reference_does_not_lose_good_references(monkeypatch):
-    import arxiv_ra.reports.report_citations as module
+    import paperloom.reports.report_citations as module
     parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
     key = next(iter(source_spans(parsed)))
     monkeypatch.setattr(module, 'exact_span', Mock(side_effect=ValueError('malformed ID')))
@@ -71,8 +71,8 @@ def test_single_bad_reference_does_not_lose_good_references(monkeypatch):
 
 @pytest.mark.parametrize('failure', ['none', 'source_bank', 'table_import', 'table_render'])
 def test_generation_survives_optional_table_organization_failure(monkeypatch, failure):
-    import arxiv_ra.reports.report as module
-    from arxiv_ra.reports.tables.report_tables import ReportTables
+    import paperloom.reports.report as module
+    from paperloom.reports.tables.report_tables import ReportTables
     retired = Mock(side_effect=AssertionError('No annotation review or retries'))
     monkeypatch.setattr(ReportTables, 'localize_annotations', retired)
     if failure == 'source_bank':
@@ -126,7 +126,7 @@ def test_bare_source_ids_render_as_page_links_and_reject_stale_ids():
 
 
 def test_bare_source_id_cleanup_also_runs_when_locator_fails(monkeypatch):
-    import arxiv_ra.reports.report_citations as module
+    import paperloom.reports.report_citations as module
     parsed = ParsedPaper('', ['A sufficiently long source excerpt for a usable citation.'])
     key = next(iter(source_spans(parsed)))
     monkeypatch.setattr(module, 'source_spans', Mock(side_effect=RuntimeError('unavailable')))
@@ -135,7 +135,7 @@ def test_bare_source_id_cleanup_also_runs_when_locator_fails(monkeypatch):
 
 
 def test_bare_id_normalization_is_idempotent_and_preserves_markdown_links():
-    from arxiv_ra.sources.source_spans import normalize_grouped_source_ids
+    from paperloom.sources.source_spans import normalize_grouped_source_ids
     key = 'S1-' + 'a' * 24 + '-3-0-490'
     raw = (f'[{key}](https://example.org) [{key}][ref]\n'
            f'[{key}]: https://example.org\n'

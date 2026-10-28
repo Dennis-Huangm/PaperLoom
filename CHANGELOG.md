@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Python 包、发行包、命令、启动脚本、资源文件及内部标识统一为 `paperloom` / `PaperLoom`，移除旧名称入口。
+- 新配置的 Zotero 分类、Obsidian 根目录及 Windows 定时任务默认使用 `PaperLoom`；已有外部资料和系统任务保留原样，升级与单独迁移说明见 `docs/CLI.md`。
+
 ## 1.6.0 - 2026-10-03
 
 ### Added
@@ -113,7 +118,7 @@
 ### Changed
 
 - 项目对外名称更新为 **PaperLoom · 知织**，标语为“把论文织成知识”。README、本地界面、新生成的报告、测试邮件与集成展示名称同步更新。
-- 新增 `paperloom` CLI 入口，保留 `arxiv-ra`、`arxiv_ra` 模块名及 `arxiv-research-assistant` 发行包名，兼容已有安装与脚本。
+- 新增 `paperloom` CLI 入口；当时保留的旧名称兼容入口已在后续命名统一中移除。
 - 新配置模板使用 PaperLoom 作为 Zotero 分类和 Obsidian 根目录名称；已有配置、旧默认目录、Obsidian 托管标记及 Windows 计划任务标识不自动迁移。
 - 新源码归档使用 `paperloom-<version>-source.zip`，历史版本说明与已有生成文件保留原有名称。
 - GitHub 仓库更名为 `Dennis-Huangm/PaperLoom`，README 增加新仓库的克隆与 Release 下载入口。

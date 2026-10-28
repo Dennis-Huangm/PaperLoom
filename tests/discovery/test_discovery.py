@@ -5,12 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from arxiv_ra.config import AppConfig, DiscoveryConfig
-from arxiv_ra.discovery.discovery import DiscoveryService, PaperResolver
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.discovery.metadata import MetadataVerifier
-from arxiv_ra.utils import read_json, write_json
+from paperloom.config import AppConfig, DiscoveryConfig
+from paperloom.discovery.discovery import DiscoveryService, PaperResolver
+from paperloom.papers.models import Author, Paper
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.discovery.metadata import MetadataVerifier
+from paperloom.utils import read_json, write_json
 
 
 def paper(aid="2609.00001", partial=False, **kw):
@@ -197,9 +197,9 @@ def test_same_day_papers_are_refreshed_in_digest(tmp_path, monkeypatch):
     old = [{"profile_id": "test", "paper": current.to_dict()}]
     write_json(target, old)
     write_json(p._state_path(), {"processed": [current.arxiv_id]})
-    from arxiv_ra.papers.models import VerifiedMetadata
+    from paperloom.papers.models import VerifiedMetadata
     monkeypatch.setattr(p, "_verify_selected", lambda papers, demo: {x.arxiv_id: VerifiedMetadata() for x in papers})
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.localize_abstracts", lambda *args: None)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *args: None)
     result = p.run(deliver=False)
     assert result.name == "index-test.html"
     assert [item["paper"]["arxiv_id"] for item in read_json(target)] == [current.arxiv_id]
@@ -235,9 +235,9 @@ def test_both_sources_failure_preserves_published_result(tmp_path):
 
 
 def test_partial_paper_report_and_render_support_unknown_dates(tmp_path):
-    from arxiv_ra.papers.models import VerifiedMetadata
-    from arxiv_ra.reports.report import ReportGenerator
-    from arxiv_ra.reports.render import render_recommendations
+    from paperloom.papers.models import VerifiedMetadata
+    from paperloom.reports.report import ReportGenerator
+    from paperloom.reports.render import render_recommendations
     p = paper(partial=True, published=None)
     metadata = VerifiedMetadata(sources=[p.metadata_label])
     generator = ReportGenerator(SimpleNamespace(enabled=False), AppConfig().llm)

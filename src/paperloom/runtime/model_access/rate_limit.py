@@ -65,7 +65,7 @@ def _thread_rate_limit(key: str, minimum_interval: float, checkpoint: Callable[[
 def _semantic_file_lock(checkpoint=None):
     """OS lock shared by this user's GUI, CLI and other project checkouts."""
     default = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.cache'))) / 'PaperLoom/rate-limits'
-    root = Path(os.environ.get('ARXIV_RA_RATE_LIMIT_DIR', str(default)))
+    root = Path(os.environ.get('PAPERLOOM_RATE_LIMIT_DIR', str(default)))
     root.mkdir(parents=True, exist_ok=True)
     with (root / 'semantic-scholar.lock').open('a+b') as handle:
         if os.name == 'nt':

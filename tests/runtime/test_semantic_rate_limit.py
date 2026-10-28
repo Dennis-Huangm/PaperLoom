@@ -9,11 +9,11 @@ def test_semantic_scholar_serializes_independent_processes(tmp_path):
     barrier = tmp_path / 'start'
     code = '''import sys,time
 from pathlib import Path
-from arxiv_ra.runtime.model_access.rate_limit import shared_rate_limit
+from paperloom.runtime.model_access.rate_limit import shared_rate_limit
 while not Path(sys.argv[1]).exists(): time.sleep(.01)
 with shared_rate_limit("semantic-scholar", 0): print(time.time(), flush=True)
 '''
-    env = {**os.environ, 'ARXIV_RA_RATE_LIMIT_DIR': str(tmp_path / 'limits')}
+    env = {**os.environ, 'PAPERLOOM_RATE_LIMIT_DIR': str(tmp_path / 'limits')}
     children = [subprocess.Popen([sys.executable, '-c', code, str(barrier)],
                                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 for _ in range(2)]
@@ -34,8 +34,8 @@ with shared_rate_limit("semantic-scholar", 0): print(time.time(), flush=True)
 
 def test_semantic_retry_each_acquires_slot(monkeypatch):
     from contextlib import contextmanager
-    from arxiv_ra.config import MetadataConfig
-    from arxiv_ra.discovery.metadata import MetadataVerifier
+    from paperloom.config import MetadataConfig
+    from paperloom.discovery.metadata import MetadataVerifier
     from types import SimpleNamespace
     slots = []
 
@@ -50,9 +50,9 @@ def test_semantic_retry_each_acquires_slot(monkeypatch):
                 return SimpleNamespace(status_code=429, headers={'Retry-After': '0'})
             return SimpleNamespace(status_code=200, json=lambda: {'title': 'Test'})
 
-    monkeypatch.setattr('arxiv_ra.discovery.metadata.shared_rate_limit', slot)
-    monkeypatch.setattr('arxiv_ra.discovery.metadata.time.sleep', lambda _: None)
-    monkeypatch.setattr('arxiv_ra.discovery.metadata.defer_rate_limit', lambda *_: None, raising=False)
+    monkeypatch.setattr('paperloom.discovery.metadata.shared_rate_limit', slot)
+    monkeypatch.setattr('paperloom.discovery.metadata.time.sleep', lambda _: None)
+    monkeypatch.setattr('paperloom.discovery.metadata.defer_rate_limit', lambda *_: None, raising=False)
     verifier = MetadataVerifier(MetadataConfig())
     verifier.client.close()
     verifier.client = Client()
@@ -62,12 +62,12 @@ def test_semantic_retry_each_acquires_slot(monkeypatch):
 
 def test_semantic_cooldown_reaches_another_process(tmp_path, monkeypatch):
     import time
-    from arxiv_ra.runtime.model_access.rate_limit import defer_rate_limit
-    monkeypatch.setenv('ARXIV_RA_RATE_LIMIT_DIR', str(tmp_path))
+    from paperloom.runtime.model_access.rate_limit import defer_rate_limit
+    monkeypatch.setenv('PAPERLOOM_RATE_LIMIT_DIR', str(tmp_path))
     defer_rate_limit('semantic-scholar', 1.3)
     started = time.time()
     child = subprocess.run([sys.executable, '-c',
-        'import time; from arxiv_ra.runtime.model_access.rate_limit import shared_rate_limit\n'
+        'import time; from paperloom.runtime.model_access.rate_limit import shared_rate_limit\n'
         'with shared_rate_limit("semantic-scholar", 0): print(time.time())'],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
     assert child.returncode == 0, child.stderr

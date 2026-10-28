@@ -5,11 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.reports.tables.report_tables import GeneratedReport, ReportTables
-from arxiv_ra.utils import read_json
+from paperloom.config import AppConfig
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.reports.tables.report_tables import GeneratedReport, ReportTables
+from paperloom.utils import read_json
 
 
 @pytest.mark.parametrize('stage', ['normal', 'outline', 'evidence'])
@@ -28,12 +28,12 @@ def test_pipeline_publishes_frozen_tables_or_preserves_them_after_failed_review(
         parser=SimpleNamespace(parse=lambda *args: ParsedPaper('Sparse source', ['Sparse source'])),
         arxiv_html=SimpleNamespace(fetch=lambda *args: []))
     if stage == 'outline':
-        import arxiv_ra.discovery.pipeline as module
+        import paperloom.discovery.pipeline as module
         finalize = module.finalize_report_structure
         monkeypatch.setattr(module, 'finalize_report_structure',
                             lambda *args: finalize(*args).replace('91.2', '9.12'))
     if stage == 'evidence':
-        import arxiv_ra.discovery.pipeline as module
+        import paperloom.discovery.pipeline as module
         attach = module.attach_evidence
         def damage_evidence(*args, **kwargs):
             report, evidence = attach(*args, **kwargs)

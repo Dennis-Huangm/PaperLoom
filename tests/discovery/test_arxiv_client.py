@@ -2,7 +2,7 @@ import httpx
 import pytest
 import ssl
 
-from arxiv_ra.discovery.arxiv_client import ArxivClient, parse_feed
+from paperloom.discovery.arxiv_client import ArxivClient, parse_feed
 
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
@@ -87,7 +87,7 @@ def test_arxiv_client_retries_transient_connection_reset(monkeypatch) -> None:
         return result
 
     monkeypatch.setattr(client.client, "get", fake_get)
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", delays.append)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", delays.append)
 
     paper = client.get("2608.01234")
 
@@ -103,7 +103,7 @@ def test_arxiv_client_reports_clear_error_after_retries(monkeypatch) -> None:
         raise httpx.ConnectError("connection reset", request=request)
 
     monkeypatch.setattr(client.client, "get", always_reset)
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", lambda _delay: None)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", lambda _delay: None)
 
     with pytest.raises(RuntimeError, match="已自动重试 2 次"):
         client.get("2608.01234")
@@ -214,7 +214,7 @@ def test_pdf_retries_interrupted_body_from_start(tmp_path, monkeypatch, version_
             "Content-Range": f"bytes 0-{len(payload) - 1}/{len(payload)}",
         })
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", delays.append)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", delays.append)
     client = ArxivClient(max_retries=3, retry_base_delay=1, min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
@@ -245,7 +245,7 @@ def test_pdf_exhausted_retries_preserve_existing_file(tmp_path, monkeypatch, ver
         requests.append(request)
         return httpx.Response(200, stream=InterruptedPDFStream())
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", delays.append)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", delays.append)
     client = ArxivClient(max_retries=2, retry_base_delay=1, min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
@@ -272,7 +272,7 @@ def test_pdf_does_not_retry_permanent_http_error(tmp_path, monkeypatch):
         requests.append(request)
         return httpx.Response(404)
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", delays.append)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", delays.append)
     client = ArxivClient(min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
@@ -285,7 +285,7 @@ def test_pdf_does_not_retry_permanent_http_error(tmp_path, monkeypatch):
 
 
 def test_pdf_reports_byte_progress_during_stream(tmp_path, monkeypatch):
-    from arxiv_ra.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
+    from paperloom.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
 
     payload = b"%PDF-1.7\n" + b"x" * (2 * 1024 * 1024)
     clock = [0.0]
@@ -297,7 +297,7 @@ def test_pdf_reports_byte_progress_during_stream(tmp_path, monkeypatch):
                 clock[0] += 2
                 yield payload[start:start + 1024 * 1024]
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.monotonic", lambda: clock[0])
     client = ArxivClient(min_interval=0)
     client.client.close()
     hooks = TaskHooks(progress=lambda detail, percent: updates.append((detail, percent)),
@@ -317,7 +317,7 @@ def test_pdf_reports_byte_progress_during_stream(tmp_path, monkeypatch):
 
 
 def test_pdf_cancellation_stops_stream_and_cleans_partial_file(tmp_path):
-    from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+    from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 
     cancelled = [False]
     chunks = []
@@ -372,7 +372,7 @@ def test_pdf_resumes_known_partial_body_or_restarts_if_range_ignored(tmp_path, m
             "ETag": '"pdf-v2"',
         })
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", lambda _: None)
     client = ArxivClient(min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
@@ -408,7 +408,7 @@ def test_pdf_rejects_mismatched_resume_without_replacing_existing_file(tmp_path,
             "ETag": '"changed"' if invalid == "etag" else '"original"',
         })
 
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", lambda _: None)
     client = ArxivClient(max_retries=1, min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
@@ -426,7 +426,7 @@ def test_pdf_rejects_mismatched_resume_without_replacing_existing_file(tmp_path,
 def test_pdf_rejects_incomplete_range_response(tmp_path, monkeypatch, content_range):
     payload = b"%PDF-1.7\n" + b"x" * 16384
     headers = {"Content-Range": content_range} if content_range else {}
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", lambda _: None)
     client = ArxivClient(max_retries=0, min_interval=0)
     client.client.close()
     with httpx.Client(transport=httpx.MockTransport(
@@ -449,7 +449,7 @@ def test_retry_after_long_cooldown_is_not_shortened(monkeypatch, date_header):
         @classmethod
         def now(cls, tz=None):
             return fixed_now
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.datetime", FixedDatetime)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.datetime", FixedDatetime)
     header = format_datetime(fixed_now + timedelta(seconds=120), usegmt=True) if date_header else "120"
     def handler(request):
         calls.append(clock[0])

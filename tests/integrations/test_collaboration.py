@@ -10,8 +10,8 @@ import yaml
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.web import create_app
-from arxiv_ra.utils import write_json
+from paperloom.web import create_app
+from paperloom.utils import write_json
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def test_obsidian_shortcut_requires_report_for_selected_revision(workspace):
 
 @pytest.fixture
 def zotero_server(monkeypatch):
-    from arxiv_ra.integrations.zotero import ZoteroClient
+    from paperloom.integrations.zotero import ZoteroClient
     monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'test')
     state = {'items': {}, 'writes': 0, 'fail': True}
     def handler(request):
@@ -118,9 +118,9 @@ def zotero_server(monkeypatch):
         if key in state['items']:
             return httpx.Response(200, json=state['items'][key])
         return httpx.Response(404)
-    monkeypatch.setattr('arxiv_ra.integrations.collaboration.ZoteroClient',
+    monkeypatch.setattr('paperloom.integrations.collaboration.ZoteroClient',
         lambda cfg: ZoteroClient(cfg, client=httpx.Client(transport=httpx.MockTransport(handler))))
-    monkeypatch.setattr('arxiv_ra.integrations.zotero.ZoteroClient',
+    monkeypatch.setattr('paperloom.integrations.zotero.ZoteroClient',
         lambda cfg: ZoteroClient(cfg, client=httpx.Client(transport=httpx.MockTransport(handler))))
     return state
 
@@ -216,8 +216,8 @@ def test_unlinked_note_does_not_claim_a_version_mismatch(workspace):
 
 
 def test_existing_auto_export_is_visible_without_a_collection_receipt(workspace):
-    from arxiv_ra.config import load_config
-    from arxiv_ra.integrations.obsidian import ObsidianExporter
+    from paperloom.config import load_config
+    from paperloom.integrations.obsidian import ObsidianExporter
     config, _ = workspace
     with TestClient(create_app(config)):
         pass
@@ -592,7 +592,7 @@ def test_collection_rejects_html_instead_of_pdf(workspace, monkeypatch, response
 
 
 def mock_pdf_transport(monkeypatch, handler):
-    from arxiv_ra.discovery.arxiv_client import ArxivClient
+    from paperloom.discovery.arxiv_client import ArxivClient
     clients = []
     def factory():
         adapter = ArxivClient(min_interval=0, max_retries=0)
@@ -601,8 +601,8 @@ def mock_pdf_transport(monkeypatch, handler):
         clients.append(adapter)
         return adapter
     monkeypatch.setenv('ARXIV_PDF_BACKEND', 'httpx')
-    monkeypatch.setattr('arxiv_ra.discovery.arxiv_client.ArxivClient', factory)
-    monkeypatch.setattr('arxiv_ra.discovery.arxiv_client.time.sleep', lambda _: None)
+    monkeypatch.setattr('paperloom.discovery.arxiv_client.ArxivClient', factory)
+    monkeypatch.setattr('paperloom.discovery.arxiv_client.time.sleep', lambda _: None)
     return clients
 
 

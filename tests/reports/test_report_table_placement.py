@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 
-from arxiv_ra.reports.report_completeness import restore_note_tables
-from arxiv_ra.reports.render import report_document
+from paperloom.reports.report_completeness import restore_note_tables
+from paperloom.reports.render import report_document
 
 
 def test_supplementary_tables_live_under_their_experiment_not_a_tail_list():
@@ -80,7 +80,7 @@ def test_large_restored_matrix_is_expandable_inside_its_discussion_with_all_cell
 
 
 def test_report_view_compacts_only_unknown_source_cells_without_touching_scores():
-    from arxiv_ra.reports.report_presentation import compact_report
+    from paperloom.reports.report_presentation import compact_report
     report = ('#### Table 12\n| Models | Winrate (%) | 原文依据 |\n|---|---|---|\n'
               '| A | 50.55 | 当前材料缺少可定位原文依据 |\n| B | 45.45 | [1](paper.pdf#page=16) |')
     output = compact_report(report)

@@ -106,7 +106,7 @@ class _JobThreads:
         with self.lock:
             if self.closed:
                 raise RuntimeError("任务执行器已关闭")
-            thread = threading.Thread(target=run, name="arxiv-ra-gui")
+            thread = threading.Thread(target=run, name="paperloom-gui")
             self.threads.add(thread)
             try:
                 thread.start()
@@ -135,7 +135,7 @@ class JobManager:
         self.output_root = output_root.resolve()
         self.store = JobStore(self.output_root)
         self.executor = _JobThreads() if max_parallel is None else ThreadPoolExecutor(
-            max_workers=8, thread_name_prefix="arxiv-ra-gui"
+            max_workers=8, thread_name_prefix="paperloom-gui"
         )
         self.jobs: dict[str, BackgroundJob] = {}
         self.pending: list[tuple[str, Callable[[], Path | None]]] = []

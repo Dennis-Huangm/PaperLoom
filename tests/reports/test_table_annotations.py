@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import pytest
 
-from arxiv_ra.reports.tables.report_tables import ReportTables, SourceTable, TableVariant, TableRow
+from paperloom.reports.tables.report_tables import ReportTables, SourceTable, TableVariant, TableRow
 
 
 @pytest.mark.parametrize('model', ['BERT', 'Transformer', 'ResNet', 'Llama'])
@@ -11,7 +11,7 @@ def test_annotation_selection_cannot_discard_plain_model_names(model):
     catalogue = ReportTables.from_notes([
         f'### Table 1: Results\n\n{model} uses the baseline configuration.\n\n'
         f'| Model | Score |\n|---|---|\n| {model} | 1 |'], [])
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     units = annotation_units(catalogue.tables[0])
     groups = [[u['id'] for u in units]]
     stored = replace(catalogue, annotations=({'id': 'table-1', 'groups': groups},)).to_dict()
@@ -50,7 +50,7 @@ def test_annotation_review_preserves_absolute_value_notes_outside_matrices():
 
 
 def test_parenthesized_caption_and_quoted_notes_are_atomic_clauses():
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     catalogue = ReportTables.from_notes([
         '### Table 6: CIFAR results\n\n'
         '中文说明：CIFAR-10 测试集错误率（%，越低越好）。展示为“最优，均值；方差”。\n\n'
@@ -80,7 +80,7 @@ def ruler_table():
 
 def test_ruler_caption_and_paraphrased_notes_have_one_display_without_rewriting_cells():
     catalogue = ruler_table()
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     units = annotation_units(catalogue.tables[0])
     by_text = {u['text']: u['id'] for u in units}
     # A semantic selector chooses existing text, never generates replacement facts.
@@ -128,7 +128,7 @@ def test_invalid_annotation_partition_preserves_every_scientific_note():
 
 
 def test_unique_conditions_are_not_lost_by_numeric_deduplication():
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     catalogue = ReportTables.from_notes([
         '### Table 2: Results\n\n说明：Five runs.\n\n'
         '*注：temperature=0.2; MSE ↓; Tokens in k.*\n\n'
@@ -145,7 +145,7 @@ def test_unique_conditions_are_not_lost_by_numeric_deduplication():
 
 def test_formulas_lists_and_named_model_conditions_are_preserved():
     from dataclasses import replace
-    from arxiv_ra.reports.tables.table_annotations import annotation_units, validate_groups
+    from paperloom.reports.tables.table_annotations import annotation_units, validate_groups
     base = ruler_table().tables[0]
     notes = ('$$\nx = 5; y = 7\n$$', '- only subset A\n- excludes invalid samples',
              'GPT-5.5 uses temperature=0.2。', 'GPT-5.5 uses temperature=0.8。')
@@ -163,7 +163,7 @@ def test_formulas_lists_and_named_model_conditions_are_preserved():
 
 def test_selected_annotation_does_not_end_in_a_dangling_comma():
     from dataclasses import replace
-    from arxiv_ra.reports.tables.table_annotations import display_annotations
+    from paperloom.reports.tables.table_annotations import display_annotations
     table = ruler_table().tables[0]
     table = replace(table, variants=(replace(table.variants[0], context=('模型固定，',)),))
     _, notes = display_annotations(table)
@@ -172,7 +172,7 @@ def test_selected_annotation_does_not_end_in_a_dangling_comma():
 
 def test_review_rejects_removed_or_changed_table_note_even_without_selection():
     from dataclasses import replace
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     import re
     table = ruler_table().tables[0]
     table = replace(table, variants=(replace(table.variants[0], context=('All scores exclude ties and use held-out samples.',)),))

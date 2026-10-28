@@ -2,15 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from arxiv_ra.sources.pdf_download import download_with_curl
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+from paperloom.sources.pdf_download import download_with_curl
+from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
 
 
 @pytest.mark.parametrize("bad_response", [None, "offset", "length", "modified", "html", "retry"])
 def test_curl_validates_ranges_and_preserves_destination(tmp_path, monkeypatch, bad_response):
     from contextlib import nullcontext
-    monkeypatch.setattr("arxiv_ra.sources.pdf_download.shared_rate_limit", lambda *_, **kwargs: nullcontext())
-    monkeypatch.setattr("arxiv_ra.sources.pdf_download.time.sleep", lambda _: None)
+    monkeypatch.setattr("paperloom.sources.pdf_download.shared_rate_limit", lambda *_, **kwargs: nullcontext())
+    monkeypatch.setattr("paperloom.sources.pdf_download.time.sleep", lambda _: None)
     payload = b"%PDF-1.7\n" + b"x" * (1024 * 1024 + 16384)
     destination = tmp_path / "paper.pdf"
     destination.write_bytes(b"existing complete PDF")
@@ -52,7 +52,7 @@ def test_curl_validates_ranges_and_preserves_destination(tmp_path, monkeypatch, 
         def poll(self):
             return self.returncode
 
-    monkeypatch.setattr("arxiv_ra.sources.pdf_download.subprocess.Popen", Process)
+    monkeypatch.setattr("paperloom.sources.pdf_download.subprocess.Popen", Process)
     if bad_response and bad_response != "retry":
         with pytest.raises(RuntimeError, match="校验失败"):
             download_with_curl("https://arxiv.org/pdf/testv1", destination, "testv1", 0)
@@ -88,7 +88,7 @@ def test_curl_cancellation_terminates_process_and_cleans_files(tmp_path, monkeyp
         def wait(self, **kwargs):
             return self.returncode
 
-    monkeypatch.setattr("arxiv_ra.sources.pdf_download.subprocess.Popen", Process)
+    monkeypatch.setattr("paperloom.sources.pdf_download.subprocess.Popen", Process)
     hooks = TaskHooks(progress=lambda *_: None, warning=lambda *_: None, is_cancelled=lambda: cancelled[0])
     with bind_task_hooks(hooks), pytest.raises(TaskCancelled):
         download_with_curl("https://arxiv.org/pdf/testv1", tmp_path / "paper.pdf", "testv1", 0)
@@ -97,10 +97,10 @@ def test_curl_cancellation_terminates_process_and_cleans_files(tmp_path, monkeyp
 
 
 def test_arxiv_routes_only_pdf_to_optional_backend(tmp_path, monkeypatch):
-    from arxiv_ra.discovery.arxiv_client import ArxivClient
+    from paperloom.discovery.arxiv_client import ArxivClient
     calls = []
     monkeypatch.setenv("ARXIV_PDF_BACKEND", "curl-direct")
-    monkeypatch.setattr("arxiv_ra.sources.pdf_download.download_with_curl", lambda *args: calls.append(args))
+    monkeypatch.setattr("paperloom.sources.pdf_download.download_with_curl", lambda *args: calls.append(args))
     client = ArxivClient(max_retries=2)
     try:
         client._download_pdf("https://arxiv.org/pdf/testv1", tmp_path / "paper.pdf", "testv1")

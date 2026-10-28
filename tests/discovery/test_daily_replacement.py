@@ -4,11 +4,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.models import Paper, VerifiedMetadata
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.papers.storage import read_recommendations
-from arxiv_ra.utils import write_json
+from paperloom.config import AppConfig
+from paperloom.papers.models import Paper, VerifiedMetadata
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.papers.storage import read_recommendations
+from paperloom.utils import write_json
 
 
 def test_same_day_rerun_replaces_and_reconsiders_today(tmp_path, monkeypatch):
@@ -30,7 +30,7 @@ def test_same_day_rerun_replaces_and_reconsiders_today(tmp_path, monkeypatch):
     values = [a, b]
     monkeypatch.setattr(pipeline, '_discover_papers', lambda *args, **kwargs: values)
     monkeypatch.setattr(pipeline, '_run_optional_integrations', lambda *args: None)
-    monkeypatch.setattr('arxiv_ra.discovery.pipeline.localize_abstracts', lambda *args: None)
+    monkeypatch.setattr('paperloom.discovery.pipeline.localize_abstracts', lambda *args: None)
     pipeline.run(deliver=False)
     assert len(read_recommendations(tmp_path, today, 'test')) == 2
     # Current-day papers remain eligible, earlier days stay excluded at every stage.

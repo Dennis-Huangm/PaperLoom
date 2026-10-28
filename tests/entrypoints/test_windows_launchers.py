@@ -25,9 +25,9 @@ def project(tmp_path):
     (root / 'config.yaml').write_text('output_dir: run\n', encoding='utf-8')
     venv.EnvBuilder(with_pip=False).create(root / '.venv')
     stub = tmp_path / 'stub'
-    (stub / 'arxiv_ra').mkdir(parents=True)
-    (stub / 'arxiv_ra/__init__.py').write_text('', encoding='utf-8')
-    (stub / 'arxiv_ra/__main__.py').write_text(
+    (stub / 'paperloom').mkdir(parents=True)
+    (stub / 'paperloom/__init__.py').write_text('', encoding='utf-8')
+    (stub / 'paperloom/__main__.py').write_text(
         'import json,os,sys\nfrom pathlib import Path\n'
         'Path(os.environ["CAPTURE"]).write_text(json.dumps({"python":sys.executable, '
         '"args":sys.argv[1:],"cwd":os.getcwd()}),encoding="utf-8")\n'

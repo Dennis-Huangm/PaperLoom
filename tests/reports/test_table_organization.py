@@ -1,6 +1,6 @@
 import json
-from arxiv_ra.reports.tables.table_organization import organize_tables
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.table_organization import organize_tables
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_model_merges_semantic_duplicates_without_retyping_cells():
@@ -30,7 +30,7 @@ def test_model_text_is_not_reinterpreted_by_legacy_caption_rules():
 
 
 import pytest
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled
+from paperloom.runtime.jobs.task_runtime import TaskCancelled
 
 
 @pytest.mark.parametrize('response', [RuntimeError('offline'), 'not json',
@@ -72,9 +72,9 @@ def test_model_retains_distinct_conditions_with_identical_numbers():
 def test_report_generation_uses_organized_tables_without_semantic_rule_import(monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import Mock
-    from arxiv_ra.config import LLMConfig
-    from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-    from arxiv_ra.reports.report import ReportGenerator
+    from paperloom.config import LLMConfig
+    from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+    from paperloom.reports.report import ReportGenerator
     note = '### Table 1\n| Model | Score |\n|---|---|\n| A | 91.2 |'
     plan = {'tables': [{'number': 1, 'caption': '模型表现', 'variants': [
         {'schema': 'e1', 'condition': '', 'note': '分数越高越好。', 'rows': [['e1-r1']]}]}]}
@@ -93,9 +93,9 @@ def test_report_generation_uses_organized_tables_without_semantic_rule_import(mo
 def test_organization_api_failure_is_a_single_outbound_attempt():
     from types import SimpleNamespace
     from unittest.mock import Mock
-    from arxiv_ra.config import LLMConfig
-    from arxiv_ra.runtime.model_access.llm import LLMClient
-    from arxiv_ra.reports.report import ReportGenerator
+    from paperloom.config import LLMConfig
+    from paperloom.runtime.model_access.llm import LLMClient
+    from paperloom.reports.report import ReportGenerator
     client = Mock()
     client.with_options.return_value = client
     client.chat.completions.create.side_effect = RuntimeError('offline')

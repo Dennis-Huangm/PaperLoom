@@ -5,9 +5,9 @@ import pytest
 
 import fitz
 
-from arxiv_ra.config import PDFConfig
-from arxiv_ra.papers.models import FigureCandidate
-from arxiv_ra.sources.pdf_pipeline import PDFParser, extract_report_figures, extract_pre_experiment_figures, is_reliable_main_figure, score_figure
+from paperloom.config import PDFConfig
+from paperloom.papers.models import FigureCandidate
+from paperloom.sources.pdf_pipeline import PDFParser, extract_report_figures, extract_pre_experiment_figures, is_reliable_main_figure, score_figure
 
 
 def test_framework_figure_beats_late_result_plot() -> None:
@@ -278,7 +278,7 @@ def test_unknown_parser_is_rejected_instead_of_silently_using_another(tmp_path):
 
 
 def test_cancellation_during_docling_propagates_without_text_fallback(tmp_path, monkeypatch):
-    from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled
+    from paperloom.runtime.jobs.task_runtime import TaskCancelled
 
     def cancel(*args, **kwargs):
         raise TaskCancelled()
@@ -291,7 +291,7 @@ def test_cancellation_during_docling_propagates_without_text_fallback(tmp_path, 
 
 
 def test_docling_failure_keeps_text_and_reports_its_limitations(tmp_path, monkeypatch):
-    from arxiv_ra.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
+    from paperloom.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
 
     def fail(*args, **kwargs):
         raise RuntimeError('Offline converter failure')

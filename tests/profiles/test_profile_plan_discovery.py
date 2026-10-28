@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pytest
 import httpx
 
-from arxiv_ra.config import DiscoveryConfig
-from arxiv_ra.discovery.discovery import DiscoveryService
-from arxiv_ra.papers.models import Paper
+from paperloom.config import DiscoveryConfig
+from paperloom.discovery.discovery import DiscoveryService
+from paperloom.papers.models import Paper
 
 
 def paper(aid="2609.00001", title="World models for robots", abstract="Robot control with world models."):
@@ -46,7 +46,7 @@ def test_small_budgets_never_issue_zero_limit_requests(tmp_path, budget, expecte
 
 
 def test_arxiv_compiles_grouped_literals_and_rejects_raw_query_syntax():
-    from arxiv_ra.discovery.arxiv_client import ArxivClient
+    from paperloom.discovery.arxiv_client import ArxivClient
     queries = []
     def respond(request):
         queries.append(request.url.params["search_query"])

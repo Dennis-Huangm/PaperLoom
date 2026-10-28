@@ -3,11 +3,11 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.reading_state import ReadingConflict, ReadingStateStore
-from arxiv_ra.utils import write_json
-from arxiv_ra.web import create_app
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.reading_state import ReadingConflict, ReadingStateStore
+from paperloom.utils import write_json
+from paperloom.web import create_app
 
 
 def save(store, **changes):
@@ -49,7 +49,7 @@ def test_failed_write_retains_personal_note(tmp_path, monkeypatch):
     library = PaperLibraryStore(tmp_path, 'a')
     library.add({'paper': {'arxiv_id': '2407.05600'}}, 'A')
     before = save(library.state)
-    monkeypatch.setattr('arxiv_ra.papers.reading_state.write_json', lambda *a: (_ for _ in ()).throw(OSError('disk full')))
+    monkeypatch.setattr('paperloom.papers.reading_state.write_json', lambda *a: (_ for _ in ()).throw(OSError('disk full')))
     with pytest.raises(OSError):
         save(library.state, notes='replacement', expected_updated_at=before['updated_at'])
     assert library.state.snapshot()['reading']['2407.05600'] == before

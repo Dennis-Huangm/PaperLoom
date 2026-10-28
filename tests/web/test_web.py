@@ -8,12 +8,12 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.discovery.abstracts import localize_abstracts
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.runtime.jobs.task_runtime import task_progress, task_warning
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import JobManager, create_app, latest_recommendations, recommendation_history, recommendations_for_date, result_artifact_url, save_discovery_settings, update_dotenv
+from paperloom.discovery.abstracts import localize_abstracts
+from paperloom.config import AppConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.runtime.jobs.task_runtime import task_progress, task_warning
+from paperloom.utils import read_json, write_json
+from paperloom.web import JobManager, create_app, latest_recommendations, recommendation_history, recommendations_for_date, result_artifact_url, save_discovery_settings, update_dotenv
 
 
 def _write_config(path: Path) -> None:
@@ -100,13 +100,13 @@ def _full_settings_form() -> dict[str, str]:
         "zotero_mode": "local",
         "zotero_base_url": "http://127.0.0.1:23119/api",
         "zotero_api_key_env": "ZOTERO_LOCAL_API_KEY",
-        "zotero_collection_name": "arXiv Research Assistant",
+        "zotero_collection_name": "PaperLoom",
         "zotero_attach_pdf": "true",
         "zotero_pdf_attachment_mode": "imported_file",
         "zotero_attach_report": "true",
         "zotero_add_profile_tag": "true",
         "obsidian_vault_path": "",
-        "obsidian_root_folder": "arXiv Research Assistant",
+        "obsidian_root_folder": "PaperLoom",
         "obsidian_home_folder": "Home",
         "obsidian_daily_folder": "Daily",
         "obsidian_papers_folder": "Papers",
@@ -302,7 +302,7 @@ def test_dashboard_can_switch_to_historical_recommendation_date(
 def test_dashboard_shows_discovery_source_only_once_in_recommendation_evidence(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.localize_abstracts", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("paperloom.discovery.abstracts.localize_abstracts", lambda *_args, **_kwargs: None)
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
     date_dir = tmp_path / "run" / "2026-09-28"
@@ -429,7 +429,7 @@ def test_localized_abstracts_are_generated_once_and_cached(tmp_path: Path, monke
             assert json_mode is True
             return '{"papers":[{"id":"2407.05600","abstract_zh":"该论文研究智能体图像生成，并通过统一策略协调推理、工具调用与图像输出。原文 2 · PDF 第 1 页。 ---","recommendation_detail":"它将推理、工具调用与图像输出置于同一策略中，可直接用于分析 AgenticT2I 的统一决策机制。原文 3 · PDF 第 2 页。"}]}'
 
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", FakeLLM)
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", FakeLLM)
     output_root = tmp_path / "run"
     output_root.mkdir()
     recommendations = [
@@ -467,7 +467,7 @@ def test_background_job_surfaces_llm_localization_failure_as_component_warning(
         def chat(self, *_args, **_kwargs) -> str:
             raise ConnectionError("invalid LLM base URL")
 
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", BrokenLLM)
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", BrokenLLM)
     manager = JobManager(tmp_path, max_parallel=1)
     result = tmp_path / "digest.html"
     warning_published = threading.Event()
@@ -515,7 +515,7 @@ def test_non_generating_localization_is_fast_and_does_not_write_cache(
         def __init__(self, _config) -> None:
             raise AssertionError("page rendering must not initialize the LLM")
 
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", ForbiddenLLM)
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", ForbiddenLLM)
     output_root = tmp_path / "run"
     output_root.mkdir()
     recommendations = [
@@ -557,7 +557,7 @@ def test_localization_network_call_does_not_hold_cache_lock(
             release.wait(timeout=3)
             return '{"papers":[{"id":"2609.00002","abstract_zh":"阻塞任务的中文摘要。","recommendation_detail":"阻塞任务的推荐依据。"}]}'
 
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", BlockingLLM)
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", BlockingLLM)
     output_root = tmp_path / "run"
     output_root.mkdir()
     writer_payload = [
@@ -808,7 +808,7 @@ def test_invalid_graph_budget_returns_validation_error_without_saving(tmp_path: 
 
 
 def test_hybrid_settings_save_and_roundtrip_through_active_profile(tmp_path: Path) -> None:
-    from arxiv_ra.config import load_config
+    from paperloom.config import load_config
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
     app = create_app(config_path)
@@ -906,7 +906,7 @@ def test_gui_updates_all_config_sections(tmp_path: Path) -> None:
     assert payload["zotero"]["enabled"] is True
     assert payload["zotero"]["pdf_attachment_mode"] == "imported_file"
     assert payload["obsidian"]["enabled"] is False
-    assert payload["obsidian"]["root_folder"] == "arXiv Research Assistant"
+    assert payload["obsidian"]["root_folder"] == "PaperLoom"
     assert "jobs" not in payload
     assert app.state.jobs.max_parallel is None
     assert payload["weekly"]["enabled"] is True
@@ -1098,7 +1098,7 @@ def test_all_queued_jobs_keep_submission_profile_and_distinct_identity(tmp_path,
 
     for module, name in (("discovery.pipeline", "DailyPipeline"), ("reports.weekly", "WeeklySynthesizer"),
                          ("web.routes.versions", "VersionTracker"), ("web.routes.related_work", "CitationExplorer"), ("web.routes.jobs", "ObsidianExporter")):
-        monkeypatch.setattr(f"arxiv_ra.{module}.{name}", Runner)
+        monkeypatch.setattr(f"paperloom.{module}.{name}", Runner)
 
     def block():
         started.set()
@@ -1150,7 +1150,7 @@ def test_history_report_captures_selected_day_before_queue_execution(tmp_path, m
             completed.set()
             return tmp_path / "run" / "report.md"
 
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.DailyPipeline", Pipeline)
+    monkeypatch.setattr("paperloom.discovery.pipeline.DailyPipeline", Pipeline)
     raw = {"arxiv_id": "2609.00001", "title": "Historical paper", "metadata_status": "complete", "version": 2,
            "authors": [{"name": "A"}], "abstract": "Full abstract", "abstract_zh": "摘要", "recommendation_detail": "推荐",
            "primary_category": "cs.AI", "categories": ["cs.AI"], "final_score": 5,
@@ -1228,8 +1228,8 @@ def test_gui_creates_profile_from_keywords_and_references(tmp_path: Path, monkey
     _write_config(config_path)
 
     from types import SimpleNamespace
-    from arxiv_ra.runtime.research_clients import ResearchClients
-    from arxiv_ra.papers.models import Paper
+    from paperloom.runtime.research_clients import ResearchClients
+    from paperloom.papers.models import Paper
     reference = Paper("2407.05600", "Reference", [], "Robot world models", ["cs.RO"], "cs.RO", None, None, "", "")
     monkeypatch.setattr(ResearchClients, "llm", property(lambda self: SimpleNamespace(enabled=False)))
     monkeypatch.setattr(ResearchClients, "arxiv", property(lambda self: SimpleNamespace(get=lambda aid: reference)))
@@ -1390,7 +1390,7 @@ def test_zotero_save_reports_unavailable_before_downloading_pdf(tmp_path: Path, 
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "arxiv_ra.integrations.zotero.ZoteroClient.status",
+        "paperloom.integrations.zotero.ZoteroClient.status",
         lambda self: {"ready": False, "authorized": False},
     )
     app = create_app(config_path)
@@ -1407,11 +1407,11 @@ def test_zotero_collections_endpoint_returns_picker_tree(tmp_path: Path, monkeyp
     config_path = tmp_path / "config.yaml"
     _write_config(config_path)
     monkeypatch.setattr(
-        "arxiv_ra.integrations.zotero.ZoteroClient.status",
+        "paperloom.integrations.zotero.ZoteroClient.status",
         lambda self: {"ready": True, "authorized": True},
     )
     monkeypatch.setattr(
-        "arxiv_ra.integrations.zotero.ZoteroClient.list_collections",
+        "paperloom.integrations.zotero.ZoteroClient.list_collections",
         lambda self: [
             {"key": "AIROOT01", "name": "AI", "parent_key": "", "label": "AI"},
             {"key": "AGENTS01", "name": "Agents", "parent_key": "AIROOT01", "label": "AI / Agents"},
@@ -1423,7 +1423,7 @@ def test_zotero_collections_endpoint_returns_picker_tree(tmp_path: Path, monkeyp
         response = client.get("/api/zotero/collections")
 
     assert response.status_code == 200
-    assert response.json()["default_name"] == "arXiv Research Assistant"
+    assert response.json()["default_name"] == "PaperLoom"
     assert response.json()["collections"][1]["label"] == "AI / Agents"
 
 

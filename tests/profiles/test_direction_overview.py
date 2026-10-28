@@ -7,12 +7,12 @@ import pymupdf
 import pytest
 import httpx
 
-from arxiv_ra.profiles.direction_overview import OverviewStore, OverviewGenerator
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.models import Paper
-from arxiv_ra.runtime.research_clients import ResearchClients
-from arxiv_ra.discovery.arxiv_client import ArxivClient
-from arxiv_ra.runtime.jobs.task_runtime import bind_task_hooks, TaskHooks, TaskCancelled
+from paperloom.profiles.direction_overview import OverviewStore, OverviewGenerator
+from paperloom.config import AppConfig
+from paperloom.papers.models import Paper
+from paperloom.runtime.research_clients import ResearchClients
+from paperloom.discovery.arxiv_client import ArxivClient
+from paperloom.runtime.jobs.task_runtime import bind_task_hooks, TaskHooks, TaskCancelled
 
 
 def direction():

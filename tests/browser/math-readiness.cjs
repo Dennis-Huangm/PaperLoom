@@ -9,7 +9,7 @@ const docs=JSON.parse(execFileSync(process.env.PYTHON || '.venv/Scripts/python.e
     await page.route('http://fixture/**',route=>{
       const path=new URL(route.request().url()).pathname;
       if(path.endsWith('katex.min.js')){katex=route;return;}
-      if(path.startsWith('/static/'))return route.fulfill({contentType:path.endsWith('.js')?'application/javascript':path.endsWith('.css')?'text/css':'application/octet-stream',body:fs.readFileSync('src/arxiv_ra'+path)});
+      if(path.startsWith('/static/'))return route.fulfill({contentType:path.endsWith('.js')?'application/javascript':path.endsWith('.css')?'text/css':'application/octet-stream',body:fs.readFileSync('src/paperloom'+path)});
       if(path.startsWith('/api/'))return route.fulfill({json:path.endsWith('/settings')?{model:'fixture'}:path.endsWith('/reports')?{reports:[]}:path.endsWith('/sessions')&&route.request().method()==='GET'?[]:{id:'fixture',paper:{title:'Fixture',arxiv_id:'2609.29718',version:2},messages:[],references:[]}});
       return route.fulfill({contentType:'text/html',body:docs[kind]});
     });
@@ -33,7 +33,7 @@ const docs=JSON.parse(execFileSync(process.env.PYTHON || '.venv/Scripts/python.e
       await page.locator('.print-result').click();
       assert.equal(await page.locator('body').getAttribute('data-printed'),'true');
     }
-    await katex.fulfill({contentType:'application/javascript',body:fs.readFileSync('src/arxiv_ra/static/vendor/katex/katex.min.js')});
+    await katex.fulfill({contentType:'application/javascript',body:fs.readFileSync('src/paperloom/static/vendor/katex/katex.min.js')});
     if(kind!=='reading')await page.locator('.math-inline .katex').first().waitFor();
     if(kind==='report')await page.waitForFunction(()=>document.querySelectorAll('.math-block .katex').length===80);
     await page.evaluate(()=>{const node=document.createElement('span');node.className='math-inline';node.id='late-math';node.textContent='y^2';document.body.append(node);});

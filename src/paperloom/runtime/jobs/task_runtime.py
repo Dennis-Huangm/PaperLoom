@@ -20,7 +20,7 @@ class TaskHooks:
 
 
 _CURRENT_HOOKS: ContextVar[TaskHooks | None] = ContextVar(
-    "arxiv_ra_task_hooks", default=None
+    "paperloom_task_hooks", default=None
 )
 
 

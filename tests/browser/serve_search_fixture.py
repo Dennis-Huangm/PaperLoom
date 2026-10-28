@@ -8,9 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import uvicorn
 
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.search import SearchIndex
-from arxiv_ra.web import create_app
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.search import SearchIndex
+from paperloom.web import create_app
 
 fixture_directory = TemporaryDirectory(prefix="paperloom-search-preview-")
 root = Path(fixture_directory.name)

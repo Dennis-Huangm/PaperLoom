@@ -6,13 +6,13 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.cli import build_parser
-from arxiv_ra.reports.comparison import ComparisonService, comparison_library, DIMENSIONS
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.utils import write_json, read_json
-from arxiv_ra.web import create_app
+from paperloom.cli import build_parser
+from paperloom.reports.comparison import ComparisonService, comparison_library, DIMENSIONS
+from paperloom.config import AppConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.utils import write_json, read_json
+from paperloom.web import create_app
 
 
 def paper(aid="2407.05600", version=1):

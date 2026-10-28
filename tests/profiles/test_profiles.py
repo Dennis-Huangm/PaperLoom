@@ -3,9 +3,9 @@ from pathlib import Path
 
 import yaml
 
-from arxiv_ra.config import AppConfig, load_config
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.profiles.profiles import ProfileGenerator, ProfileManager
+from paperloom.config import AppConfig, load_config
+from paperloom.papers.models import Author, Paper
+from paperloom.profiles.profiles import ProfileGenerator, ProfileManager
 
 
 def _config(path: Path) -> None:

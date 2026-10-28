@@ -9,5 +9,5 @@ if not exist ".venv\Scripts\python.exe" (
 )
 echo Starting PaperLoom with direct curl PDF downloads.
 echo API and LLM requests keep their existing proxy settings.
-".venv\Scripts\python.exe" -m arxiv_ra --config config.yaml gui
+".venv\Scripts\python.exe" -m paperloom --config config.yaml gui
 exit /b %errorlevel%

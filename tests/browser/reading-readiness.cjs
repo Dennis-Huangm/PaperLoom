@@ -11,7 +11,7 @@ const session = {id:'fixture', paper:{}, mode:'workspace', title:'新阅读对�
     page.on('pageerror', e => errors.push(e.message));
     await page.route('http://fixture/**', route => {
       const request = route.request(), path = new URL(request.url()).pathname;
-      if(path.startsWith('/static/')) return route.fulfill({contentType:path.endsWith('.js')?'application/javascript':'text/css', body:fs.readFileSync('src/arxiv_ra'+path,'utf8')});
+      if(path.startsWith('/static/')) return route.fulfill({contentType:path.endsWith('.js')?'application/javascript':'text/css', body:fs.readFileSync('src/paperloom'+path,'utf8')});
       if(path.startsWith('/api/reading/')) {
         requests.push({path, method:request.method(), profile:request.headers()['x-paperloom-profile']});
         if(path.endsWith('/settings')) {pending.settings=route;return;}

@@ -1,10 +1,10 @@
 """Material facts are usable without the web presentation adapter."""
-from arxiv_ra.utils import write_json
+from paperloom.utils import write_json
 
 
 def test_material_snapshot_uses_newer_receipts_without_web_fields(tmp_path):
-    from arxiv_ra.versions.version_catalog import tracking_snapshot
-    from arxiv_ra.web.web_catalog import version_tracking_data
+    from paperloom.versions.version_catalog import tracking_snapshot
+    from paperloom.web.web_catalog import version_tracking_data
 
     write_json(tmp_path / 'version-state-test.json', {'checked_at': '2026-10-01T00:00:00+00:00', 'items': {
         '2501.00001': {'arxiv_id': '2501.00001', 'title': 'Paper', 'sources': ['Zotero'],

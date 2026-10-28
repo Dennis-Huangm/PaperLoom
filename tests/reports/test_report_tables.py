@@ -1,5 +1,5 @@
 """The table catalogue is the source of displayed cells, independent of prose."""
-from arxiv_ra.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.report_tables import ReportTables
 
 
 def test_multiple_category_columns_survive_json_roundtrip():
@@ -126,10 +126,10 @@ def test_catalogue_cannot_be_silently_modified_or_lose_source_references():
 
 def test_generator_keeps_owned_tables_without_a_citation_repair_call(monkeypatch):
     from types import SimpleNamespace
-    from arxiv_ra.config import LLMConfig
-    from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-    from arxiv_ra.reports.report import ReportGenerator
-    import arxiv_ra.reports.report as module
+    from paperloom.config import LLMConfig
+    from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+    from paperloom.reports.report import ReportGenerator
+    import paperloom.reports.report as module
     note = '### Table 1: Results\n\n| Model | Score |\n|---|---|\n| A | 91.2 |\n| B | 87.1 |'
     draft = ('# Paper\n\n## 关键结果\n\n### 主结果\n分析。\n\n'
              '#### Table 1: Results\n\n| Model | Score |\n|---|---|\n| A | 999.0 |')
@@ -161,8 +161,8 @@ def test_examples_do_not_insert_tables_and_unknown_directives_do_not_leak():
 
 
 def test_publication_review_limits_do_not_reject_unchanged_experimental_cells():
-    from arxiv_ra.reports.evidence import attach_evidence
-    from arxiv_ra.papers.models import ParsedPaper
+    from paperloom.reports.evidence import attach_evidence
+    from paperloom.papers.models import ParsedPaper
     note = ('### Table 1: Scores\n| Model | Score | 原文依据 |\n|---|---|---|\n'
             '| A | 91.2 | [[证据ID:p1-s1]] |')
     catalogue = ReportTables.from_notes([note], [{'number':1}])

@@ -9,13 +9,13 @@ import shutil
 
 import fitz
 
-from arxiv_ra.reports.evidence import TOKEN, attach_evidence, source_table_inventory
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.reports.render import _local_asset_base, report_document
-from arxiv_ra.reports.report_completeness import _headings, normalize_table_titles, restore_note_tables
-from arxiv_ra.utils import atomic_write_text, read_json, write_json
-from arxiv_ra.reports.quality import normalized_excerpt
-from arxiv_ra.sources.source_spans import exact_span, source_spans
+from paperloom.reports.evidence import TOKEN, attach_evidence, source_table_inventory
+from paperloom.papers.models import ParsedPaper
+from paperloom.reports.render import _local_asset_base, report_document
+from paperloom.reports.report_completeness import _headings, normalize_table_titles, restore_note_tables
+from paperloom.utils import atomic_write_text, read_json, write_json
+from paperloom.reports.quality import normalized_excerpt
+from paperloom.sources.source_spans import exact_span, source_spans
 
 
 def integrate(directory: Path, root: Path, *, apply=False, parsed_file: Path | None = None, titles_only=False, audit_only=False):

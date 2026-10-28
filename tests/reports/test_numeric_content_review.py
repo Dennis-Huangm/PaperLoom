@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
 
 
 def test_lookup_limits_preserve_caption_and_prose_without_warning_prefixes():
@@ -30,7 +30,7 @@ def test_disagreeing_values_are_not_annotated_by_citation_binding():
 
 
 def test_restored_named_baselines_update_stale_availability_note_only():
-    from arxiv_ra.reports.report_completeness import restore_note_tables
+    from paperloom.reports.report_completeness import restore_note_tables
     report = ('## 关键结果\n\n### Table 2\n| Model | Score |\n|---|---|\n| Alpha | 1 |\n\n'
               'Table 2 中其他基线（Beta、Gamma 等）完整数值在当前材料中未完全保留。但 Alpha 表现较好。')
     partial = '### Table 2\n| Model | Score |\n|---|---|\n| Beta | 2 |'
@@ -42,7 +42,7 @@ def test_restored_named_baselines_update_stale_availability_note_only():
 
 
 def test_populated_rows_remove_stale_source_availability_placeholder_only():
-    from arxiv_ra.reports.report_completeness import reconcile_table_availability
+    from paperloom.reports.report_completeness import reconcile_table_availability
     report = ('### Table 2\n| Model | Score | 原文依据 |\n|---|---|---|\n'
               '| A | 1 | [1](paper.pdf#page=1)，（部分数值材料未提供） |\n'
               '| B | — | （部分数值材料未提供） |')

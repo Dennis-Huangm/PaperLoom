@@ -22,8 +22,8 @@ from ..utils import atomic_write_text, read_json, write_json
 from ..runtime.jobs.task_runtime import task_checkpoint, task_progress, task_warning
 
 
-MANAGED_START = "<!-- ARXIV_RA_MANAGED_START -->"
-MANAGED_END = "<!-- ARXIV_RA_MANAGED_END -->"
+MANAGED_START = "<!-- PAPERLOOM_MANAGED_START -->"
+MANAGED_END = "<!-- PAPERLOOM_MANAGED_END -->"
 _OBSIDIAN_SYNC_LOCK = threading.RLock()
 
 
@@ -248,7 +248,7 @@ class ObsidianExporter:
                 "date": date_label,
                 "profile": self.config.profile_name,
                 "paper_count": len(recommendations),
-                "source": "arxiv-research-assistant",
+                "source": "paperloom",
                 "tags": ["daily-papers", self._tag(self.config.profile_name)],
             },
             "\n".join(body).rstrip() + "\n",
@@ -325,7 +325,7 @@ class ObsidianExporter:
                 "week": week_id,
                 "profile": self.config.profile_name,
                 "paper_count": metadata.get("paper_count", 0),
-                "source": "arxiv-research-assistant",
+                "source": "paperloom",
                 "tags": ["weekly-review", self._tag(self.config.profile_name)],
             },
             body,
@@ -407,7 +407,7 @@ class ObsidianExporter:
         try:
             vault, root = self._paths(create=False)
             if not relative_path:
-                manifest = read_json(root / '.arxiv-ra-manifest.json', {}) or {}
+                manifest = read_json(root / '.paperloom-manifest.json', {}) or {}
                 if not isinstance(manifest, dict):
                     raise ObsidianError('笔记索引格式无效，请检查关联')
                 entry = self._paper_entry(manifest, arxiv_id)
@@ -501,21 +501,21 @@ class ObsidianExporter:
                 f"| {paper_link} | {item.get('year', '')} | {self._escape_table(item.get('venue', ''))} | {self._escape_table(item.get('status', ''))} | {self._escape_table(item.get('profile', ''))} |"
             )
         paper_index = self._managed_destination(self._folder("indexes") / "Papers.md")
-        paper_index = self._write_managed(paper_index, {"type": "paper-index", "source": "arxiv-research-assistant"}, "\n".join(paper_lines) + "\n")
+        paper_index = self._write_managed(paper_index, {"type": "paper-index", "source": "paperloom"}, "\n".join(paper_lines) + "\n")
 
         daily = sorted((manifest.get("daily") or {}).items(), reverse=True)
         daily_body = "# 每日推荐索引\n\n" + "\n".join(
             f"- [[{path}|{date} 论文推荐]]" for date, path in daily
         ) + "\n"
         daily_index = self._managed_destination(self._folder("indexes") / "Daily.md")
-        daily_index = self._write_managed(daily_index, {"type": "daily-index", "source": "arxiv-research-assistant"}, daily_body)
+        daily_index = self._write_managed(daily_index, {"type": "daily-index", "source": "paperloom"}, daily_body)
 
         weekly = sorted((manifest.get("weekly") or {}).items(), reverse=True)
         weekly_body = "# 研究周报索引\n\n" + "\n".join(
             f"- [[{path}|{week} 研究周报]]" for week, path in weekly
         ) + "\n"
         weekly_index = self._managed_destination(self._folder("indexes") / "Weekly.md")
-        weekly_index = self._write_managed(weekly_index, {"type": "weekly-index", "source": "arxiv-research-assistant"}, weekly_body)
+        weekly_index = self._write_managed(weekly_index, {"type": "weekly-index", "source": "paperloom"}, weekly_body)
 
         concept_map: dict[str, list[dict[str, Any]]] = {}
         for item in papers:
@@ -530,14 +530,14 @@ class ObsidianExporter:
             )
             self._write_managed(
                 path,
-                {"type": "concept", "concept": concept, "source": "arxiv-research-assistant", "tags": ["concept"]},
+                {"type": "concept", "concept": concept, "source": "paperloom", "tags": ["concept"]},
                 f"# {concept}\n\n## 相关论文\n\n{related}\n",
                 "\n## 我的理解\n\n",
             )
         concept_index = self._managed_destination(self._folder("indexes") / "Concepts.md")
         concept_index = self._write_managed(
             concept_index,
-            {"type": "concept-index", "source": "arxiv-research-assistant"},
+            {"type": "concept-index", "source": "paperloom"},
             "\n".join(concept_lines) + "\n",
         )
 
@@ -562,7 +562,7 @@ class ObsidianExporter:
             home_body.append(f"- 最新周报：[[{latest_weekly}]]")
         home = self._write_managed(
             home,
-            {"type": "knowledge-base-home", "source": "arxiv-research-assistant", "version": 2},
+            {"type": "knowledge-base-home", "source": "paperloom", "version": 2},
             "\n".join(home_body) + "\n",
             "\n## 我的研究入口\n\n",
         )
@@ -677,7 +677,7 @@ class ObsidianExporter:
                 "status": status,
                 "categories": paper.get("categories") or [paper.get("primary_category")],
                 "concepts": concepts,
-                "source": "arxiv-research-assistant",
+                "source": "paperloom",
                 "updated": str(paper.get("updated") or date or ""),
                 "tags": ["paper", self._tag(self.config.profile_name)],
             },
@@ -720,7 +720,7 @@ class ObsidianExporter:
         body.extend(["", "## 重点关键词", "", " · ".join(discovery.positive_keywords)])
         path = self._write_managed(
             path,
-            {"type": "research-profile", "profile_id": self.config.profile_id, "source": "arxiv-research-assistant", "tags": ["research-profile"]},
+            {"type": "research-profile", "profile_id": self.config.profile_id, "source": "paperloom", "tags": ["research-profile"]},
             "\n".join(body).rstrip() + "\n",
             "\n## 我的方向备注\n\n",
         )
@@ -894,7 +894,7 @@ class ObsidianExporter:
         return re.sub(r"\n{3,}", "\n\n", pattern.sub(replace, markdown)).strip()
 
     def _summary_cache(self) -> dict[str, Any]:
-        path = self._root(create=True) / ".arxiv-ra-summary-cache.json"
+        path = self._root(create=True) / ".paperloom-summary-cache.json"
         try:
             payload = read_json(path, {}) or {}
         except (OSError, json.JSONDecodeError):
@@ -903,7 +903,7 @@ class ObsidianExporter:
 
     def _save_summary_cache(self, payload: dict[str, Any]) -> None:
         path = self._safe_target(
-            self._root(create=True) / ".arxiv-ra-summary-cache.json"
+            self._root(create=True) / ".paperloom-summary-cache.json"
         )
         write_json(path, payload)
 
@@ -952,7 +952,7 @@ class ObsidianExporter:
         return path
 
     def _manifest(self) -> dict[str, Any]:
-        path = self._root(create=True) / ".arxiv-ra-manifest.json"
+        path = self._root(create=True) / ".paperloom-manifest.json"
         try:
             payload = read_json(path, {}) or {}
         except (OSError, json.JSONDecodeError):
@@ -960,7 +960,7 @@ class ObsidianExporter:
         return payload if isinstance(payload, dict) else {}
 
     def _save_manifest(self, payload: dict[str, Any]) -> None:
-        path = self._safe_target(self._root(create=True) / ".arxiv-ra-manifest.json")
+        path = self._safe_target(self._root(create=True) / ".paperloom-manifest.json")
         write_json(path, payload)
 
     def _paths(self, create: bool) -> tuple[Path, Path]:
@@ -1128,21 +1128,21 @@ class ObsidianExporter:
 
     @staticmethod
     def _alternate_path(path: Path) -> Path:
-        candidate = path.with_name(f"{path.stem} (arXiv RA){path.suffix}")
+        candidate = path.with_name(f"{path.stem} (PaperLoom){path.suffix}")
         if len(str(candidate)) >= 240:
             digest = hashlib.sha256(path.name.encode("utf-8")).hexdigest()[:12]
-            candidate = path.with_name(f"arxiv-ra-{digest}{path.suffix}")
+            candidate = path.with_name(f"paperloom-{digest}{path.suffix}")
         counter = 2
         while candidate.exists() and MANAGED_START not in candidate.read_text(encoding="utf-8"):
-            if len(str(path.parent / f"{path.stem} (arXiv RA {counter}){path.suffix}")) < 240:
+            if len(str(path.parent / f"{path.stem} (PaperLoom {counter}){path.suffix}")) < 240:
                 candidate = path.with_name(
-                    f"{path.stem} (arXiv RA {counter}){path.suffix}"
+                    f"{path.stem} (PaperLoom {counter}){path.suffix}"
                 )
             else:
                 digest = hashlib.sha256(
                     f"{path.name}:{counter}".encode("utf-8")
                 ).hexdigest()[:12]
-                candidate = path.with_name(f"arxiv-ra-{digest}{path.suffix}")
+                candidate = path.with_name(f"paperloom-{digest}{path.suffix}")
             counter += 1
         return candidate
 

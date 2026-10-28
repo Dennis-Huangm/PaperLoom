@@ -3,10 +3,10 @@ import multiprocessing
 
 import pytest
 
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.reading_state import ReadingStateStore
-from arxiv_ra.utils import write_json
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.reading_state import ReadingStateStore
+from paperloom.utils import write_json
 
 
 def _save(root, aid):
@@ -33,7 +33,7 @@ def test_failed_transition_preserves_previous_state(tmp_path, monkeypatch):
         raise OSError("disk full")
 
     with monkeypatch.context() as patch:
-        patch.setattr("arxiv_ra.papers.reading_state.write_json", fail)
+        patch.setattr("paperloom.papers.reading_state.write_json", fail)
         with pytest.raises(OSError):
             FeedbackStore(tmp_path, "test").set({"arxiv_id": "1"}, "not_relevant")
     assert library.all() == previous

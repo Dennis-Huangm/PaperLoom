@@ -3,10 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.profiles.profile_plan import new_draft
-from arxiv_ra.profiles.profile_preview import preview_profile
-from arxiv_ra.runtime.research_clients import ResearchClients
+from paperloom.config import AppConfig
+from paperloom.profiles.profile_plan import new_draft
+from paperloom.profiles.profile_preview import preview_profile
+from paperloom.runtime.research_clients import ResearchClients
 
 
 def test_preview_has_independent_visible_date_range(monkeypatch):

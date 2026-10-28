@@ -121,8 +121,8 @@ class ZoteroConfig:
     mode: str = "local"
     base_url: str = "http://127.0.0.1:23119/api"
     api_key_env: str = "ZOTERO_LOCAL_API_KEY"
-    # Preserve the destination of older configs that omitted this field.
-    collection_name: str = "arXiv Research Assistant"
+    # Explicit collection names override the default for new configurations.
+    collection_name: str = "PaperLoom"
     attach_pdf: bool = True
     pdf_attachment_mode: str = "imported_file"
     attach_report: bool = True
@@ -133,8 +133,8 @@ class ZoteroConfig:
 class ObsidianConfig:
     enabled: bool = False
     vault_path: str = ""
-    # New templates use PaperLoom; old configs must not create a second vault tree.
-    root_folder: str = "arXiv Research Assistant"
+    # Existing explicit folders are preserved; omitted folders use this default.
+    root_folder: str = "PaperLoom"
     home_folder: str = "Home"
     daily_folder: str = "Daily"
     papers_folder: str = "Papers"

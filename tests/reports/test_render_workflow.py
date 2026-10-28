@@ -4,14 +4,14 @@ from pathlib import Path
 import pytest
 from bs4 import BeautifulSoup
 
-from arxiv_ra.reports.render import markdown_with_math, render_report
+from paperloom.reports.render import markdown_with_math, render_report
 
 
 @pytest.mark.parametrize('delimiters', [('$$', '$$'), ('$', '$'), (r'\[', r'\]')])
 @pytest.mark.parametrize('wrapped', [True, False])
 def test_resolved_evidence_inside_formula_becomes_link_outside_math(delimiters, wrapped):
-    from arxiv_ra.reports.evidence import attach_evidence
-    from arxiv_ra.papers.models import ParsedPaper
+    from paperloom.reports.evidence import attach_evidence
+    from paperloom.papers.models import ParsedPaper
     quote = 'The reward is the weighted sum of the six criterion scores.'
     marker = '[[证据:' + quote + ']]'
     suffix = r'\quad \text{' + marker + '}' if wrapped else ' ' + marker
@@ -124,7 +124,7 @@ def test_math_and_code_pipes_do_not_split_table_cells():
 
 
 def test_lost_list_structure_falls_back_to_readable_draft(tmp_path, monkeypatch):
-    from arxiv_ra.reports import markdown_rendering as engine
+    from paperloom.reports import markdown_rendering as engine
     target = tmp_path / 'report.html'
     target.write_text('previous valid report', encoding='utf-8')
     normal = engine._parser
@@ -135,8 +135,8 @@ def test_lost_list_structure_falls_back_to_readable_draft(tmp_path, monkeypatch)
 
 def test_sanitizer_structure_loss_falls_back_safely(tmp_path, monkeypatch):
     import re
-    import arxiv_ra.reports.render as renderer
-    from arxiv_ra.reports.markdown_rendering import ReportRenderError
+    import paperloom.reports.render as renderer
+    from paperloom.reports.markdown_rendering import ReportRenderError
     normal = renderer.nh3.clean
     monkeypatch.setattr(renderer.nh3, 'clean', lambda value, **kw:
                         re.sub(r'</?li\b[^>]*>', '', normal(value, **kw)))
@@ -146,7 +146,7 @@ def test_sanitizer_structure_loss_falls_back_safely(tmp_path, monkeypatch):
 
 
 def test_render_gate_prevents_table_cell_data_loss(tmp_path):
-    from arxiv_ra.reports.markdown_rendering import ReportRenderError
+    from paperloom.reports.markdown_rendering import ReportRenderError
     target = tmp_path / 'report.html'
     render_report('| A | B |\n| --- | --- |\n| 1 | 2 | 3 |', target, 'Test')
     assert '| 1 | 2 | 3 |' in BeautifulSoup(target.read_text(encoding='utf-8'), 'html.parser').get_text()
@@ -177,12 +177,12 @@ def test_pipeline_automatically_renders_model_lists_and_stops_on_structure_loss(
     from types import SimpleNamespace
     from unittest.mock import Mock
     import fitz
-    from arxiv_ra.config import AppConfig, PDFConfig
-    from arxiv_ra.papers.models import Paper, VerifiedMetadata
-    from arxiv_ra.sources.pdf_pipeline import PDFParser
-    from arxiv_ra.discovery.pipeline import DailyPipeline
-    from arxiv_ra.reports.report import ReportGenerator
-    from arxiv_ra.reports import markdown_rendering as engine
+    from paperloom.config import AppConfig, PDFConfig
+    from paperloom.papers.models import Paper, VerifiedMetadata
+    from paperloom.sources.pdf_pipeline import PDFParser
+    from paperloom.discovery.pipeline import DailyPipeline
+    from paperloom.reports.report import ReportGenerator
+    from paperloom.reports import markdown_rendering as engine
 
     source = tmp_path / 'source.pdf'
     with fitz.open() as pdf:
@@ -219,7 +219,7 @@ def test_pipeline_automatically_renders_model_lists_and_stops_on_structure_loss(
 def test_historical_report_layout_failure_serves_readable_draft(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from arxiv_ra.web.web_artifacts import ReportStaticFiles
+    from paperloom.web.web_artifacts import ReportStaticFiles
     bad = '| A | B |\n| --- | --- |\n| 1 | 2 | 3 |'
     (tmp_path / 'report.md').write_text(bad, encoding='utf-8')
     (tmp_path / 'report.html').write_text('old broken view', encoding='utf-8')

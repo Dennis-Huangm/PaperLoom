@@ -4,16 +4,16 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.models import Paper
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.discovery.ranker import rank_papers, finish_explanation
-from arxiv_ra.papers.reading_state import ReadingConflict
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
+from paperloom.config import AppConfig
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.models import Paper
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.discovery.ranker import rank_papers, finish_explanation
+from paperloom.papers.reading_state import ReadingConflict
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
 
 
 def paper(aid="2407.05600", title="Medical Image Segmentation"):
@@ -130,7 +130,7 @@ def test_feedback_ui_api_scope_undo_and_readonly_history(tmp_path, monkeypatch):
     app = create_app(config)
     output = tmp_path / "run"
     write_json(output / "2026-09-24/recommendations-alpha.json", [{"paper": paper().to_dict(), "verified": {}}])
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.localize_abstracts", lambda *a, **kw: None)
+    monkeypatch.setattr("paperloom.discovery.abstracts.localize_abstracts", lambda *a, **kw: None)
     with TestClient(app) as client:
         data = {"arxiv_id": paper().arxiv_id, "profile_id": "alpha", "verdict": "not_relevant"}
         assert client.post("/api/feedback", data={**data, "scope": "topic"}).status_code == 400

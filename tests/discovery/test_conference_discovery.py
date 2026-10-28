@@ -4,9 +4,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from arxiv_ra.config import DiscoveryConfig
-from arxiv_ra.discovery.discovery import DiscoveryService
-from arxiv_ra.papers.models import Author, Paper
+from paperloom.config import DiscoveryConfig
+from paperloom.discovery.discovery import DiscoveryService
+from paperloom.papers.models import Author, Paper
 
 
 def paper(aid='2101.00001', published=None):
@@ -18,7 +18,7 @@ def paper(aid='2101.00001', published=None):
 
 def test_neurips_follows_main_volume_before_association_and_caches_it(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     root = 'https://proceedings.neurips.cc/paper_files/paper/2025'
     main = root + '/vol38-main-conference'
     pages = {
@@ -44,7 +44,7 @@ def test_neurips_follows_main_volume_before_association_and_caches_it(tmp_path):
 @pytest.mark.parametrize('label', ['Proceedings of ICML 2025', 'ICML 2025 Proceedings'])
 def test_icml_index_accepts_main_proceedings_names_only(label, tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     def handler(request):
         if request.url.path == '/':
             return httpx.Response(200, text=f'<ul><li><a href="v267">Volume 267</a> {label}</li>'
@@ -69,7 +69,7 @@ def test_icml_index_accepts_main_proceedings_names_only(label, tmp_path):
 
 def test_acl_untyped_historical_volume_reports_the_actual_limitation(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     fixture = '<collection><volume id="1"><meta><year>2019</year><venue>acl</venue>'
     fixture += '<booktitle>Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics</booktitle>'
     fixture += '</meta><paper id="1"><title>Reliable agents</title></paper></volume></collection>'
@@ -90,7 +90,7 @@ def test_acl_untyped_historical_volume_reports_the_actual_limitation(tmp_path):
     (404, False, 'failed'), (403, True, 'failed')])
 def test_missing_directory_is_not_a_successful_empty_result(tmp_path, status_code, current, status):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     year = datetime.now(timezone.utc).year - (0 if current else 1)
     with ConferenceClient() as directory:
         directory.client.close()
@@ -108,7 +108,7 @@ def test_missing_directory_is_not_a_successful_empty_result(tmp_path, status_cod
 @pytest.mark.parametrize('year', [2021, 2022, 2024])
 def test_neurips_preserves_single_volume_formats_and_excludes_other_tracks(year, tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     suffix = '-Conference' if year >= 2022 else ''
     fixture = f'<ul class="paper-list"><li><a href="/paper_files/paper/{year}/hash/a-Abstract{suffix}.html">Reliable agents</a><i>Ada Researcher</i></li>'
     fixture += '<li data-track="datasets_and_benchmarks"><a href="b-Abstract-Datasets_and_Benchmarks.html">Dataset</a><i>Ada Researcher</i></li></ul>'
@@ -165,7 +165,7 @@ def test_mixed_merges_same_paper_and_preserves_partial_failure(tmp_path):
 
 def test_official_directory_matches_title_and_authors_and_reuses_cache(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     fixture = '<collection id="2024.acl"><volume id="long"><meta><year>2024</year><venue>acl</venue><booktitle>Long Papers</booktitle></meta><paper id="1"><title>Reliable agents</title><author><first>Ada</first><last>Researcher</last></author></paper></volume><volume id="short"><meta><year>2024</year><venue>acl</venue></meta><paper id="1"><title>Short agents</title></paper></volume></collection>'
     directory = ConferenceClient()
     directory.client.close()
@@ -188,9 +188,9 @@ def test_official_directory_matches_title_and_authors_and_reuses_cache(tmp_path)
 def test_web_can_save_conference_scope_and_reject_invalid_years(tmp_path):
     import re
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
-    from arxiv_ra.profiles.profiles import ProfileManager
-    from arxiv_ra.config import load_config
+    from paperloom.web import create_app
+    from paperloom.profiles.profiles import ProfileManager
+    from paperloom.config import load_config
     cfg = tmp_path / 'config.yaml'
     cfg.write_text('output_dir: run\n', encoding='utf-8')
     app = create_app(cfg)
@@ -216,7 +216,7 @@ def test_web_can_save_conference_scope_and_reject_invalid_years(tmp_path):
 
 def test_openreview_uses_api2_for_migrated_year_and_only_accepted_main_papers(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     def handler(request):
         assert request.url.host == 'api2.openreview.net'
         assert request.url.params['content.venueid'] == 'ICLR.cc/2023/Conference'
@@ -242,7 +242,7 @@ def test_openreview_uses_api2_for_migrated_year_and_only_accepted_main_papers(tm
 
 def test_openreview_account_login_is_used_only_for_official_api(tmp_path, monkeypatch):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     monkeypatch.setenv('OPENREVIEW_USERNAME', 'reader@example.org')
     monkeypatch.setenv('OPENREVIEW_PASSWORD', 'test-only-password')
     def handler(request):
@@ -270,7 +270,7 @@ def test_openreview_account_login_is_used_only_for_official_api(tmp_path, monkey
 
 def test_ambiguous_authors_and_budget_are_reported_without_false_matches(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     fixture = '<collection><volume id="long"><meta><year>2024</year><venue>acl</venue></meta>' + ''.join(
         f'<paper id="{i}"><title>{title}</title><author><first>Ada</first><last>Researcher</last></author></paper>'
         for i, title in enumerate(['Reliable agents', 'Different authors', 'Beyond budget'], 1)) + '</volume></collection>'
@@ -292,10 +292,10 @@ def test_ambiguous_authors_and_budget_are_reported_without_false_matches(tmp_pat
 def test_manual_browse_is_readonly_until_explicit_collection(tmp_path, monkeypatch):
     import time
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
-    from arxiv_ra.profiles.profiles import ProfileManager
-    from arxiv_ra.papers.library import PaperLibraryStore
-    from arxiv_ra.runtime.research_clients import ResearchClients
+    from paperloom.web import create_app
+    from paperloom.profiles.profiles import ProfileManager
+    from paperloom.papers.library import PaperLibraryStore
+    from paperloom.runtime.research_clients import ResearchClients
     p = paper()
     p.conference_publications = [{'conference': 'acl', 'year': 2024, 'paper_type': 'long',
         'evidence_url': 'https://aclanthology.org/2024.acl-long.1/', 'association_evidence': 'title and authors'}]
@@ -345,7 +345,7 @@ def test_manual_browse_is_readonly_until_explicit_collection(tmp_path, monkeypat
 
 def test_cached_candidates_do_not_prevent_progress_to_later_papers(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     fixture = '<collection><volume id="long"><meta><year>2024</year><venue>acl</venue></meta>' + ''.join(
         f'<paper id="{i}"><title>{title}</title><author><first>Ada</first><last>Researcher</last></author></paper>'
         for i, title in enumerate(['Reliable agents', 'Later agents'], 1)) + '</volume></collection>'
@@ -369,7 +369,7 @@ def test_cached_candidates_do_not_prevent_progress_to_later_papers(tmp_path):
 
 def test_historical_cvpr_reads_each_day_and_preserves_old_evidence_paths(tmp_path):
     import httpx
-    from arxiv_ra.discovery.conference_discovery import ConferenceClient
+    from paperloom.discovery.conference_discovery import ConferenceClient
     def handler(request):
         if request.url.params.get('day') in ('all', None):
             return httpx.Response(200, text='<a href="CVPR2018.py?day=2018-06-19">Day 1</a><a href="CVPR2018.py?day=2018-06-20">Day 2</a>')
@@ -388,11 +388,11 @@ def test_historical_cvpr_reads_each_day_and_preserves_old_evidence_paths(tmp_pat
 
 
 def test_pipeline_conference_recommendations_respect_history_and_feedback(tmp_path):
-    from arxiv_ra.config import AppConfig
-    from arxiv_ra.discovery.pipeline import DailyPipeline
-    from arxiv_ra.papers.feedback import FeedbackStore
-    from arxiv_ra.runtime.research_clients import ResearchClients
-    from arxiv_ra.utils import write_json
+    from paperloom.config import AppConfig
+    from paperloom.discovery.pipeline import DailyPipeline
+    from paperloom.papers.feedback import FeedbackStore
+    from paperloom.runtime.research_clients import ResearchClients
+    from paperloom.utils import write_json
     values = [paper(f'2101.0000{i}') for i in range(1, 4)]
     for p in values:
         p.conference_publications = [{'conference': 'acl', 'year': 2024, 'paper_type': 'long',

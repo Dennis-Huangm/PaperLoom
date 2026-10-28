@@ -5,12 +5,12 @@ from fastapi.testclient import TestClient
 import pymupdf
 import pytest
 
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.papers.search import SearchIndex, snippet
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
-from arxiv_ra.utils import write_json
-from arxiv_ra.web import create_app
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.papers.search import SearchIndex, snippet
+from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+from paperloom.utils import write_json
+from paperloom.web import create_app
 
 
 def paper(aid="2407.05600", version=2):
@@ -82,7 +82,7 @@ def test_incremental_index_note_edit_removal_and_retained_notes(tmp_path):
     index = SearchIndex(tmp_path, "a")
     index.refresh()
     hit = index.search("Private", kind="notes")["items"][0]
-    with patch("arxiv_ra.papers.search.pymupdf.open", side_effect=AssertionError("unchanged PDFs must be reused")):
+    with patch("paperloom.papers.search.pymupdf.open", side_effect=AssertionError("unchanged PDFs must be reused")):
         assert index.refresh()["changed"] == 0
     record = store.state.snapshot()["reading"]["2407.05600"]
     store.state.update_reading("2407.05600", status="read", notes="修改后的研究结论", tags=[], read_version=1,

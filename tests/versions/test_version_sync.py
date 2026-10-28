@@ -5,15 +5,15 @@ from types import SimpleNamespace
 import pymupdf
 import pytest
 
-from arxiv_ra.config import AppConfig, VersionTrackingConfig
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.versions.version_sync import PaperVersionSync
-from arxiv_ra.versions.version_tracker import VersionTracker
-from arxiv_ra.web.web_catalog import version_tracking_data
+from paperloom.config import AppConfig, VersionTrackingConfig
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.papers.models import Author, Paper
+from paperloom.runtime.jobs.task_runtime import TaskCancelled
+from paperloom.utils import read_json, write_json
+from paperloom.versions.version_sync import PaperVersionSync
+from paperloom.versions.version_tracker import VersionTracker
+from paperloom.web.web_catalog import version_tracking_data
 
 
 def paper(version=3, aid="2501.00001"):
@@ -300,9 +300,9 @@ def test_failed_diff_keeps_detection_and_retries_without_duplicate(setup, monkey
 
 
 def test_sync_real_report_pipeline_reuses_pinned_pdf(setup):
-    from arxiv_ra.papers.models import VerifiedMetadata
-    from arxiv_ra.sources.pdf_pipeline import PDFParser
-    from arxiv_ra.reports.report import ReportGenerator
+    from paperloom.papers.models import VerifiedMetadata
+    from paperloom.sources.pdf_pipeline import PDFParser
+    from paperloom.reports.report import ReportGenerator
 
     sync, arxiv, _ = setup
     sync.config.pdf.parser = "pymupdf"
@@ -326,8 +326,8 @@ def test_sync_real_report_pipeline_reuses_pinned_pdf(setup):
 def test_versions_page_shows_saved_and_local_versions_and_retry(setup, tmp_path):
     import yaml
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
-    from arxiv_ra.profiles.profiles import ProfileManager
+    from paperloom.web import create_app
+    from paperloom.profiles.profiles import ProfileManager
 
     sync, arxiv, _ = setup
     tracked_report(sync.output_root)
@@ -351,8 +351,8 @@ def test_versions_page_shows_saved_and_local_versions_and_retry(setup, tmp_path)
 def test_version_sync_api_validates_input_and_captures_options(tmp_path, monkeypatch):
     import threading
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
-    from arxiv_ra.profiles.profiles import ProfileManager
+    from paperloom.web import create_app
+    from paperloom.profiles.profiles import ProfileManager
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text("output_dir: run\nprofile_id: test\n", encoding="utf-8")
@@ -394,14 +394,14 @@ def test_removed_artifacts_are_not_displayed_as_available(setup):
 
 
 def test_sync_cli_exposes_optional_exports_and_pinned_retry():
-    from arxiv_ra.cli import build_parser
+    from paperloom.cli import build_parser
     args = build_parser().parse_args(["sync", "2501.00001", "--target-version", "3", "--retry"])
     assert args.retry and args.target_version == 3
     assert not args.report and not args.zotero and not args.obsidian
 
 
 def test_sync_obsidian_keeps_handwritten_content_and_old_attachment(setup, tmp_path):
-    from arxiv_ra.config import ObsidianConfig
+    from paperloom.config import ObsidianConfig
     sync, arxiv, _ = setup
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -427,7 +427,7 @@ def test_sync_obsidian_keeps_handwritten_content_and_old_attachment(setup, tmp_p
 
 def test_sync_zotero_receives_exact_revision_files_and_closes_client(setup, monkeypatch):
     from unittest.mock import Mock
-    import arxiv_ra.versions.version_sync as module
+    import paperloom.versions.version_sync as module
     sync, _, _ = setup
     adapter = SimpleNamespace(client=SimpleNamespace(close=Mock()), library_identity=lambda: "test/users/0",
                               save_paper=Mock(return_value=SimpleNamespace(to_dict=lambda: {"item_key": "ITEM", "created": True})))
@@ -456,8 +456,8 @@ def test_successful_sync_rechecks_current_library_state(setup):
 
 def test_successful_export_rechecks_external_item_on_version_retry(setup, monkeypatch):
     from unittest.mock import Mock
-    from arxiv_ra.integrations.zotero import ZoteroConflict
-    import arxiv_ra.versions.version_sync as module
+    from paperloom.integrations.zotero import ZoteroConflict
+    import paperloom.versions.version_sync as module
     sync, arxiv, _ = setup
     adapter = SimpleNamespace(client=SimpleNamespace(close=Mock()), library_identity=lambda: 'test/users/0',
         save_paper=Mock(side_effect=[SimpleNamespace(to_dict=lambda: {'item_key': 'ITEM', 'created': True}),
@@ -484,7 +484,7 @@ def test_sync_repairs_nonempty_damaged_pdf(setup):
 
 
 def test_version_export_exposes_shared_collection_receipt(setup, tmp_path):
-    from arxiv_ra.config import ObsidianConfig
+    from paperloom.config import ObsidianConfig
     sync, _, _ = setup
     vault = tmp_path / 'vault'
     vault.mkdir()

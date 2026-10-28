@@ -8,9 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import uvicorn
 
-from arxiv_ra.reports.render import render_report
-from arxiv_ra.utils import write_json
-from arxiv_ra.web import create_app
+from paperloom.reports.render import render_report
+from paperloom.utils import write_json
+from paperloom.web import create_app
 
 
 fixture_directory = TemporaryDirectory(prefix="paperloom-report-preview-")

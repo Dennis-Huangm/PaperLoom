@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/arxiv_ra/static/settings.js'), 'utf8').replace(/\r\n/g, '\n');
+const source = fs.readFileSync(path.join(__dirname, '../src/paperloom/static/settings.js'), 'utf8').replace(/\r\n/g, '\n');
 const handler = source.slice(source.indexOf("document.querySelectorAll('.credential-visibility')"), source.indexOf('\n\n', source.indexOf('\n});')));
 const element = () => ({
   checked: false, disabled: false, value: '', dataset: {}, listeners: {},

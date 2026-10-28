@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from arxiv_ra.discovery.alphaxiv import AlphaXivClient, AlphaXivUnavailable, AlphaXivError
+from paperloom.discovery.alphaxiv import AlphaXivClient, AlphaXivUnavailable, AlphaXivError
 
 
 def test_discover_papers_uses_mcp_and_normalizes_results() -> None:

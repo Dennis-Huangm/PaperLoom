@@ -5,16 +5,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from arxiv_ra.config import LLMConfig
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import Author, Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator, finalize_report_structure
-from arxiv_ra.reports.report_metadata import protect_metadata
-from arxiv_ra.sources.source_spans import source_spans, span_batches, cited_span_material
+from paperloom.config import LLMConfig
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import Author, Paper, ParsedPaper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator, finalize_report_structure
+from paperloom.reports.report_metadata import protect_metadata
+from paperloom.sources.source_spans import source_spans, span_batches, cited_span_material
 
 
 def test_grouped_ids_expand_but_unknown_ids_never_become_valid_sources():
-    from arxiv_ra.sources.source_spans import normalize_grouped_source_ids
+    from paperloom.sources.source_spans import normalize_grouped_source_ids
     parsed = ParsedPaper(SOURCE, [SOURCE])
     key = next(iter(source_spans(parsed)))
     text = f'Score 8526 [[证据ID: {key}], [证据ID: invented]]'
@@ -179,8 +179,8 @@ def test_metadata_values_cannot_create_links_html_or_extra_table_columns():
 
 def test_page_only_source_changes_invalidate_checkpoint_prompts(tmp_path):
     from unittest.mock import Mock
-    from arxiv_ra.config import AppConfig
-    from arxiv_ra.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
+    from paperloom.config import AppConfig
+    from paperloom.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
     config = AppConfig(output_dir=str(tmp_path), profile_id='test')
     llm = SimpleNamespace(enabled=True, chat=Mock(return_value='# Paper\n\n## 核心方法\nBody'), client=None)
     generator = ReportGenerator(llm, config.llm)
@@ -198,11 +198,11 @@ def test_page_only_source_changes_invalidate_checkpoint_prompts(tmp_path):
 
 def test_real_pdf_pipeline_persists_id_locations_for_comparison(tmp_path):
     import fitz
-    from arxiv_ra.config import AppConfig, PDFConfig
-    from arxiv_ra.sources.pdf_pipeline import PDFParser
-    from arxiv_ra.discovery.pipeline import DailyPipeline
-    from arxiv_ra.utils import read_json
-    from arxiv_ra.reports.comparison import ComparisonService
+    from paperloom.config import AppConfig, PDFConfig
+    from paperloom.sources.pdf_pipeline import PDFParser
+    from paperloom.discovery.pipeline import DailyPipeline
+    from paperloom.utils import read_json
+    from paperloom.reports.comparison import ComparisonService
     source = tmp_path / 'source.pdf'
     with fitz.open() as pdf:
         pdf.new_page().insert_text((50, 50), 'GPT-4o mini MSE 8526 on the vector editing benchmark.', fontsize=9)

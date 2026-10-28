@@ -1,5 +1,5 @@
-from arxiv_ra.config import DeliveryConfig
-from arxiv_ra.integrations.emailer import _resolve_addresses
+from paperloom.config import DeliveryConfig
+from paperloom.integrations.emailer import _resolve_addresses
 
 
 def test_qq_email_env_is_used_for_all_addresses(monkeypatch) -> None:

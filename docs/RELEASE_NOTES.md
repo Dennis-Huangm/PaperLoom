@@ -17,7 +17,7 @@
 
 普通用户下载 **`paperloom-1.6.0-source.zip`**。需要 Python 3.11+；Windows 解压后运行 `Setup-PaperLoom.cmd`，安装完成后运行 `Start-PaperLoom.cmd`。Linux / macOS 按 README 建立虚拟环境。wheel 用于已有 Python 环境，网页依赖需安装 `[gui]`。附件提供 `SHA256SUMS.txt` 供校验下载。
 
-升级前等待任务完成，停止旧服务与调度，备份 `.env`、`config.yaml`、`profiles/` 和输出目录，再在新版目录迁移数据并重新安装。已有配置不会被模板覆盖，历史报告和兼容入口保留。
+升级前等待任务完成，停止旧服务与调度，备份 `.env`、`config.yaml`、`profiles/` 和输出目录，再在新版目录迁移数据并重新安装。已有配置不会被模板覆盖，历史报告保留。当前源码的包名与入口已统一为 `paperloom`；从旧环境升级及外部数据单独迁移的要求见 [CLI 文档](CLI.md#从旧环境升级)。
 
 如已启用 Windows 登录任务，先从旧目录停止后台服务，再从新目录重新注册并启动，使计划任务指向新版安装。无终端启动、日志、停止和旧服务迁移的命令见 [CLI 文档](CLI.md)。
 
@@ -32,7 +32,7 @@
 ## 验证
 
 - Windows Python 3.13 完整离线回归 **1010 项通过**；编译、依赖、JavaScript 和 PowerShell 语法检查通过。
-- 源码 ZIP 和 wheel 在独立环境安装，验证网页入口、静态资源、`paperloom` / `arxiv-ra` 版本入口及报告表格渲染。
+- 源码 ZIP 和 wheel 在独立环境安装，验证网页入口、静态资源、`paperloom` / `python -m paperloom` 版本入口及报告表格渲染。
 - 验证源码包文件白名单、个人配置与内部记录排除、安装后配置保留、公开文档相对链接及截图来源；上传附件下载后核对 SHA-256。
 
 保留一项既有 Starlette/httpx 弃用提示。上述验证不代表所有外部服务、模型或操作系统均已实测。

@@ -3,9 +3,9 @@ import re
 
 import pytest
 
-from arxiv_ra.config import AppConfig, ObsidianConfig
-from arxiv_ra.integrations.obsidian import MANAGED_END, ObsidianError, ObsidianExporter
-from arxiv_ra.utils import read_json, write_json
+from paperloom.config import AppConfig, ObsidianConfig
+from paperloom.integrations.obsidian import MANAGED_END, ObsidianError, ObsidianExporter
+from paperloom.utils import read_json, write_json
 
 
 def _paper() -> dict:
@@ -74,8 +74,8 @@ def test_sync_builds_daily_paper_concept_and_indexes(tmp_path: Path) -> None:
 
     daily = exporter.sync_daily("2026-08-22", [recommendation])
 
-    root = tmp_path / "vault" / "arXiv Research Assistant"
-    manifest = read_json(root / ".arxiv-ra-manifest.json", {})
+    root = tmp_path / "vault" / "PaperLoom"
+    manifest = read_json(root / ".paperloom-manifest.json", {})
     paper_note = tmp_path / "vault" / f"{manifest['papers']['agentict2i::2407.05600']['note']}.md"
     assert daily.exists()
     assert paper_note.exists()
@@ -84,11 +84,11 @@ def test_sync_builds_daily_paper_concept_and_indexes(tmp_path: Path) -> None:
     assert (root / "System" / "Indexes" / "Concepts.md").exists()
     assert (root / "Topics" / "agentic image generation.md").exists()
     assert paper_note.name == "GenArtist.md"
-    assert "[[arXiv Research Assistant/Papers/AgenticT2I/GenArtist|" in daily.read_text(encoding="utf-8")
+    assert "[[PaperLoom/Papers/AgenticT2I/GenArtist|" in daily.read_text(encoding="utf-8")
     paper_index = (root / "System" / "Indexes" / "Papers.md").read_text(
         encoding="utf-8"
     )
-    assert "[[arXiv Research Assistant/Papers/AgenticT2I/GenArtist\\|GenArtist:" in paper_index
+    assert "[[PaperLoom/Papers/AgenticT2I/GenArtist\\|GenArtist:" in paper_index
     paper_row = next(line for line in paper_index.splitlines() if "GenArtist" in line)
     assert len(re.split(r"(?<!\\)\|", paper_row)) == 7
     assert "type: paper-note" in paper_note.read_text(encoding="utf-8")
@@ -115,8 +115,8 @@ def test_full_sync_reads_active_profiles_same_day_recommendations(
     manifest = read_json(
         tmp_path
         / "vault"
-        / "arXiv Research Assistant"
-        / ".arxiv-ra-manifest.json",
+        / "PaperLoom"
+        / ".paperloom-manifest.json",
         {},
     )
     assert "agentict2i::2407.05600" in manifest["papers"]
@@ -140,13 +140,13 @@ def test_report_sync_copies_images_and_preserves_user_notes(tmp_path: Path) -> N
 
     note = exporter.sync_report(_paper(), {"venue": "NeurIPS 2024"}, report)
     first = note.read_text(encoding="utf-8")
-    assert "![[arXiv Research Assistant/Attachments/agentict2i/2407.05600/vunknown/method-figure-01.png]]" in first
+    assert "![[PaperLoom/Attachments/agentict2i/2407.05600/vunknown/method-figure-01.png]]" in first
     assert "完整报告内容" in first
     assert "## 精炼摘要" in first
     assert "An agentic image generation system with visual feedback." not in first
     assert "摘要级主要内容" not in first
-    assert (tmp_path / "vault" / "arXiv Research Assistant" / "Attachments" / "agentict2i" / "2407.05600" / "vunknown" / "method-figure-01.png").exists()
-    assert "[[arXiv Research Assistant/Topics/agentic image generation\\|agentic image generation]]" in first
+    assert (tmp_path / "vault" / "PaperLoom" / "Attachments" / "agentict2i" / "2407.05600" / "vunknown" / "method-figure-01.png").exists()
+    assert "[[PaperLoom/Topics/agentic image generation\\|agentic image generation]]" in first
 
     note.write_text(first + "\n我的永久补充。\n", encoding="utf-8")
     report.write_text(report.read_text(encoding="utf-8") + "\n新增报告内容。\n", encoding="utf-8")
@@ -162,7 +162,7 @@ def test_unmanaged_existing_note_is_never_overwritten(tmp_path: Path) -> None:
     expected = (
         tmp_path
         / "vault"
-        / "arXiv Research Assistant"
+        / "PaperLoom"
         / "Papers"
         / "AgenticT2I"
         / "GenArtist.md"
@@ -174,7 +174,7 @@ def test_unmanaged_existing_note_is_never_overwritten(tmp_path: Path) -> None:
 
     assert expected.read_text(encoding="utf-8") == "USER OWNED"
     assert note != expected
-    assert "(arXiv RA)" in note.name
+    assert "(PaperLoom)" in note.name
     assert note.exists()
 
 

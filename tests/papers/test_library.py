@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from arxiv_ra.papers.library import PaperLibraryStore
+from paperloom.papers.library import PaperLibraryStore
 
 
 def _item() -> dict:

@@ -8,18 +8,18 @@ import time
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.runtime.jobs.job_requests import capture_request
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata, FigureCandidate
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint, CheckpointWriteError
-from arxiv_ra.runtime.jobs.task_runtime import TaskHooks, TaskCancelled, bind_task_hooks
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.runtime.jobs.manager import JobManager
+from paperloom.config import AppConfig
+from paperloom.runtime.jobs.job_requests import capture_request
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata, FigureCandidate
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.reports.report import ReportGenerator
+from paperloom.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint, CheckpointWriteError
+from paperloom.runtime.jobs.task_runtime import TaskHooks, TaskCancelled, bind_task_hooks
+from paperloom.utils import read_json, write_json
+from paperloom.runtime.jobs.manager import JobManager
 from fastapi.testclient import TestClient
-from arxiv_ra.web import create_app
-from arxiv_ra.runtime.jobs.task_runtime import task_checkpoint_data, task_warning
+from paperloom.web import create_app
+from paperloom.runtime.jobs.task_runtime import task_checkpoint_data, task_warning
 
 
 def paper():
@@ -62,7 +62,7 @@ def stop(manager):
 @pytest.mark.parametrize("stage", ["download", "parse", "empty_text"])
 def test_pdf_failure_is_failed_even_when_abstract_report_is_saved(tmp_path, monkeypatch, stage):
     config, clients = setup(tmp_path)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))
+    monkeypatch.setattr("paperloom.discovery.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))
     if stage == "download":
         clients.arxiv.download_pdf.side_effect = RuntimeError("PDF download failed")
     elif stage == "parse":
@@ -101,8 +101,8 @@ def test_pdf_failure_is_failed_even_when_abstract_report_is_saved(tmp_path, monk
 
 def test_fallback_after_restart_resumes_remaining_chunks_and_preserves_old_report(tmp_path, monkeypatch):
     config, clients = setup(tmp_path)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.DailyPipeline", lambda cfg, root: DailyPipeline(cfg, root, clients=clients))
+    monkeypatch.setattr("paperloom.discovery.pipeline.PaperResolver.resolve", lambda *a, **k: deepcopy(paper()))
+    monkeypatch.setattr("paperloom.discovery.pipeline.DailyPipeline", lambda cfg, root: DailyPipeline(cfg, root, clients=clients))
     clients.llm.chat.side_effect = ["first chunk evidence", TimeoutError("offline fixture")]
     root = Path(config.output_dir)
     manager = JobManager(root)
@@ -190,7 +190,7 @@ def test_incompatible_processing_inputs_are_not_reused(tmp_path, monkeypatch, ch
     elif change == "chunks":
         config.llm.max_chunk_chars = 5000
     elif change == "prompt":
-        monkeypatch.setattr("arxiv_ra.reports.report.CHUNK_SYSTEM", "Changed extraction instructions")
+        monkeypatch.setattr("paperloom.reports.report.CHUNK_SYSTEM", "Changed extraction instructions")
     elif change == "source":
         pdf = tmp_path / "paper.pdf"
         pdf.write_bytes(b"different source PDF")
@@ -258,7 +258,7 @@ def test_cancel_inflight_keeps_completed_chunk_for_next_attempt(tmp_path):
 
 def test_failed_checkpoint_write_stops_without_marking_chunk_complete(tmp_path, monkeypatch):
     config, clients, checkpoint, parsed = prepared(tmp_path)
-    import arxiv_ra.reports.report_checkpoint as module
+    import paperloom.reports.report_checkpoint as module
     original = module.write_json
     def fail(path, value):
         if path.name == "chunk-1.json":
@@ -274,7 +274,7 @@ def test_failed_checkpoint_write_stops_without_marking_chunk_complete(tmp_path, 
 def test_retired_annotation_stage_never_writes_a_checkpoint(tmp_path, monkeypatch):
     config, clients, checkpoint, parsed = prepared(tmp_path)
     clients.llm.chat.return_value = '### Table 1: Scores\n\n|Model|Score|\n|---|---|\n|A|91.2|'
-    import arxiv_ra.reports.report_checkpoint as module
+    import paperloom.reports.report_checkpoint as module
     original = module.write_json
     def fail(path, value):
         if path.name == 'table-annotations.json':
@@ -289,7 +289,7 @@ def test_retired_annotation_stage_never_writes_a_checkpoint(tmp_path, monkeypatc
 def test_final_artifact_write_failure_remains_resumable(tmp_path, monkeypatch, filename):
     config, clients = setup(tmp_path)
     checkpoint = ReportCheckpoint(config.output_dir, config, paper())
-    import arxiv_ra.discovery.pipeline as module
+    import paperloom.discovery.pipeline as module
     original = module.write_json
     def fail(path, value):
         if path.name == filename:
@@ -306,10 +306,10 @@ def test_checkpoint_survives_abrupt_process_exit(tmp_path):
 import os, sys
 from pathlib import Path
 from types import SimpleNamespace
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
+from paperloom.config import AppConfig
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.reports.report import ReportGenerator
+from paperloom.reports.report_checkpoint import ReportCheckpoint, bind_report_checkpoint
 root = Path(sys.argv[1])
 config = AppConfig(output_dir=str(root), profile_id="alpha")
 config.llm.max_chunk_chars = 4000
@@ -378,7 +378,7 @@ def test_report_recovery_ui_api_progress_and_private_cache(tmp_path, monkeypatch
         assert payload["report_progress"]["chunks_done"] == 2
         assert "report_work" not in payload and "checkpoint" not in payload
         assert client.post(f"/api/jobs/{job.id}/retry", headers={"X-Paperloom-Profile": "beta"}).status_code == 409
-        monkeypatch.setattr("arxiv_ra.runtime.jobs.manager.recovery_runner", lambda *a: lambda: tmp_path / "run/full.html")
+        monkeypatch.setattr("paperloom.runtime.jobs.manager.recovery_runner", lambda *a: lambda: tmp_path / "run/full.html")
         response = client.post(f"/api/jobs/{job.id}/retry")
         assert response.status_code == 202
         wait_job(app.state.jobs, response.json()["id"])
@@ -400,7 +400,7 @@ def test_local_pdf_change_and_checkpoint_path_cannot_escape_storage(tmp_path):
 
 
 def test_changed_prompt_recomputes_without_component_warning(tmp_path):
-    from arxiv_ra.reports.report_checkpoint import ReportCheckpoint
+    from paperloom.reports.report_checkpoint import ReportCheckpoint
     config, clients = setup(tmp_path)
     warnings, progress = [], []
     hooks=TaskHooks(lambda text,pct: progress.append(text), lambda *args: warnings.append(args), lambda:False)

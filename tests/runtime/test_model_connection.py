@@ -5,8 +5,8 @@ from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from openai import OpenAI
 
-from arxiv_ra.runtime.model_access import model_connection
-from arxiv_ra import web
+from paperloom.runtime.model_access import model_connection
+from paperloom import web
 from tests.web.test_web import _write_config
 
 
@@ -53,7 +53,7 @@ def test_settings_test_and_save_share_current_form_and_custom_mapping(tmp_path, 
     def probe(*values):
         calls.append(values)
         return {'ok': True, 'message': '连接成功', 'elapsed_ms': 12}
-    from arxiv_ra.web.routes import settings as settings_routes
+    from paperloom.web.routes import settings as settings_routes
     monkeypatch.setattr(settings_routes, 'probe_connection', probe)
     with TestClient(web.create_app(path)) as client:
         page = BeautifulSoup(client.get('/settings').text, 'html.parser')

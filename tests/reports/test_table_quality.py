@@ -1,8 +1,8 @@
 """Row matching retained for legacy repair; normal publication never audits values."""
 import pytest
 
-from arxiv_ra.reports.evidence import TOKEN
-from arxiv_ra.reports.tables.table_quality import check_row, tables
+from paperloom.reports.evidence import TOKEN
+from paperloom.reports.tables.table_quality import check_row, tables
 
 
 SOURCE = "| Model | Accuracy (%) | F1 (%) |\n|---|---|---|\n| Alpha | 91.2 | 88.4 |\n| Beta | 88.4 | 91.2 |\n"

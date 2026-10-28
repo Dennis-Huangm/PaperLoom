@@ -155,8 +155,7 @@ def _has_module(name: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> None:
-    command = Path(sys.argv[0]).stem
-    args = build_parser("arxiv-ra" if command == "arxiv-ra" else "paperloom").parse_args(argv)
+    args = build_parser().parse_args(argv)
     config_path = Path(args.config).resolve()
     _load_dotenv(config_path.parent / ".env")
     if args.command == "doctor":

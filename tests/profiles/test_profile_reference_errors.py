@@ -4,9 +4,9 @@ import ssl
 import httpx
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.profiles.profiles import ProfileGenerator
-from arxiv_ra.runtime.research_clients import ResearchClients
+from paperloom.config import AppConfig
+from paperloom.profiles.profiles import ProfileGenerator
+from paperloom.runtime.research_clients import ResearchClients
 
 
 def generate_with_failure(error):

@@ -5,9 +5,9 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from arxiv_ra.discovery.arxiv_client import ArxivClient
-from arxiv_ra.papers.models import Paper, Author
-from arxiv_ra.web import create_app
+from paperloom.discovery.arxiv_client import ArxivClient
+from paperloom.papers.models import Paper, Author
+from paperloom.web import create_app
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def config_path(tmp_path, monkeypatch):
                      categories=['cs.LG'], primary_category='cs.LG',
                      abs_url='', pdf_url='', version=revision)
     monkeypatch.setattr(ArxivClient, 'get', get)
-    from arxiv_ra.utils import write_json
+    from paperloom.utils import write_json
     for revision in (1, 2):
         folder = tmp_path / 'run' / '2026-10-01' / 'reports' / ('fixture-v' + str(revision))
         write_json(folder / 'metadata.json', {'paper': get(None, '2401.12345v' + str(revision)).to_dict()})
@@ -474,7 +474,7 @@ def test_stop_delete_and_no_late_resurrection(config_path, monkeypatch):
 
 
 def test_missing_version_and_report_snapshot_are_not_silently_replaced(config_path, monkeypatch):
-    from arxiv_ra.utils import write_json
+    from paperloom.utils import write_json
     report = config_path.parent / 'run' / '2026-10-03' / 'reports' / 'example'
     report.mkdir(parents=True)
     paper = ArxivClient.get(None, '2401.12345v1').to_dict()
@@ -567,7 +567,7 @@ def test_unknown_image_capability_fails_without_losing_history(config_path, monk
 
 
 def test_complete_snapshot_without_version_cannot_bypass_report_gate(config_path):
-    from arxiv_ra.utils import write_json
+    from paperloom.utils import write_json
     app = create_app(config_path)
     paper = ArxivClient.get(None, '2401.12345v1').to_dict()
     paper['version'] = None
@@ -630,7 +630,7 @@ import os,sys,time
 from types import SimpleNamespace as NS
 from fastapi.testclient import TestClient
 from openai.resources.chat.completions import Completions
-from arxiv_ra.web import create_app
+from paperloom.web import create_app
 os.environ['LLM_API_KEY']='fixture'
 def create(_self,**kwargs):
     def chunks():
@@ -654,7 +654,7 @@ with TestClient(create_app(sys.argv[1])) as client:
 
 
 def test_history_excludes_empty_sessions_until_first_message(config_path, monkeypatch):
-    from arxiv_ra.reading.reading_chat import ReadingService
+    from paperloom.reading.reading_chat import ReadingService
     monkeypatch.setenv('LLM_API_KEY', 'fixture')
     # Keep the accepted message queued without calling an external model.
     monkeypatch.setattr(ReadingService, 'generate', lambda *args: None)

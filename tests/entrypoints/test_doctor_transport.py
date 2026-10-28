@@ -1,14 +1,14 @@
 import httpx
 import pytest
 
-from arxiv_ra.cli import doctor
+from paperloom.cli import doctor
 
 
 @pytest.fixture
 def config(tmp_path, monkeypatch):
     path = tmp_path / 'config.yaml'
     path.write_text('output_dir: run\n', encoding='utf-8')
-    monkeypatch.setattr('arxiv_ra.cli._has_module', lambda name: True)
+    monkeypatch.setattr('paperloom.cli._has_module', lambda name: True)
     return path
 
 

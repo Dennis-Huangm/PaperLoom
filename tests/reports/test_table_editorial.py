@@ -1,8 +1,8 @@
 from dataclasses import replace
 import json
 
-from arxiv_ra.reports.tables.report_tables import ReportTables
-from arxiv_ra.reports.tables.table_editorial import validate_editorial
+from paperloom.reports.tables.report_tables import ReportTables
+from paperloom.reports.tables.table_editorial import validate_editorial
 
 
 def sample():
@@ -54,8 +54,8 @@ def test_semantic_rejection_keeps_original_scientific_notes():
 
 
 def test_wrong_direction_and_cross_variant_merges_are_rejected():
-    from arxiv_ra.reports.tables.table_editorial import editorial_units
-    from arxiv_ra.reports.tables.table_annotations import annotation_units
+    from paperloom.reports.tables.table_editorial import editorial_units
+    from paperloom.reports.tables.table_annotations import annotation_units
     table = sample().tables[0]
     v = table.variants[0]
     table = replace(table, variants=(replace(v, context=('MAE ↓ at 5 runs.',)),
@@ -74,7 +74,7 @@ def test_wrong_direction_and_cross_variant_merges_are_rejected():
 
 
 def test_editorial_service_failure_and_cancellation():
-    from arxiv_ra.reports.report_checkpoint import CheckpointWriteError
+    from paperloom.reports.report_checkpoint import CheckpointWriteError
     import pytest
     def unavailable(*args): raise RuntimeError('offline')
     assert not sample().localize_annotations(unavailable).editorials
@@ -84,7 +84,7 @@ def test_editorial_service_failure_and_cancellation():
 
 
 def test_transcription_notes_are_auditable_but_not_shown_as_scientific_notes():
-    from arxiv_ra.reports.tables.table_editorial import editorial_units
+    from paperloom.reports.tables.table_editorial import editorial_units
     table = sample().tables[0]
     table = replace(table, variants=(replace(table.variants[0], context=(
         '*注：Table 3 模型行中的命名与 Table 2 保持一致，仅 `Model-X` 在 Table 3 原文中多带连字符。*',
@@ -95,14 +95,14 @@ def test_transcription_notes_are_auditable_but_not_shown_as_scientific_notes():
 
 
 def test_roman_task_numbers_and_plural_acronyms_allow_natural_translation():
-    from arxiv_ra.reports.tables.table_editorial import _terms, editorial_units
+    from paperloom.reports.tables.table_editorial import _terms, editorial_units
     assert _terms('Part II SVGs') == _terms('任务 2 SVG')
     table = replace(sample().tables[0], caption='Table 3: Part II SVGs')
     assert editorial_units(table)[0]['protected'] == ['2', 'svg']
 
 
 def test_equivalent_editorial_terms_preserve_versions_and_code_literals():
-    from arxiv_ra.reports.tables.table_editorial import _terms
+    from paperloom.reports.tables.table_editorial import _terms
     assert _terms('Turn-3 DINOv2 DINOv3-based L1-based') == _terms('第 3 轮 DINO-v2 DINOv3 L1')
     assert _terms('DINOv2') != _terms('DINOv3')
     assert _terms('`Turn-3`') != _terms('第 3 轮')
@@ -174,7 +174,7 @@ def test_malformed_review_is_recorded_and_does_not_skip_review():
 
 
 def test_source_partition_errors_are_specific_and_models_use_model_column():
-    from arxiv_ra.reports.tables.table_editorial import editorial_errors
+    from paperloom.reports.tables.table_editorial import editorial_errors
     table = sample().tables[0]
     p = proposal(); p['entries'].pop()
     assert any('u1' in error for error in editorial_errors(table, p))
@@ -195,7 +195,7 @@ def test_publication_rejects_reintroduced_english_annotation():
 
 def test_real_svgeval_source_notes_have_chinese_display_and_correct_ownership():
     from pathlib import Path
-    from arxiv_ra.reports.tables.table_editorial import display_editorial
+    from paperloom.reports.tables.table_editorial import display_editorial
     stored = json.loads((Path(__file__).parents[1]/'fixtures/table-editorial-svgeval.json').read_text('utf-8'))
     catalogue = ReportTables.from_dict(stored)
     report = catalogue.render('## 关键结果')

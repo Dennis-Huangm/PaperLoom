@@ -5,8 +5,8 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.utils import write_json
-from arxiv_ra.web import create_app
+from paperloom.utils import write_json
+from paperloom.web import create_app
 
 
 def test_report_catalog_has_one_entry_per_paper_and_only_public_fields(tmp_path):
@@ -76,7 +76,7 @@ def test_empty_report_catalog(tmp_path):
 
 
 def test_reader_assets_change_url_after_a_script_update(tmp_path, monkeypatch):
-    from arxiv_ra.reports import render
+    from paperloom.reports import render
 
     # Model two installed releases without changing the application's real assets.
     static = tmp_path / "static"

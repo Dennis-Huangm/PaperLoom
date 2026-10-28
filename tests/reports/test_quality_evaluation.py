@@ -8,17 +8,17 @@ from unittest.mock import Mock
 import fitz
 import pytest
 
-from arxiv_ra.reports.comparison import ComparisonService
-from arxiv_ra.config import AppConfig, PDFConfig
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import Paper, ParsedPaper, VerifiedMetadata
-from arxiv_ra.sources.pdf_pipeline import PDFParser
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.reports.quality import numbers, unsupported_numbers
-from arxiv_ra.reports.report import ReportGenerator
-from arxiv_ra.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.papers.library import PaperLibraryStore
+from paperloom.reports.comparison import ComparisonService
+from paperloom.config import AppConfig, PDFConfig
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import Paper, ParsedPaper, VerifiedMetadata
+from paperloom.sources.pdf_pipeline import PDFParser
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.reports.quality import numbers, unsupported_numbers
+from paperloom.reports.report import ReportGenerator
+from paperloom.runtime.jobs.task_runtime import TaskHooks, bind_task_hooks
+from paperloom.utils import read_json, write_json
+from paperloom.papers.library import PaperLibraryStore
 
 
 ROOT = Path(__file__).resolve().parents[2]

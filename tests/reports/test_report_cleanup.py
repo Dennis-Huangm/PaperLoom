@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from arxiv_ra.reports.report_cleanup import clean_report_diagnostics
+from paperloom.reports.report_cleanup import clean_report_diagnostics
 from scripts.maintenance.remove_report_diagnostics import clean_report
 
 

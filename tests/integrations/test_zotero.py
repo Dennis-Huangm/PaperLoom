@@ -7,8 +7,8 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 
-from arxiv_ra.config import ZoteroConfig
-from arxiv_ra.integrations.zotero import ZoteroClient, ZoteroConflict
+from paperloom.config import ZoteroConfig
+from paperloom.integrations.zotero import ZoteroClient, ZoteroConflict
 
 
 def _paper() -> dict:
@@ -158,7 +158,7 @@ def test_existing_arxiv_item_is_not_created_again(monkeypatch) -> None:
                 json=[{"data": {"key": "EXISTING", "title": _paper()["title"], "extra": "arXiv: 2407.05600"}}],
             )
         if request.method == "GET" and path == "/api/users/0/collections":
-            return httpx.Response(200, json=[{"data": {"key": "COLL0001", "name": "arXiv Research Assistant"}}])
+            return httpx.Response(200, json=[{"data": {"key": "COLL0001", "name": "PaperLoom"}}])
         if request.method == "POST":
             posts.append(path)
         return httpx.Response(404)
@@ -190,7 +190,7 @@ def test_title_only_match_requires_user_selection(monkeypatch) -> None:
         if request.method == "GET" and path == "/api/users/0/collections":
             return httpx.Response(
                 200,
-                json=[{"data": {"key": "COLL0001", "name": "arXiv Research Assistant"}}],
+                json=[{"data": {"key": "COLL0001", "name": "PaperLoom"}}],
             )
         return httpx.Response(500)
 
@@ -378,7 +378,7 @@ def test_linked_attachment_does_not_send_stored_file_filename(tmp_path: Path, mo
 
 @pytest.mark.parametrize('status,payload', [(503, []), (200, {'error': 'invalid'})])
 def test_failed_lookup_never_creates_a_paper(monkeypatch, status, payload):
-    from arxiv_ra.integrations.zotero import ZoteroError
+    from paperloom.integrations.zotero import ZoteroError
     monkeypatch.setenv('ZOTERO_LOCAL_API_KEY', 'secret')
     writes = []
     def handler(request):
@@ -425,7 +425,7 @@ def test_interrupted_upload_resumes_existing_attachment(tmp_path, monkeypatch):
     for attempt in range(2):
         adapter = ZoteroClient(ZoteroConfig(), client=httpx.Client(transport=httpx.MockTransport(handler)))
         if attempt == 0:
-            from arxiv_ra.integrations.zotero import ZoteroError
+            from paperloom.integrations.zotero import ZoteroError
             with pytest.raises(ZoteroError):
                 adapter.save_paper(_paper(), {}, 'Test', pdf_path=pdf, collection_key='__root__', receipt=receipt)
         else:

@@ -2,8 +2,8 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.reading.reading_chat import ReadingService, normalize_source_markers
-from arxiv_ra.web import create_app
+from paperloom.reading.reading_chat import ReadingService, normalize_source_markers
+from paperloom.web import create_app
 from tests.reading.test_reading_chat import config_path, new_chat, wait_answer
 
 
@@ -69,7 +69,7 @@ def test_grouped_citations_survive_answer_completion(config_path, monkeypatch, m
         update(citations=citations)
         return marker, False
 
-    monkeypatch.setattr('arxiv_ra.reading.reading_chat.run_reading', run)
+    monkeypatch.setattr('paperloom.reading.reading_chat.run_reading', run)
     monkeypatch.setenv('LLM_API_KEY', 'fixture')
     with TestClient(create_app(config_path)) as client:
         sid = new_chat(client)['id']
@@ -103,7 +103,7 @@ def test_bare_citations_survive_answer_completion(config_path, monkeypatch, mark
         update(citations=sources.citations)
         return marker.format(*ids), False
 
-    monkeypatch.setattr('arxiv_ra.reading.reading_chat.run_reading', run)
+    monkeypatch.setattr('paperloom.reading.reading_chat.run_reading', run)
     monkeypatch.setenv('LLM_API_KEY', 'fixture')
     with TestClient(create_app(config_path)) as client:
         sid = new_chat(client)['id']

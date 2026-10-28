@@ -6,11 +6,11 @@ import pytest
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.utils import write_json
-from arxiv_ra.config import AppConfig
-from arxiv_ra.runtime.jobs.job_requests import capture_request
-from arxiv_ra.web import create_app
-from arxiv_ra.web.web_catalog import grouped_report_library, report_library
+from paperloom.utils import write_json
+from paperloom.config import AppConfig
+from paperloom.runtime.jobs.job_requests import capture_request
+from paperloom.web import create_app
+from paperloom.web.web_catalog import grouped_report_library, report_library
 
 
 def add_report(root: Path, date: str, folder: str, *, arxiv_id: str = "2407.05600",
@@ -187,7 +187,7 @@ def test_delete_report_without_paper_identity(tmp_path, batch):
 
 def test_catalog_profile_names_and_direction_guard_update_without_restart(tmp_path):
     """Faster profile reads must not freeze names or accept an obsolete direction."""
-    from arxiv_ra.profiles.profiles import ProfileManager
+    from paperloom.profiles.profiles import ProfileManager
 
     config = tmp_path / 'config.yaml'
     config.write_text('output_dir: run\n', encoding='utf-8')

@@ -1,4 +1,4 @@
-from arxiv_ra.reports.report_completeness import restore_note_tables
+from paperloom.reports.report_completeness import restore_note_tables
 
 
 def test_restored_table_context_does_not_repeat_caption_or_evidence_window_limit():
@@ -14,7 +14,7 @@ def test_restored_table_context_does_not_repeat_caption_or_evidence_window_limit
 
 
 def test_group_headings_ignore_source_placeholders_after_publication():
-    from arxiv_ra.reports.report_completeness import _blocks
+    from paperloom.reports.report_completeness import _blocks
     text = ('### Table 11\n| Method | Score | 原文依据 |\n|---|---|---|\n'
             '| Easy | | — |\n| A | 1 | — |\n| Medium | | — |\n| A | 2 | — |')
     rows = list(_blocks(text))[0][1]
@@ -77,7 +77,7 @@ def test_shortened_judge_name_restores_from_exact_positional_source_schema():
 
 
 def test_shortened_source_name_is_not_globally_equated_or_completed_from_row_labels():
-    from arxiv_ra.reports.report_completeness import _restore_source_header_names, _source_table_headers
+    from paperloom.reports.report_completeness import _restore_source_header_names, _source_table_headers
     report = ('### Table 7\n| Task | Generator | Human | Gemini 2.5 | GPT 5.1 |\n'
               '|---|---|---|---|---|\n| VG-Sketch | A | 4.0 | 3.0 | 2.0 |')
     ambiguous = ('Table 7: scores\nTask\nGenerator\nHuman\nGemini 2.5 Flash\nGemini 2.5 Pro\nVG-Sketch\nA\n4.0\n')
@@ -117,7 +117,7 @@ def test_known_note_value_fills_truncation_without_repeating_the_model_row():
 
 
 def test_ambiguous_truncation_candidates_and_conflicting_retained_cells_do_not_fill():
-    from arxiv_ra.reports.report_completeness import _fill_extraction_placeholders
+    from paperloom.reports.report_completeness import _fill_extraction_placeholders
     report = '### Table 2\n| Model | A | B |\n|---|---|---|\n| Alpha | 1 | 当前材料截断 |'
     first = report.replace('当前材料截断', '2')
     other = report.replace('当前材料截断', '3')
@@ -127,7 +127,7 @@ def test_ambiguous_truncation_candidates_and_conflicting_retained_cells_do_not_f
 
 
 def test_truncation_filling_preserves_conditions_categories_and_real_dashes():
-    from arxiv_ra.reports.report_completeness import _fill_extraction_placeholders
+    from paperloom.reports.report_completeness import _fill_extraction_placeholders
     report = '### Table 2 (seed=42)\n| Model | A | B |\n|---|---|---|\n| Alpha | 1 | 当前材料截断 |'
     note = report.replace('当前材料截断', '2')
     assert _fill_extraction_placeholders(report, [note.replace('seed=42', 'seed=24')], [{'number': 2}]) == report

@@ -3,10 +3,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.models import Author, Paper, ReportArtifact, VerifiedMetadata
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.utils import read_json, write_json
+from paperloom.config import AppConfig
+from paperloom.papers.models import Author, Paper, ReportArtifact, VerifiedMetadata
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.utils import read_json, write_json
 
 
 def test_report_artifact_keeps_all_experiment_images_beyond_eight(tmp_path: Path) -> None:
@@ -172,8 +172,8 @@ def test_daily_pipeline_publishes_only_after_localization(
             title=item.title, authors=item.authors, sources=["arXiv only"]
         )
     )
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
+    monkeypatch.setattr("paperloom.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("paperloom.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
 
     date_label = datetime.now(ZoneInfo(config.timezone)).date().isoformat()
     recommendation_path = tmp_path / "run" / date_label / "recommendations.json"
@@ -185,7 +185,7 @@ def test_daily_pipeline_publishes_only_after_localization(
         payload[0]["paper"]["abstract_zh"] = "已完成的中文摘要。"
         payload[0]["paper"]["recommendation_detail"] = "已完成的推荐依据。"
 
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.localize_abstracts", fake_localize)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", fake_localize)
 
     pipeline.run(force=True, demo=False, deliver=False)
 
@@ -229,14 +229,14 @@ def test_delivery_failure_does_not_commit_processed_state(
     pipeline.clients.verifier = SimpleNamespace(
         verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
     )
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.localize_abstracts", lambda *_args: None)
+    monkeypatch.setattr("paperloom.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("paperloom.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *_args: None)
 
     def fail_delivery(*_args, **_kwargs):
         raise ConnectionError("SMTP unavailable")
 
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.send_digest", fail_delivery)
+    monkeypatch.setattr("paperloom.discovery.pipeline.send_digest", fail_delivery)
 
     try:
         pipeline.run(force=False, demo=False, deliver=True)
@@ -283,9 +283,9 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     pipeline.clients.verifier = SimpleNamespace(
         verify=lambda item: VerifiedMetadata(title=item.title, authors=item.authors)
     )
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.matched_concept_groups", lambda *_args: 1)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.localize_abstracts", lambda *_args: None)
+    monkeypatch.setattr("paperloom.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("paperloom.discovery.pipeline.matched_concept_groups", lambda *_args: 1)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *_args: None)
 
     pipeline.run(force=True, demo=False, deliver=False)
 
@@ -320,8 +320,8 @@ def test_fallback_does_not_publish_empty_success_when_all_candidates_are_process
         search=lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("429"))
     )
     pipeline.clients.alphaxiv = SimpleNamespace(discover=lambda **_kwargs: [paper])
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
+    monkeypatch.setattr("paperloom.discovery.pipeline.rank_papers", lambda papers, *_args: papers)
+    monkeypatch.setattr("paperloom.discovery.pipeline.matched_concept_groups", lambda *_args: 0)
     write_json(tmp_path / "run" / "state-test.json", {"processed": [paper.arxiv_id]})
 
     with __import__("pytest").raises(RuntimeError, match="已阻止发布重复的空日报"):

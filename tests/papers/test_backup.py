@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 import pytest
 import yaml
 
-from arxiv_ra.papers.backup import BackupService, sha
-from arxiv_ra.cli import main
-from arxiv_ra.runtime.jobs.job_store import JobStore
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.utils import write_json, read_json
-from arxiv_ra.web import create_app
+from paperloom.papers.backup import BackupService, sha
+from paperloom.cli import main
+from paperloom.runtime.jobs.job_store import JobStore
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.utils import write_json, read_json
+from paperloom.web import create_app
 
 
 @pytest.fixture
@@ -229,7 +229,7 @@ def test_zip_symlinks_duplicates_and_declared_size_limit(service):
         archive.writestr("PROJECT/CONFIG.YAML", contents["project/config.yaml"])
     with pytest.raises(ValueError, match="大小写"):
         service.inspect(bad)
-    with patch("arxiv_ra.papers.backup.MAX_TOTAL", 1), pytest.raises(ValueError, match="超出限制"):
+    with patch("paperloom.papers.backup.MAX_TOTAL", 1), pytest.raises(ValueError, match="超出限制"):
         service.inspect(source)
 
 

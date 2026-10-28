@@ -42,11 +42,16 @@
       <a href="/status" class="{% if active == 'status' %}active{% endif %}"><i class="fas fa-heartbeat" aria-hidden="true"></i><span>状态</span></a>
     </nav>
 
-    <div class="header-meta">
-      <strong>{{ date_label or '尚未运行' }}</strong>
-      <small>{{ recommendation_scope_label }} {{ recommendation_count }} 篇</small>
+    <div class="header-actions">
+      <div class="header-meta">
+        <strong>{{ date_label or '尚未运行' }}</strong>
+        <small>{{ recommendation_scope_label }} {{ recommendation_count }} 篇</small>
+      </div>
+      <button class="nav-toggle" type="button" aria-label="展开导航" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i></button>
+      <a class="github-link" href="https://github.com/Dennis-Huangm/PaperLoom" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 PaperLoom 的 GitHub 仓库" title="PaperLoom · GitHub">
+        <i class="fab fa-github" aria-hidden="true"></i>
+      </a>
     </div>
-    <button class="nav-toggle" type="button" aria-label="展开导航" aria-expanded="false"><i class="fas fa-bars" aria-hidden="true"></i></button>
   </header>
 
   <main class="app-main">

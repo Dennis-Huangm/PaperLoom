@@ -10,13 +10,13 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.runtime.jobs.job_requests import capture_request
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.runtime.jobs.task_runtime import task_checkpoint_data, task_progress, task_warning
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
-from arxiv_ra.runtime.jobs.manager import JobManager
+from paperloom.config import AppConfig
+from paperloom.runtime.jobs.job_requests import capture_request
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.runtime.jobs.task_runtime import task_checkpoint_data, task_progress, task_warning
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
+from paperloom.runtime.jobs.manager import JobManager
 
 
 def wait_job(manager, job):
@@ -42,11 +42,11 @@ def test_process_loss_preserves_running_and_queued_requests_without_auto_replay(
     code = '''
 import os, sys, threading
 from pathlib import Path
-from arxiv_ra.config import AppConfig
-from arxiv_ra.runtime.jobs.manager import JobManager
-from arxiv_ra.runtime.jobs.job_requests import capture_request
-from arxiv_ra.runtime.jobs.task_runtime import task_checkpoint_data, task_progress, task_warning
-from arxiv_ra.utils import write_json
+from paperloom.config import AppConfig
+from paperloom.runtime.jobs.manager import JobManager
+from paperloom.runtime.jobs.job_requests import capture_request
+from paperloom.runtime.jobs.task_runtime import task_checkpoint_data, task_progress, task_warning
+from paperloom.utils import write_json
 root = Path(sys.argv[1])
 manager = JobManager(root, 1)
 gate = threading.Event()
@@ -245,7 +245,7 @@ def test_retry_uses_pinned_paper_and_saved_config_without_duplicate_attempts(tmp
         def report_arxiv_id(self, aid, snapshot):
             calls.append((aid, snapshot.version))
             return tmp_path / "report.html"
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.DailyPipeline", Pipeline)
+    monkeypatch.setattr("paperloom.discovery.pipeline.DailyPipeline", Pipeline)
     try:
         with pytest.raises(ValueError, match="研究方向"):
             manager.retry(old.id, "beta")
@@ -317,7 +317,7 @@ def test_captured_request_executes_and_recovers_through_queue(tmp_path, monkeypa
         generate = report_arxiv_id = run
     for module, name in [("discovery.pipeline", "DailyPipeline"), ("reports.weekly", "WeeklySynthesizer"),
                          ("reports.comparison", "ComparisonService"), ("versions.version_batch", "VersionSyncBatch")]:
-        monkeypatch.setattr(f"arxiv_ra.{module}.{name}", Runner)
+        monkeypatch.setattr(f"paperloom.{module}.{name}", Runner)
     params = {"report": {"arxiv_id": "2407.05600", "snapshot": {
                             "arxiv_id": "2407.05600", "version": 1, "title": "Selected revision",
                             "metadata_status": "complete"}},
@@ -374,7 +374,7 @@ def test_api_restart_recovery_profile_guard_and_private_ledger(tmp_path, monkeyp
     app = create_app(cfg)
     def failed(self, snapshot):
         raise RuntimeError("fixture failure")
-    monkeypatch.setattr("arxiv_ra.reports.comparison.ComparisonService.generate", failed)
+    monkeypatch.setattr("paperloom.reports.comparison.ComparisonService.generate", failed)
     for aid in ["2407.05600", "2407.05601"]:
         PaperLibraryStore(tmp_path / "run", "alpha").add({"paper": {
             "arxiv_id": aid, "version": 2, "title": "Frozen paper", "abstract": "Public source"}}, "Alpha")
@@ -387,7 +387,7 @@ def test_api_restart_recovery_profile_guard_and_private_ledger(tmp_path, monkeyp
     def succeeded(self, snapshot):
         captured.append(snapshot)
         return tmp_path / "run/result.html"
-    monkeypatch.setattr("arxiv_ra.reports.comparison.ComparisonService.generate", succeeded)
+    monkeypatch.setattr("paperloom.reports.comparison.ComparisonService.generate", succeeded)
     app = create_app(cfg)
     with TestClient(app) as client:
         page = client.get("/generate").text
@@ -488,7 +488,7 @@ def test_pinned_recovery_does_not_coalesce_with_new_active_latest_request(tmp_pa
     def fake_recovery(request, root, checkpoint):
         seen.append(checkpoint["paper"]["version"])
         return lambda: root / "v2.html"
-    monkeypatch.setattr("arxiv_ra.runtime.jobs.manager.recovery_runner", fake_recovery)
+    monkeypatch.setattr("paperloom.runtime.jobs.manager.recovery_runner", fake_recovery)
     try:
         retry = manager.retry(old.id, "alpha")
         assert retry.id != latest.id and wait_job(manager, retry).status == "succeeded"
@@ -501,7 +501,7 @@ def test_pinned_recovery_does_not_coalesce_with_new_active_latest_request(tmp_pa
 
 
 def test_shutdown_stops_active_work_at_checkpoint_and_preserves_recovery(tmp_path):
-    from arxiv_ra.runtime.jobs.task_runtime import task_checkpoint
+    from paperloom.runtime.jobs.task_runtime import task_checkpoint
     manager = JobManager(tmp_path, 1)
     started, proceed = threading.Event(), threading.Event()
     def work():

@@ -3,13 +3,13 @@ import threading
 
 import pytest
 
-from arxiv_ra.config import AppConfig
-from arxiv_ra.papers.library import PaperLibraryStore
-from arxiv_ra.profiles.profiles import ProfileManager
-from arxiv_ra.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.versions.version_batch import VersionSyncBatch, update_candidates
-from arxiv_ra.versions.version_sync import PaperVersionSync
+from paperloom.config import AppConfig
+from paperloom.papers.library import PaperLibraryStore
+from paperloom.profiles.profiles import ProfileManager
+from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_task_hooks
+from paperloom.utils import read_json, write_json
+from paperloom.versions.version_batch import VersionSyncBatch, update_candidates
+from paperloom.versions.version_sync import PaperVersionSync
 from tests.versions.test_version_sync import Arxiv, paper, tracked_report
 
 
@@ -223,7 +223,7 @@ def test_cancel_signal_before_first_paper_leaves_resumable_plan(batch_setup):
 
 def test_batch_web_preview_and_duplicate_execution_are_safe(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from arxiv_ra.web import create_app
+    from paperloom.web import create_app
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text("output_dir: run\n", encoding="utf-8")

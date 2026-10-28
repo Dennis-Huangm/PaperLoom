@@ -5,7 +5,7 @@ import copy
 import math
 import re
 import uuid
-from arxiv_ra.resources import PACKAGE_ROOT
+from paperloom.resources import PACKAGE_ROOT
 from pathlib import Path
 
 from ..runtime.jobs.task_runtime import task_checkpoint, task_commit

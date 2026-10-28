@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from arxiv_ra.reports.report_store import matching_report
-from arxiv_ra.utils import write_json
-from arxiv_ra.web.web_catalog import report_library, preferred_report_index, grouped_report_library
+from paperloom.reports.report_store import matching_report
+from paperloom.utils import write_json
+from paperloom.web.web_catalog import report_library, preferred_report_index, grouped_report_library
 
 
 def add_report(root, name, *, profile="alpha", version=2, quality="full",

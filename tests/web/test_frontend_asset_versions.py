@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
-from arxiv_ra.web import create_app
+from paperloom.web import create_app
 import pytest
 
 

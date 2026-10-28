@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from arxiv_ra.papers.feedback import FeedbackStore
-from arxiv_ra.papers.models import Author, Paper
+from paperloom.papers.feedback import FeedbackStore
+from paperloom.papers.models import Author, Paper
 
 
 def _paper(arxiv_id: str, title: str, abstract: str = "") -> Paper:

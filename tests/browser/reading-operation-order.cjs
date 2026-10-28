@@ -7,7 +7,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
  const sessions=Object.fromEntries(['a','b'].map(id=>[id,{id,paper:{},mode:'workspace',title:'Conversation '+id,updated_at:'2026-10-08T00:00:00Z',messages:[],references:[{report_id:'report',paper}]}]));
  await page.route('http://localhost/**',route=>{
   const p=new URL(route.request().url()).pathname;
-  if(p==='/reading-chat.js')return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(process.env.READING_SCRIPT || 'src/arxiv_ra/static/reading-chat.js','utf8')});
+  if(p==='/reading-chat.js')return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(process.env.READING_SCRIPT || 'src/paperloom/static/reading-chat.js','utf8')});
   if(p.includes('/api/reading/')){
    if(p.endsWith('/events'))return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
    if(p.endsWith('/settings'))return route.fulfill({json:{model:'fixture'}});

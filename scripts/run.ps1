@@ -20,7 +20,7 @@ $ConfigPath = (Resolve-Path -LiteralPath $ConfigPath).Path
 # the shell's active Conda environment or current directory.
 Push-Location -LiteralPath $projectRoot
 try {
-    & $python -m arxiv_ra --config $ConfigPath @CommandArgs
+    & $python -m paperloom --config $ConfigPath @CommandArgs
     $result = $LASTEXITCODE
 } finally {
     Pop-Location

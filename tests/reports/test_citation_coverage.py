@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from arxiv_ra.reports.evidence import attach_evidence
-from arxiv_ra.papers.models import ParsedPaper
-from arxiv_ra.sources.source_spans import source_spans
+from paperloom.reports.evidence import attach_evidence
+from paperloom.papers.models import ParsedPaper
+from paperloom.sources.source_spans import source_spans
 
 
 PAGE = 'Table 2: Results\nMethod\nGroup A\nGroup B\nCLIP\nTokens\nCLIP\nTokens\nAlpha\n0.313\n31.4k\n0.309\n31.4k\nBeta\n0.293\n124.3k\n0.276\n124.3k\n'

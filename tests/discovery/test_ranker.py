@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from arxiv_ra.config import DiscoveryConfig, RankingConfig
-from arxiv_ra.papers.models import Author, Paper
-from arxiv_ra.discovery.ranker import matched_concept_groups, rank_papers
+from paperloom.config import DiscoveryConfig, RankingConfig
+from paperloom.papers.models import Author, Paper
+from paperloom.discovery.ranker import matched_concept_groups, rank_papers
 
 
 def make_paper(title: str, abstract: str) -> Paper:

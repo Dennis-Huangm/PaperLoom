@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/arxiv-research-assistant.png" width="104" alt="PaperLoom 标志">
+  <img src="assets/paperloom.png" width="104" alt="PaperLoom 标志">
 </p>
 
 <h1 align="center">PaperLoom · 知织</h1>

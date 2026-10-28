@@ -9,17 +9,17 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from arxiv_ra.discovery.abstracts import localize_abstracts
-from arxiv_ra.config import AppConfig, ObsidianConfig
-from arxiv_ra.papers.models import Author, Paper, VerifiedMetadata
-from arxiv_ra.integrations.obsidian import MANAGED_START, MANAGED_END, ObsidianExporter
-from arxiv_ra.discovery.pipeline import DailyPipeline
-from arxiv_ra.papers.storage import read_recommendations
-from arxiv_ra.utils import read_json, write_json
-from arxiv_ra.web import create_app
-from arxiv_ra.reports.weekly import WeeklySynthesizer
-from arxiv_ra.integrations.zotero import ZoteroClient
-from arxiv_ra.config import ZoteroConfig
+from paperloom.discovery.abstracts import localize_abstracts
+from paperloom.config import AppConfig, ObsidianConfig
+from paperloom.papers.models import Author, Paper, VerifiedMetadata
+from paperloom.integrations.obsidian import MANAGED_START, MANAGED_END, ObsidianExporter
+from paperloom.discovery.pipeline import DailyPipeline
+from paperloom.papers.storage import read_recommendations
+from paperloom.utils import read_json, write_json
+from paperloom.web import create_app
+from paperloom.reports.weekly import WeeklySynthesizer
+from paperloom.integrations.zotero import ZoteroClient
+from paperloom.config import ZoteroConfig
 
 
 def paper(version=2, aid="2609.00001"):
@@ -141,7 +141,7 @@ def test_abstract_cache_does_not_reuse_another_revision(tmp_path, monkeypatch):
             return "test-library/users/0"
         def chat(self, *args, **kwargs):
             return '{"papers":[{"id":"2609.00001","abstract_zh":"V1_SUMMARY","recommendation_detail":"V1_REASON"}]}'
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.LLMClient", LLM)
+    monkeypatch.setattr("paperloom.discovery.abstracts.LLMClient", LLM)
     cfg = config(tmp_path)
     localize_abstracts(cfg, tmp_path / "run", [{"paper": paper(1).to_dict()}])
     report(tmp_path, version=2, text="V2 REPORT")
@@ -189,7 +189,7 @@ def test_zotero_export_uses_selected_report_and_rejects_ambiguous_id(tmp_path, m
         def save_paper(self, p, verified, profile, **kwargs):
             saved.append((p, profile, kwargs))
             return SimpleNamespace(to_dict=lambda: {"attachments_added": 1, "created": True})
-    monkeypatch.setattr("arxiv_ra.integrations.zotero.ZoteroClient", Zotero)
+    monkeypatch.setattr("paperloom.integrations.zotero.ZoteroClient", Zotero)
     with TestClient(create_app(web_config(tmp_path))) as client:
         selected = old.with_suffix(".html").relative_to(tmp_path / "run").as_posix()
         response = client.post("/api/zotero/save-report", data={"arxiv_id": paper().arxiv_id, "report_id": selected})
@@ -215,10 +215,10 @@ def test_zotero_pdf_cache_pins_revision(tmp_path, monkeypatch):
             saved.append(kwargs["pdf_path"].read_bytes())
             return SimpleNamespace(to_dict=lambda: {"attachments_added": 1, "created": True})
     monkeypatch.setenv("ZOTERO_LOCAL_API_KEY", "test-only")
-    monkeypatch.setattr("arxiv_ra.integrations.zotero.ZoteroClient", Zotero)
-    monkeypatch.setattr("arxiv_ra.discovery.abstracts.localize_abstracts", lambda *args, **kwargs: None)
+    monkeypatch.setattr("paperloom.integrations.zotero.ZoteroClient", Zotero)
+    monkeypatch.setattr("paperloom.discovery.abstracts.localize_abstracts", lambda *args, **kwargs: None)
     downloads = []
-    from arxiv_ra.discovery.arxiv_client import ArxivClient
+    from paperloom.discovery.arxiv_client import ArxivClient
     def handler(request):
         downloads.append(str(request.url))
         return httpx.Response(200, content=b"%PDF-1.7\n" + str(request.url).encode() * 512)
@@ -228,8 +228,8 @@ def test_zotero_pdf_cache_pins_revision(tmp_path, monkeypatch):
         adapter.client = httpx.Client(transport=httpx.MockTransport(handler))
         return adapter
     monkeypatch.setenv("ARXIV_PDF_BACKEND", "httpx")
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.ArxivClient", download_client)
-    monkeypatch.setattr("arxiv_ra.discovery.arxiv_client.time.sleep", lambda _: None)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.ArxivClient", download_client)
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.time.sleep", lambda _: None)
     with TestClient(create_app(web_config(tmp_path))) as client:
         for version in (1, 2):
             p = paper(version).to_dict()
@@ -276,14 +276,14 @@ def test_obsidian_refuses_to_replace_malformed_managed_notes(tmp_path, damage):
     else:
         text = text.replace("---\n", "---\ninvalid: [\n", 1)
     note.write_text(text, encoding="utf-8")
-    from arxiv_ra.integrations.obsidian import ObsidianError
+    from paperloom.integrations.obsidian import ObsidianError
     with pytest.raises(ObsidianError):
         exp.sync_feedback(paper().to_dict(), {})
     assert note.read_text(encoding="utf-8") == text
 
 
 def test_report_evidence_does_not_substitute_when_exact_version_missing(tmp_path):
-    from arxiv_ra.reports.report_store import matching_report
+    from paperloom.reports.report_store import matching_report
     report(tmp_path, "a", 3, "OTHER VERSION")
     report(tmp_path, "b", 2, "OTHER PROFILE")
     assert matching_report(tmp_path / "run", "a", paper(2).to_dict()) is None
@@ -326,7 +326,7 @@ def test_zotero_export_uses_historical_recommendation_snapshot(tmp_path, monkeyp
             captured.append(p)
             return SimpleNamespace(to_dict=lambda: {"created": True, "attachments_added": 0})
     monkeypatch.setenv("ZOTERO_LOCAL_API_KEY", "test-only")
-    monkeypatch.setattr("arxiv_ra.integrations.zotero.ZoteroClient", Zotero)
+    monkeypatch.setattr("paperloom.integrations.zotero.ZoteroClient", Zotero)
     path = web_config(tmp_path)
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     payload["zotero"] = {"attach_pdf": False}
@@ -342,7 +342,7 @@ def test_zotero_export_uses_historical_recommendation_snapshot(tmp_path, monkeyp
 
 
 def test_version_tracking_does_not_import_another_profiles_reports(tmp_path):
-    from arxiv_ra.versions.version_tracker import VersionTracker
+    from paperloom.versions.version_tracker import VersionTracker
     report(tmp_path, "b")
     cfg = config(tmp_path)
     cfg.version_tracking.include_feedback = cfg.version_tracking.include_zotero = False
@@ -366,7 +366,7 @@ def test_daily_publication_keeps_immutable_batches_on_delivery_failure(tmp_path,
     publish(paper(1), False)
     batch = next(day.glob("batches/a/*/recommendations.json"))
     original = batch.read_bytes()
-    monkeypatch.setattr("arxiv_ra.discovery.pipeline.send_digest", Mock(side_effect=ConnectionError("offline")))
+    monkeypatch.setattr("paperloom.discovery.pipeline.send_digest", Mock(side_effect=ConnectionError("offline")))
     with pytest.raises(ConnectionError):
         publish(paper(2, "2609.00002"), True)
     assert batch.read_bytes() == original

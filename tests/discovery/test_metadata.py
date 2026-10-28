@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from contextlib import contextmanager, nullcontext
 
-from arxiv_ra.config import MetadataConfig
-from arxiv_ra.discovery.metadata import MetadataVerifier, declared_venue_from_comment
-from arxiv_ra.papers.models import Author, Paper, VerifiedMetadata
+from paperloom.config import MetadataConfig
+from paperloom.discovery.metadata import MetadataVerifier, declared_venue_from_comment
+from paperloom.papers.models import Author, Paper, VerifiedMetadata
 
 
 def _paper() -> Paper:
@@ -90,11 +90,11 @@ def test_semantic_scholar_retries_429_and_honors_retry_after(monkeypatch) -> Non
     )
     verifier.client = Client()
     monkeypatch.setattr(
-        "arxiv_ra.discovery.metadata.shared_rate_limit", lambda *_args: nullcontext()
+        "paperloom.discovery.metadata.shared_rate_limit", lambda *_args: nullcontext()
     )
     sleeps = []
-    monkeypatch.setattr("arxiv_ra.discovery.metadata.defer_rate_limit", lambda *_: None)
-    monkeypatch.setattr("arxiv_ra.discovery.metadata.time.sleep", sleeps.append)
+    monkeypatch.setattr("paperloom.discovery.metadata.defer_rate_limit", lambda *_: None)
+    monkeypatch.setattr("paperloom.discovery.metadata.time.sleep", sleeps.append)
 
     result = verifier._semantic_scholar(_paper())
 
@@ -126,7 +126,7 @@ def test_semantic_scholar_uses_shared_rate_limit(monkeypatch) -> None:
 
     verifier = MetadataVerifier(MetadataConfig(semantic_scholar_min_interval=1.1))
     verifier.client = Client()
-    monkeypatch.setattr("arxiv_ra.discovery.metadata.shared_rate_limit", fake_slot)
+    monkeypatch.setattr("paperloom.discovery.metadata.shared_rate_limit", fake_slot)
 
     verifier._semantic_scholar(_paper())
 

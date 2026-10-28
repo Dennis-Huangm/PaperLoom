@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from arxiv_ra.config import MetadataConfig
-from arxiv_ra.discovery.metadata import MetadataVerifier, declared_venue_from_comment
-from arxiv_ra.papers.models import Paper, VerifiedMetadata
-from arxiv_ra.reports.report_metadata import protect_metadata
-from arxiv_ra.web import create_app
+from paperloom.config import MetadataConfig
+from paperloom.discovery.metadata import MetadataVerifier, declared_venue_from_comment
+from paperloom.papers.models import Paper, VerifiedMetadata
+from paperloom.reports.report_metadata import protect_metadata
+from paperloom.web import create_app
 
 
 def paper():

@@ -8,7 +8,7 @@ let removed=[],failBeta=true,accept=false,releaseSearch;const searchGate=new Pro
 page.on('dialog',d=>accept?d.accept():d.dismiss());
 await page.route('http://localhost/**',async route=>{
 const req=route.request(),url=new URL(req.url()),path=url.pathname;
-if(path.endsWith('.css')||path.endsWith('.js'))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('src/arxiv_ra/static/'+path.split('/').pop(),'utf8')});
+if(path.endsWith('.css')||path.endsWith('.js'))return route.fulfill({contentType:path.endsWith('.css')?'text/css':'application/javascript',body:fs.readFileSync('src/paperloom/static/'+path.split('/').pop(),'utf8')});
 if(path.includes('/api/reading/')){
 if(path.endsWith('/events'))return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
 if(req.method()==='DELETE'){const id=path.split('/').pop();if(id==='beta'&&failBeta)return route.fulfill({status:500,json:{detail:'fixture failure'}});removed.push(id);rows=rows.filter(r=>r.id!==id);return route.fulfill({json:{deleted:true}});}
