@@ -53,6 +53,7 @@
   const view=createReadingView(host, reportHistory ? 'report' : 'workspace');
   const $ = selector => host.querySelector(selector);
   if(papers)installDock();
+  else installWorkspaceResize();
   const input = $('textarea'), status = $('.reading-status'), messages = $('.reading-messages');
   const compose = $('.reading-compose'), settingsForm = $('.reading-settings');
   const selectionBox = $('.reading-selection'), history = $('.reading-history');
@@ -215,6 +216,42 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
     document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>closeDock(false));
   }
+  function installWorkspaceResize() {
+    const resize=document.createElement('div');
+    resize.className='reading-workspace-resize';resize.tabIndex=0;
+    resize.setAttribute('role','separator');resize.setAttribute('aria-label','调整对话区域宽度');
+    resize.setAttribute('aria-controls',host.id);resize.setAttribute('aria-orientation','vertical');
+    resize.title='拖拽调整宽度，双击恢复默认；方向键微调';
+    host.append(resize);
+    const defaultWidth=1180, minimum=600, key='paperloom.reading.workspace-width';
+    let preferred=defaultWidth;
+    try {const saved=Number(localStorage.getItem(key));if(Number.isFinite(saved) && saved>0)preferred=saved;}catch{}
+    function maximum(){return host.parentElement.clientWidth-parseFloat(getComputedStyle(host.parentElement).paddingLeft || 0)-parseFloat(getComputedStyle(host.parentElement).paddingRight || 0);}
+    function size(value,remember=false) {
+      const max=maximum(), min=Math.min(minimum,max);
+      const width=Math.max(min,Math.min(max,value));
+      host.style.setProperty('--reading-workspace-width',width+'px');
+      resize.setAttribute('aria-valuemin',Math.round(min));resize.setAttribute('aria-valuemax',Math.round(max));resize.setAttribute('aria-valuenow',Math.round(width));
+      if(remember){preferred=width;try{localStorage.setItem(key,String(width));}catch{}}
+    }
+    size(preferred);
+    new ResizeObserver(()=>size(preferred)).observe(host.parentElement);
+    resize.onpointerdown=event=>{
+      if(event.button!==0)return;
+      event.preventDefault();resize.setPointerCapture(event.pointerId);
+      const x=event.clientX,width=host.offsetWidth,scale=host.getBoundingClientRect().width/width;
+      document.body.classList.add('reading-resizing');
+      resize.onpointermove=e=>size(width+(x-e.clientX)/scale,true);
+    };
+    resize.onpointerup=event=>{if(resize.hasPointerCapture(event.pointerId))resize.releasePointerCapture(event.pointerId);};
+    resize.onlostpointercapture=()=>{resize.onpointermove=null;document.body.classList.remove('reading-resizing');};
+    resize.onkeydown=event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();
+      size(event.key==='Home'?minimum:event.key==='End'?maximum():host.offsetWidth+(event.key==='ArrowLeft'?20:-20),true);
+    };
+    resize.ondblclick=()=>size(defaultWidth,true);
+  }
   let sessionWatch=null, pageSuspended=false;
   function stopWatching() {
     if(!sessionWatch)return;
@@ -302,7 +339,7 @@ ${f.text}`));row.append(pieces);}
           trace.append(row);
         }
 
-        if(!message.reasoning)trace.append(textNode('small','当前接口尚未返回思考内容；此处展示实际工具执行记录。'));
+        if(!message.reasoning)trace.append(textNode('small','本轮接口未返回思考内容；可在设置中检查思考强度。此处展示实际工具执行记录。'));
         trace.ontoggle=()=>{if(trace.open)expanded.add(key);else expanded.delete(key);}; box.append(trace);
       }
       if(message.role === 'assistant' && message.reasoning) {

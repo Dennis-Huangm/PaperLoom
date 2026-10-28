@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}阅读对话 · PaperLoom{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/reading-chat.css?v=20261008-readiness">
+<link rel="stylesheet" href="/static/reading-chat.css?v={{ asset_version('reading-chat.css') }}">
 <div id="reading-panel" data-arxiv-id="{{ arxiv_id }}" data-report-id="{{ report_id }}" data-origin="{{ origin }}" data-source-date="{{ source_date }}" data-profile-id="{{ config.profile_id }}"></div>
-<script defer src="/static/reading-chat.js?v=20261020-effective-model"></script>
+<script defer src="/static/reading-chat.js?v={{ asset_version('reading-chat.js') }}"></script>
 {% endblock %}

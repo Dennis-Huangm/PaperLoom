@@ -25,6 +25,7 @@ from ..runtime.artifacts import artifact_url
 
 KINDS = {"metadata": "标题与摘要", "notes": "个人笔记与标签", "report": "报告正文", "pdf": "PDF 原文"}
 QUALITIES = {"full": "全文报告", "abstract": "摘要级报告", "unknown": "质量未记录", "none": "不适用"}
+FTS_SCHEMA = "CREATE VIRTUAL TABLE IF NOT EXISTS terms USING fts5(normalized, tokenize='trigram')"
 
 
 def normalize(value: str) -> str:
@@ -183,13 +184,16 @@ class SearchIndex:
     def refresh(self, *, rebuild: bool = False) -> dict:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with _locked(self.path.with_suffix(".lock")):
-            if rebuild:
+            if rebuild and self.status().get("error"):
+                # Replace files only to repair an unreadable database. Healthy
+                # rebuilds use the same transaction as updates so open readers
+                # remain valid (Windows cannot replace an open database file).
                 temporary = SearchIndex(self.root, self.profile)
                 temporary.path = self.path.with_name(f"rebuild-{uuid.uuid4().hex}.sqlite3")
                 try:
                     result = temporary.refresh()
                     task_checkpoint()
-                    temporary.path.replace(self.path)
+                    self._replace_corrupt_database(temporary.path)
                     return result
                 finally:
                     for path in (temporary.path, temporary.path.with_suffix(".lock"),
@@ -197,16 +201,21 @@ class SearchIndex:
                         path.unlink(missing_ok=True)
             sources, warnings = self.sources()
             with closing(sqlite3.connect(self.path, timeout=30)) as db, db:
+                # Readers keep using the committed snapshot while extraction and
+                # FTS writes run. A rollback journal can spill its page cache and
+                # hold an exclusive lock for the rest of this long transaction.
+                db.execute("PRAGMA journal_mode=WAL")
                 db.executescript("""
                     CREATE TABLE IF NOT EXISTS sources (key TEXT PRIMARY KEY, signature TEXT, warnings TEXT);
                     CREATE TABLE IF NOT EXISTS docs (id TEXT UNIQUE, source TEXT, title TEXT, aid TEXT,
                         version INTEGER, kind TEXT, quality TEXT, page INTEGER, body TEXT, url TEXT, normalized TEXT);
                     CREATE INDEX IF NOT EXISTS docs_source ON docs(source);
                     CREATE TABLE IF NOT EXISTS status (key TEXT PRIMARY KEY, value TEXT);
-                    CREATE VIRTUAL TABLE IF NOT EXISTS terms USING fts5(normalized, tokenize='trigram');
                 """)
+                db.execute(FTS_SCHEMA)
                 db.execute("BEGIN IMMEDIATE")
-                previous = {row[0]: (row[1], json.loads(row[2])) for row in db.execute("SELECT * FROM sources")}
+                previous = {} if rebuild else {row[0]: (row[1], json.loads(row[2]))
+                                               for row in db.execute("SELECT * FROM sources")}
                 active = {source.key for source in sources}
                 changed = 0
 
@@ -215,8 +224,16 @@ class SearchIndex:
                     db.execute("DELETE FROM docs WHERE source=?", (key,))
                     db.execute("DELETE FROM sources WHERE key=?", (key,))
 
-                for key in previous.keys() - active:
-                    remove(key)
+                if rebuild:
+                    # The summary table may be readable even when FTS segments
+                    # are corrupt. Recreate FTS inside the same atomic rebuild.
+                    db.execute("DROP TABLE terms")
+                    db.execute(FTS_SCHEMA)
+                    db.execute("DELETE FROM docs")
+                    db.execute("DELETE FROM sources")
+                else:
+                    for key in previous.keys() - active:
+                        remove(key)
                 for position, source in enumerate(sources):
                     task_progress(f"更新搜索索引 · {position + 1}/{len(sources)} · {KINDS[source.kind]}",
                                   int(position * 95 / max(1, len(sources))))
@@ -252,6 +269,27 @@ class SearchIndex:
             for warning in warnings:
                 task_warning("搜索索引", warning)
             return status
+
+    def _replace_corrupt_database(self, replacement: Path) -> None:
+        # Retire the old file set before installing a new database. A crash WAL
+        # belongs to the damaged database and must never replay into its repair.
+        retired = []
+        backup = self.path.with_name(f"corrupt-{uuid.uuid4().hex}.sqlite3")
+        try:
+            for suffix in ("", "-wal", "-shm"):
+                original, saved = Path(str(self.path) + suffix), Path(str(backup) + suffix)
+                if original.exists():
+                    original.replace(saved)
+                    retired.append((original, saved))
+            replacement.replace(self.path)
+        except OSError:
+            # Windows can refuse a move while another connection is open.
+            # Restore the original set if any move or installation fails.
+            for original, saved in reversed(retired):
+                saved.replace(original)
+            raise
+        for _, saved in retired:
+            saved.unlink(missing_ok=True)
 
     def _read(self):
         db = sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True, timeout=5)
