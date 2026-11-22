@@ -36,6 +36,7 @@ for number, title in enumerate([
             f'<rect width="{width}" height="{height}" fill="#fff3e7"/>'
             f'<text x="20" y="55" font-size="32" fill="#c7650e">{name}</text></svg>', encoding="utf-8")
         text += f"![{name}]({name}.svg)\n*图片说明 {name}*\n\n"
+    text += "## 公式示例\n\n$$\nx^2 + y^2 = z^2\n$$\n\n"
     for section in ["一句话总结", "核心方法", "关键结果", "局限性", *[f"补充分析 {index}" for index in range(1, 31)]]:
         text += f"## {section}\n\n" + "这是用于验证报告阅读布局的独立演示材料。" * 18 + "\n\n"
     (directory / "report.md").write_text(text, encoding="utf-8")

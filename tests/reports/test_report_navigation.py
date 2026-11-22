@@ -81,7 +81,8 @@ def test_reader_assets_change_url_after_a_script_update(tmp_path, monkeypatch):
     # Model two installed releases without changing the application's real assets.
     static = tmp_path / "static"
     static.mkdir()
-    for filename in ("math.js", "report.js", "report-browser.js", "report-browser.css", "reading-chat.js", "reading-chat.css"):
+    for filename in ("display-preferences.js", "math.js", "report.js", "report-browser.js", "report-browser.css",
+                     "reading-chat.js", "reading-chat.css"):
         (static / filename).write_text("first release", encoding="utf-8")
     monkeypatch.setattr(render, "PACKAGE_ROOT", tmp_path)
 
@@ -94,6 +95,10 @@ def test_reader_assets_change_url_after_a_script_update(tmp_path, monkeypatch):
     before = asset_urls()
     assert urlsplit(before["/static/report.js"]).query, "reader script must bypass a cached older release"
     (static / "report.js").write_text("second release with working collapse buttons", encoding="utf-8")
-    after = asset_urls()
-    assert before["/static/report.js"] != after["/static/report.js"]
-    assert before["/static/report-browser.css"] == after["/static/report-browser.css"]
+    after_reader_update = asset_urls()
+    assert before["/static/report.js"] != after_reader_update["/static/report.js"]
+    assert before["/static/report-browser.css"] == after_reader_update["/static/report-browser.css"]
+    (static / "display-preferences.js").write_text("updated font preferences", encoding="utf-8")
+    after_font_update = asset_urls()
+    assert after_reader_update["/static/display-preferences.js"] != after_font_update["/static/display-preferences.js"]
+    assert after_reader_update["/static/report.js"] == after_font_update["/static/report.js"]

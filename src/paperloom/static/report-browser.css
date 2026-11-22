@@ -1,13 +1,13 @@
-@import url("ui-scale.css?v=20261015");
+@import url("ui-scale.css?v=20261122");
 [hidden]{display:none!important}
-.report-nav-toggle{position:fixed;top:140px;z-index:31;border:1px solid var(--line);background:var(--surface);color:var(--accent);padding:12px 14px;box-shadow:0 2px 10px #20262d12;cursor:pointer;font:600 14px "Segoe UI",sans-serif}
+.report-nav-toggle{position:fixed;top:140px;z-index:31;border:1px solid var(--line);background:var(--surface);color:var(--accent);padding:12px 14px;box-shadow:0 2px 10px #20262d12;cursor:pointer;font:600 .875rem "Segoe UI",sans-serif}
 #report-toc-toggle{left:0;border-radius:0 6px 6px 0}#report-papers-toggle{right:0;border-radius:6px 0 0 6px}
 .report-nav-panel{position:sticky;top:18px;align-self:start;height:calc(100dvh - 134px);max-height:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px;display:flex;flex-direction:column;gap:12px;overflow:visible;z-index:30}
-.report-nav-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}.report-nav-heading h2{font-size:16px;font-weight:700;line-height:1.5;margin:0}.report-nav-close,#report-papers-retry,#report-papers-clear{border:1px solid var(--line);background:var(--surface);border-radius:4px;color:var(--muted);padding:5px 8px;cursor:pointer;font:500 12px "Segoe UI",sans-serif;line-height:1.5;white-space:nowrap}.report-nav-close:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.report-nav-panel .toc-doc-title{margin:0;font-weight:500;color:var(--muted);flex-shrink:0}.report-nav-panel .report-toc,#report-papers-list{overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0}.report-nav-panel .report-toc a{font-size:13px;padding-top:9px;padding-bottom:9px}.report-nav-panel .report-toc ul ul a{font-size:12px}
+.report-nav-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}.report-nav-heading h2{font-size:1rem;font-weight:700;line-height:1.5;margin:0}.report-nav-close,#report-papers-retry,#report-papers-clear{border:1px solid var(--line);background:var(--surface);border-radius:4px;color:var(--muted);padding:5px 8px;cursor:pointer;font:500 .75rem "Segoe UI",sans-serif;line-height:1.5;white-space:nowrap}.report-nav-close:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.report-nav-panel .toc-doc-title{margin:0;font-weight:500;color:var(--muted);flex-shrink:0}.report-nav-panel .report-toc,#report-papers-list{overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0}.report-nav-panel .report-toc a{font-size:.8125rem;padding-top:9px;padding-bottom:9px}.report-nav-panel .report-toc ul ul a{font-size:.75rem}
 @media(min-width:761px){.report-shell.toc-collapsed{grid-template-columns:minmax(0,1fr)}}
-.report-papers-search-label{font-size:12px;color:var(--muted);margin-bottom:-8px}#report-papers-search{width:100%;border:1px solid var(--line);border-radius:4px;padding:9px 10px;font:inherit;font-size:13px}#report-papers-status{margin:0;color:var(--muted);font-size:12px}
-.report-paper-link{display:block;padding:14px 10px;border-top:1px solid var(--line);color:var(--ink);border-radius:4px}.report-paper-link:hover{background:#faf9f7;text-decoration:none}.report-paper-link[aria-current="page"]{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent)}.report-paper-title{display:block;font-size:13px;font-weight:650;line-height:1.5;overflow-wrap:anywhere}.report-paper-meta,.report-paper-directions{display:block;font-size:11px;color:var(--muted);line-height:1.5;margin-top:7px;overflow-wrap:anywhere}
+.report-papers-search-label{font-size:.75rem;color:var(--muted);margin-bottom:-8px}#report-papers-search{width:100%;border:1px solid var(--line);border-radius:4px;padding:9px 10px;font:inherit;font-size:.8125rem}#report-papers-status{margin:0;color:var(--muted);font-size:.75rem}
+.report-paper-link{display:block;padding:14px 10px;border-top:1px solid var(--line);color:var(--ink);border-radius:4px}.report-paper-link:hover{background:#faf9f7;text-decoration:none}.report-paper-link[aria-current="page"]{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent)}.report-paper-title{display:block;font-size:.8125rem;font-weight:650;line-height:1.5;overflow-wrap:anywhere}.report-paper-meta,.report-paper-directions{display:block;font-size:.6875rem;color:var(--muted);line-height:1.5;margin-top:7px;overflow-wrap:anywhere}
 #report-papers-resize{position:absolute;left:-12px;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none}#report-papers-resize:hover,#report-papers-resize:focus-visible{background:var(--accent-soft)}.report-papers-resizing{cursor:col-resize;user-select:none}
 .report-nav-backdrop{position:fixed;inset:0;background:#20262d55;border:0;z-index:29;cursor:pointer}
 .report-nav-panel button:focus-visible,.report-nav-toggle:focus-visible,.report-nav-panel a:focus-visible,#report-papers-search:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -24,21 +24,21 @@
   .report-nav-panel{background:#fafaf8;border:0;border-radius:0;box-shadow:none;padding:24px 18px;gap:14px;top:0;height:100dvh}
   .report-sidebar.report-nav-panel{border-right:1px solid #eeede9}
   #report-papers{border-left:1px solid #eeede9}
-  .report-nav-heading h2{font-size:14px;letter-spacing:.02em}
-  .report-nav-close{border-color:transparent;background:transparent;padding:4px 6px;font-size:11px}
-  .report-nav-panel .toc-doc-title{font-size:12px;line-height:1.65;color:#858980}
+  .report-nav-heading h2{font-size:.875rem;letter-spacing:.02em}
+  .report-nav-close{border-color:transparent;background:transparent;padding:4px 6px;font-size:.6875rem}
+  .report-nav-panel .toc-doc-title{font-size:.75rem;line-height:1.65;color:#858980}
   .report-nav-panel .report-toc,#report-papers-list{scrollbar-width:thin;scrollbar-color:#d9d9d2 transparent}
-  .report-nav-panel .report-toc a{border-left-color:transparent;border-radius:0 5px 5px 0;padding:8px 10px;font-size:12px;line-height:1.5}
+  .report-nav-panel .report-toc a{border-left-color:transparent;border-radius:0 5px 5px 0;padding:8px 10px;font-size:.75rem;line-height:1.5}
   .report-nav-panel .report-toc a:hover{border-left-color:var(--accent)}
-  .report-nav-panel .report-toc ul ul a{padding-left:22px;font-size:11px}
-  #report-papers-search{background:#fff;border-color:#e5e4de;border-radius:7px;font-size:12px;padding:8px 10px}
+  .report-nav-panel .report-toc ul ul a{padding-left:22px;font-size:.6875rem}
+  #report-papers-search{background:#fff;border-color:#e5e4de;border-radius:7px;font-size:.75rem;padding:8px 10px}
   .report-paper-link{border:0;border-radius:6px;padding:12px 10px;margin-bottom:4px}
   .report-paper-link:hover{background:#f0efea}
   .report-paper-link[aria-current="page"]{background:var(--accent-soft)}
-  .report-paper-title{font-size:12px;font-weight:600;line-height:1.65}
+  .report-paper-title{font-size:.75rem;font-weight:600;line-height:1.65}
   .report-paper-meta,.report-paper-directions{margin-top:4px;color:#858980}
   #report-papers-resize{left:-4px;width:8px}
-  .report-nav-toggle{border-color:#eeede9;box-shadow:none;padding:10px;font-size:12px}
+  .report-nav-toggle{border-color:#eeede9;box-shadow:none;padding:10px;font-size:.75rem}
 }
 @media screen and (min-width:761px){.report-shell{grid-template-columns:240px minmax(0,1fr)}}
 @media screen and (min-width:1440px){.report-shell.papers-open{grid-template-columns:240px minmax(0,1fr) var(--report-papers-width,320px)}.report-shell.papers-open.toc-collapsed{grid-template-columns:minmax(0,1fr) var(--report-papers-width,320px)}}
@@ -51,7 +51,7 @@
   .report-topbar{position:sticky;top:0;z-index:28;height:auto;min-height:68px;display:flex;flex-wrap:wrap;gap:12px;padding:12px 22px;background:rgba(255,255,255,.97);box-shadow:0 3px 14px #20262d08}
   .report-brand{flex-shrink:0}
   .report-actions{margin-left:auto;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}
-  .report-actions a,.report-actions button{height:38px;justify-content:center;padding:0 13px;border-radius:8px;font:500 13px/1.4 "Segoe UI","Microsoft YaHei",sans-serif;white-space:nowrap;transition:background .15s,border-color .15s}
+  .report-actions a,.report-actions button{height:38px;justify-content:center;padding:0 13px;border-radius:8px;font:500 .8125rem/1.4 "Segoe UI","Microsoft YaHei",sans-serif;white-space:nowrap;transition:background .15s,border-color .15s}
   .report-actions a{border-color:transparent;background:transparent;color:var(--muted)}
   .report-actions button:hover:not(:disabled),.report-actions a:hover{background:var(--accent-soft);border-color:#e6c5a6;color:var(--accent)}
   .report-actions button.saved{border-color:#ead7c4;background:#fff8f0;cursor:default}
@@ -66,7 +66,7 @@
 @media screen and (max-width:760px){
   .report-topbar{gap:8px;padding:10px 12px}
   .report-actions{width:100%;justify-content:flex-start;gap:6px}
-  .report-actions a,.report-actions button{display:inline-flex;min-height:36px;height:auto;padding:8px 10px;font-size:12px}
+  .report-actions a,.report-actions button{display:inline-flex;min-height:36px;height:auto;padding:8px 10px;font-size:.75rem}
   .report-actions .reading-open{margin-left:auto}
 }
 @media(prefers-reduced-motion:reduce){.report-actions a,.report-actions button{transition:none}}
@@ -74,23 +74,35 @@
 /* Use the available monitor width, with navigation anchored beside the document. */
 @media screen and (min-width:761px){
   .report-article{padding:40px clamp(28px,3vw,56px) 64px;font-size:17px;line-height:1.85}
-  .report-article>p,.report-article>ul,.report-article>ol,.report-article>blockquote,
-  .report-article>h1,.report-article>h2,.report-article>h3,.report-article>h4{max-width:none;margin-left:0;margin-right:0}
-  .report-article>h1:first-child{font-size:clamp(30px,2.1vw,38px);line-height:1.3;margin-bottom:28px}
-  .report-article table{font-size:15px;line-height:1.7}
+  :is(.report-article,.report-content)>:is(p,ul,ol,blockquote,h1,h2,h3,h4){max-width:none;margin-left:0;margin-right:0}
+  .report-article>h1:first-child{font-size:clamp(30px,2.1vw,38px)}
+  :is(.report-article,.report-content)>h1:first-child{line-height:1.3;margin-bottom:28px}
+  .report-article table{line-height:1.7}
+  .report-article table:not(.report-content table){font-size:15px}
   .report-article table.report-metadata{display:table;width:100%;max-width:none;table-layout:fixed}
   .report-article table.report-metadata :is(th,td){overflow-wrap:anywhere;min-width:0}
   .report-article table.report-metadata :is(th,td):first-child{width:10em}
-  .report-nav-panel .toc-doc-title{font-size:13px}
-  .report-nav-panel .report-toc a{font-size:14px;line-height:1.55}
-  .report-nav-panel .report-toc ul ul a{font-size:13px}
-  .report-paper-title{font-size:14px}
-  .report-paper-meta,.report-paper-directions{font-size:12px}
+  .report-nav-panel .toc-doc-title{font-size:.8125rem}
+  .report-nav-panel .report-toc a{font-size:.875rem;line-height:1.55}
+  .report-nav-panel .report-toc ul ul a{font-size:.8125rem}
+  .report-paper-title{font-size:.875rem}
+  .report-paper-meta,.report-paper-directions{font-size:.75rem}
 }
 @media screen and (min-width:2000px){
   .report-article{font-size:18px}
-  .report-article table{font-size:16px}
-  .report-nav-heading h2{font-size:16px}
-  .report-nav-panel .report-toc a{font-size:15px}
-  .report-nav-panel .report-toc ul ul a{font-size:14px}
+  .report-article table:not(.report-content table){font-size:16px}
+  .report-nav-heading h2{font-size:1rem}
+  .report-nav-panel .report-toc a{font-size:.9375rem}
+  .report-nav-panel .report-toc ul ul a{font-size:.875rem}
+}
+
+/* Report proportions follow the space left by the sidebars and the reader's choice. */
+.report-content{font-size:16px}
+@media screen{
+  .report-article:has(>.report-content){container-type:inline-size}
+  .report-content{font-size:calc(clamp(15px,13px + .5cqi,18px) * var(--report-font-scale,1))}
+  .report-font-preference{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:.8125rem;white-space:nowrap}
+  .report-font-preference select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;min-height:36px;padding:4px}
+  .report-actions .report-font-preference button{padding-inline:8px}
+  .report-font-preference button:disabled{opacity:.45;cursor:default}
 }

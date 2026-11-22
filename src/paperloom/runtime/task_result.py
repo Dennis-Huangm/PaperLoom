@@ -117,6 +117,7 @@ def task_document(source: str, title: str, kind: str, *, asset_base: str = '/sta
         paper_list = f'<section class="result-library"><div class="list-heading"><h2>追踪记录</h2><span id="result-count" role="status">{len(records)} 篇</span></div>{filters}<div class="result-papers">{cards}</div><p id="result-empty" hidden>没有符合条件的论文，试试其他来源或关键词。</p></section>'
     assets = html.escape(asset_base.rstrip('/'), quote=True)
     return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)} · PaperLoom</title>
+<script src="{_reader_asset_url(asset_base, 'display-preferences.js')}"></script>
 <link rel="icon" href="{assets}/app-icon.ico" sizes="any"><link rel="stylesheet" href="{_reader_asset_url(asset_base, 'task-result.css')}"><link rel="stylesheet" href="{assets}/vendor/katex/katex.min.css"></head>
 <body class="task-result task-{kind}"><header class="result-topbar"><a class="result-brand" href="/versions"><img src="{assets}/app-icon.ico" alt="" width="30" height="30">PaperLoom<span>研究工作台</span></a><a class="back-link" href="/versions">← 返回版本追踪</a></header>
 <main class="result-main"><nav class="result-breadcrumb" aria-label="当前位置"><a href="/versions">版本追踪与同步</a><span>/</span>{label}</nav>

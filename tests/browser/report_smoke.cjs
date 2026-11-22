@@ -17,15 +17,16 @@ const fs = require('node:fs');
   assert.equal(await page.locator('.report-paper-link[aria-current="page"]').count(), 1);
   assert.equal(Math.round((await page.locator('#report-papers').boundingBox()).width), 320);
   const sharedAppearance = await page.evaluate(() => {
-    function appearance(node) {
+    function appearance(node, borderSide) {
       const style = getComputedStyle(node);
-      return [style.backgroundColor, style.borderColor, style.borderRadius, style.padding, style.fontSize];
+      const border = borderSide ? style.getPropertyValue(`border-${borderSide}`) : style.borderColor;
+      return [style.backgroundColor, border, style.borderRadius, style.padding, style.fontSize];
     }
     return {
       left: appearance(document.querySelector('#report-toc-close')),
       right: appearance(document.querySelector('#report-papers-close')),
-      leftPanel: appearance(document.querySelector('.report-sidebar')),
-      rightPanel: appearance(document.querySelector('#report-papers')),
+      leftPanel: appearance(document.querySelector('.report-sidebar'), 'right'),
+      rightPanel: appearance(document.querySelector('#report-papers'), 'left'),
     };
   });
   assert.deepEqual(sharedAppearance.left, sharedAppearance.right, 'collapse buttons have matching appearance');

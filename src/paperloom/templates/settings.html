@@ -26,6 +26,7 @@
   <div class="settings-shell">
     <nav class="settings-section-nav" aria-label="配置分区">
       <a href="#credentials" class="active" aria-current="location"><i class="fas fa-key" aria-hidden="true"></i>模型与 API</a>
+      <a href="#appearance"><i class="fas fa-text-height" aria-hidden="true"></i>外观</a>
       <a href="#general"><i class="fas fa-cog" aria-hidden="true"></i>常规</a>
       <a href="#discovery"><i class="fas fa-search" aria-hidden="true"></i>检索</a>
       <a href="#ranking"><i class="fas fa-sort-amount-down" aria-hidden="true"></i>排序</a>
@@ -83,6 +84,16 @@
         <div class="section-save"><span>留空保持原值。</span><button class="button secondary" type="submit">保存模型与凭据</button></div>
       </details>
     </form>
+  </section>
+
+  <section class="form-section" id="appearance">
+    <h2>外观</h2>
+    <div class="interface-font-preference" data-font-preference="interface" hidden>
+      <label for="interface-font-size">界面字号</label>
+      <select id="interface-font-size" aria-describedby="interface-font-help"></select>
+      <button class="button secondary" type="button" aria-label="恢复默认界面字号">恢复默认</button>
+    </div>
+    <p id="interface-font-help">即时应用到当前浏览器中的 PaperLoom 界面。</p>
   </section>
 
   <form class="settings-form" method="post" action="/settings/config"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
