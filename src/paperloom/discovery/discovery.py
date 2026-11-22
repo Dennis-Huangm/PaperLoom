@@ -40,6 +40,14 @@ class DiscoveryError(RuntimeError):
         self.discovery_result = result
 
 
+def eligible_publications(config, paper):
+    return [pub for pub in paper.conference_publications
+            if pub.get("conference") in config.conferences and pub.get("paper_type") == "long"
+            and type(pub.get("year")) is int
+            and config.conference_year_from <= pub["year"] <= config.conference_year_to
+            and pub.get("evidence_url") and pub.get("association_evidence")]
+
+
 class DiscoveryService:
     """Coordinate independent discovery sources and hydrate their merged candidates."""
 
@@ -72,11 +80,7 @@ class DiscoveryService:
         merged = {base_id(p.arxiv_id): p for p in result.papers}
         excluded = {base_id(a) for a in excluded_ids or set()}
         for paper in papers:
-            publications = [pub for pub in paper.conference_publications
-                if pub.get("conference") in self.config.conferences and pub.get("paper_type") == "long"
-                and type(pub.get("year")) is int
-                and self.config.conference_year_from <= pub["year"] <= self.config.conference_year_to
-                and pub.get("evidence_url") and pub.get("association_evidence")]
+            publications = eligible_publications(self.config, paper)
             aid = base_id(paper.arxiv_id)
             if not publications or aid in excluded:
                 continue

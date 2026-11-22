@@ -8,6 +8,7 @@
   {% if overview.article %}
   <div class="overview-meta"><span>生成于 {{ overview.article.generated_at[:10] }}</span><span>{{ overview.article.sources|length }} 篇文献</span><span>主题：{{ overview.article.snapshot.description }}</span></div>
   <article class="overview-article" aria-label="方向小综述正文">{{ overview_body|safe }}</article>
+  {% with search_log = overview.article.search_log %}{% include 'active_search_log.html' %}{% endwith %}
   {% else %}<section class="draft-panel"><p>小综述会结合实际检索到的文献介绍该方向。生成完成后，正文会显示在这里。</p></section>{% endif %}
 </div>
 {% endblock %}

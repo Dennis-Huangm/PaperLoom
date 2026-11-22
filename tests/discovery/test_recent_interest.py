@@ -269,7 +269,10 @@ def test_daily_run_publishes_profile_scoped_guidance_and_uses_one_snapshot(tmp_p
         assert interest["samples"][0]["arxiv_id"] == "2609.00001"
         assert "tactile grasping" in result.read_text(encoding="utf-8")
     else:
-        llm.chat.assert_not_called()
+        # Independent exploration may use the direction, but disabling recent
+        # library guidance must hide saved examples from every model prompt.
+        assert all("Tactile grasping" not in call.args[1] and "2609.00001" not in call.args[1]
+                   for call in llm.chat.call_args_list)
         assert all(r["paper"]["feedback_score"] == 0 for r in rows)
 
 

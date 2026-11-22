@@ -74,6 +74,37 @@ class OverviewModel:
         return "## 研究对象与问题边界\n\nSVG 编辑涉及控制点优化 [1]。\n\n## 主要技术路线\n\n方法对比 [2]。"
 
 
+def test_writer_can_retrieve_and_cite_a_missing_foundational_paper(tmp_path):
+    classic = literature("1912.01603", 2019)
+    classic.title = "Dream to Control"
+
+    class Archive(LiteratureAPI):
+        def find_by_title(self, title):
+            return [classic] if title == classic.title else []
+
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "文献编辑" in system:
+                selected = ["1912.01603"] if classic.arxiv_id in prompt else ["2001.00001"]
+                return json.dumps({"selected": selected, "gaps": []})
+            if kwargs.get("json_mode"):
+                return '{"actions":[]}'
+            if classic.arxiv_id not in prompt:
+                return json.dumps({"actions": [{"tool": "title", "query": classic.title,
+                                                "reason": "查明想象训练的原始方法"}]})
+            return "## 主要技术路线\n\n想象训练的原始方法见 [1]。"
+
+    config = AppConfig()
+    clients = ResearchClients(config, arxiv=Archive(), llm=Author(),
+                              conferences=SimpleNamespace(discover=lambda *a: ([], {})))
+    profile = direction()
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        generator.generate(profile)
+    result = OverviewStore(tmp_path / "run").read(profile)
+    assert "[1](https://arxiv.org/abs/1912.01603v2)" in result["markdown"]
+    assert any(row.get("query") == classic.title for row in result["article"]["search_log"])
+
+
 def test_generate_grounded_overview_and_keep_search_preferences_independent(tmp_path):
     profile = direction()
     profile["discovery"].update(lookback_days=1, mode="conference", conferences=["cvpr"])
@@ -157,7 +188,8 @@ def test_real_retrieval_uses_early_and_recent_scopes_and_delivers_abstract_fallb
         assert str(datetime.now(timezone.utc).year - 3) in queries[0]["search_query"]
         assert result["status"] == "ready"
         assert result["article"]["sources"][0]["material"] == "abstract"
-        assert "材料范围与不足" in result["markdown"]
+        assert "材料：摘要" in result["markdown"]
+        assert any("原文未取得" in row.get("result", "") for row in result["article"]["search_log"])
     finally:
         arxiv.client.close()
 

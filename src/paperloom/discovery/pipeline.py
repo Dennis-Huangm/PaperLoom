@@ -8,7 +8,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .abstracts import localize_abstracts
-from .discovery import DiscoveryService, PaperResolver
+from .active_search import ActiveSearch, explore_daily
+from .discovery import DiscoveryError, DiscoveryService, PaperResolver
 from ..papers.paper_data import local_paper_item
 from .arxiv_client import offline_demo_papers
 from ..config import AppConfig
@@ -68,6 +69,8 @@ class DailyPipeline:
         now = datetime.now(ZoneInfo(self.config.timezone))
         date_label = now.date().isoformat()
         self._run_date = date_label
+        self._search_log: list[dict] = []
+        self._discovery_paths: dict[str, str] = {}
         run_dir = self.output_root / date_label
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -79,6 +82,7 @@ class DailyPipeline:
         if discovery_result:
             write_json(self._discovery_manifest, {
                 "profile_id": self.config.profile_id, **discovery_result.to_dict(),
+                "search_log": self._search_log,
                 "prefiltered_count": len(candidates), "selected_count": len(selected),
                 "selection_status": "selected" if selected else "no_eligible_new_papers",
             })
@@ -185,6 +189,9 @@ class DailyPipeline:
         self._annotate_feedback_reasons(candidates)
         for paper in candidates:
             finish_explanation(paper)
+            path = getattr(self, "_discovery_paths", {}).get(paper.arxiv_id)
+            if path:
+                paper.recommendation_reason = f"{paper.recommendation_reason} {path}。".strip()
             if paper.resolution_note:
                 note = paper.resolution_note.rstrip("。") + "。"
                 paper.recommendation_reason = (
@@ -210,7 +217,7 @@ class DailyPipeline:
             rows.append({"paper": paper.to_dict(), "reasons": reasons, "selected": paper.arxiv_id in selected_ids})
         write_json(run_dir / f"selection-{self.config.profile_id or 'default'}-{uuid.uuid4().hex}.json",
                    {"profile_id": self.config.profile_id, "created_at": datetime.now(ZoneInfo(self.config.timezone)).isoformat(),
-                    "items": rows})
+                    "items": rows, "search_log": getattr(self, "_search_log", [])})
 
     def _discover_papers(self, run_dir: Path, force: bool = False):
         manifest = run_dir / f"discovery-{self.config.profile_id or 'default'}-{uuid.uuid4().hex[:12]}.json"
@@ -218,15 +225,22 @@ class DailyPipeline:
         self._discovery_result = None
         service = DiscoveryService(self.config.discovery, self.clients.arxiv, self.clients.alphaxiv, self.output_root,
             conferences=self.clients.conferences if self.config.discovery.mode != "latest" else None)
+        excluded = set() if force else self._processed_ids()
+        failure = None
         try:
-            self._discovery_result = service.discover(set() if force else self._processed_ids(),
+            self._discovery_result = service.discover(excluded,
                                                      recent_interest=getattr(self, "_recent_interest", None))
-        except RuntimeError as exc:
-            result = getattr(exc, "discovery_result", None)
-            if result:
-                write_json(manifest, {"profile_id": self.config.profile_id, **result.to_dict()})
-            raise
-        write_json(manifest, {"profile_id": self.config.profile_id, **self._discovery_result.to_dict()})
+        except DiscoveryError as exc:
+            self._discovery_result = exc.discovery_result
+            failure = exc
+        if self.clients.llm.enabled:
+            search = ActiveSearch(self.config, self.clients, self.output_root, overview=False)
+            explore_daily(search, self._discovery_result, self._interest_description(), excluded)
+            self._search_log, self._discovery_paths = search.log, search.paths
+        write_json(manifest, {"profile_id": self.config.profile_id, **self._discovery_result.to_dict(),
+                              "search_log": getattr(self, "_search_log", [])})
+        if failure and not self._discovery_result.papers:
+            raise failure
         for source, source_state in self._discovery_result.sources.items():
             if source_state.get("status") in {"failed", "partial", "truncated", "unpublished"}:
                 task_warning(

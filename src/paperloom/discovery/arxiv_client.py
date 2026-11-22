@@ -222,7 +222,11 @@ class ArxivClient:
         words = re.findall(r"\w+", title, re.UNICODE)
         if not words:
             return []
-        params = {"search_query": " AND ".join(f'ti:"{word}"' for word in words[:24]),
+        # A standalone stop word (e.g. ti:"to") can make arXiv return no hits even
+        # for an exact title. Keep the phrase intact and retain the loose fallback.
+        phrase = " ".join(words[:24])
+        tokens = " AND ".join(f'ti:"{word}"' for word in words[:24])
+        params = {"search_query": f'ti:"{phrase}" OR ({tokens})',
                   "max_results": 10, "sortBy": "relevance"}
         response = self._get(f"https://export.arxiv.org/api/query?{urlencode(params)}")
         response.raise_for_status()

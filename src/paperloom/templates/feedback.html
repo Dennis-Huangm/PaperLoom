@@ -11,6 +11,7 @@
 <section class="feedback-panel"><h2>每次推荐的筛选结果</h2><p>只记录当次检索返回的候选。未被检索源返回的论文无法在这里解释；分数与规则为当时快照。</p>
 {% if audit_runs %}<form method="get" class="audit-picker"><label for="audit-run">选择运行记录（最近 100 次）</label><select name="audit" id="audit-run">{% for run in audit_runs %}<option value="{{ run.id }}" {% if run.id == selected_audit %}selected{% endif %}>{{ run.label }}</option>{% endfor %}</select><button class="button secondary" type="submit">查看</button></form>
 <p>{{ (selection_audit.created_at or '')[:19]|replace('T', ' ') }} · 共 {{ selection_audit.get('items', [])|length }} 篇候选</p>
+{% with search_log = selection_audit.search_log %}{% include 'active_search_log.html' %}{% endwith %}
 {% for item in selection_audit.get('items', []) %}<details class="audit-row"><summary>{{ '入选' if item.selected else '未入选' }} · {{ item.paper.title }} · {{ item.paper.arxiv_id }}</summary>
 <ul>{% for reason in item.reasons %}<li>{{ reason.reason }}{% if reason.terms %}：{{ reason.terms|join('、') }}{% endif %}{% if reason.rule_id %}（规则来源 {{ reason.rule_id }}）{% endif %}</li>{% else %}<li>满足筛选条件并进入本次推荐名额。</li>{% endfor %}</ul>
 <p>词法分 {{ item.paper.lexical_score }} · 模型分 {{ item.paper.llm_score if item.paper.llm_score is not none else '未评分' }} · 反馈分 {{ item.paper.feedback_score }} · 综合分 {{ item.paper.final_score }}</p></details>{% endfor %}

@@ -2,6 +2,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
+import json
+
+import httpx
+import pytest
 
 from paperloom.config import AppConfig
 from paperloom.papers.models import Author, Paper, ReportArtifact, VerifiedMetadata
@@ -111,6 +115,82 @@ def test_report_generation_uses_local_snapshot_when_arxiv_api_fails(tmp_path: Pa
 
 def assert_same(left: Paper, right: Paper) -> None:
     assert left.arxiv_id == right.arxiv_id
+
+
+def test_daily_explores_a_missing_route_even_with_a_full_list(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    now = datetime.now(timezone.utc)
+    base = Paper("2601.00001", "Vision", [], "Video synthesis", ["cs.AI"], "cs.AI",
+                 now, now, "", "")
+    recent = replace(base, arxiv_id="2601.00002", title="Latent planning", abstract="latent planning")
+    old = replace(recent, arxiv_id="1811.04551", title="Latent planning classic",
+                  published=datetime(2018, 11, 1, tzinfo=timezone.utc))
+
+    def plan(*args, **kwargs):
+        return json.dumps({"actions": [{"tool": "topic", "query": "latent planning",
+                                        "reason": "寻找规划方向的近期工作"}]})
+
+    config = AppConfig(output_dir=str(tmp_path), profile_id="daily")
+    config.discovery.positive_keywords = ["latent planning"]
+    config.discovery.arxiv_categories = ["cs.AI"]
+    config.discovery.minimum_concept_groups = 0
+    config.discovery.recommendation_count = 1
+    config.discovery.min_score = -1
+    config.ranking.llm_rerank = False
+    config.weekly.enabled = config.version_tracking.enabled = False
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *a: None)
+    with DailyPipeline(config, tmp_path) as pipeline:
+        pipeline.clients.arxiv = SimpleNamespace(search=lambda *a, **kw: [base],
+            search_literature=lambda *a, **kw: [old, recent])
+        pipeline.clients.llm = SimpleNamespace(enabled=True, chat=plan)
+        pipeline.clients.verifier = SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))
+        pipeline.run(force=True, deliver=False)
+    audit = read_json(next(tmp_path.glob("*/selection-daily-*.json")), {})
+    assert [r["paper"]["arxiv_id"] for r in audit["items"] if r["selected"]] == [recent.arxiv_id]
+    assert old.arxiv_id not in {r["paper"]["arxiv_id"] for r in audit["items"]}
+    assert audit["search_log"][0]["query"] == "latent planning"
+    assert "latent planning" in next(r["paper"]["recommendation_reason"] for r in audit["items"] if r["selected"])
+
+
+@pytest.mark.parametrize("venue, eligible", [("acl", True), ("icml", False)])
+def test_daily_requires_conference_evidence_after_a_web_lead(tmp_path, monkeypatch, venue, eligible):
+    paper = Paper("1912.01603", "Grounded Planning", [], "planning with language", ["cs.AI"],
+                  "cs.AI", datetime(2019, 12, 1, tzinfo=timezone.utc), None, "", "")
+    paper.conference_publications = [{"conference": venue, "year": 2024, "paper_type": "long",
+        "evidence_url": "https://example.org/proceedings", "association_evidence": "title and authors"}]
+    def discover(scope, *args):
+        return ([paper] if scope.arxiv_query_terms == ["Grounded Planning"] else []), {"directory": {"status": "ok"}}
+
+    def plan(system, prompt, **kwargs):
+        if "fake result 2601.09999" not in prompt:
+            return json.dumps({"actions": [{"tool": "web", "query": "planning project", "reason": "定位论文原题"}]})
+        if "Grounded Planning" not in prompt:
+            return '{"actions":[]}'
+        return json.dumps({"actions": [{"tool": "conference", "query": "Grounded Planning",
+            "venue": venue, "year": 2024, "reason": "核对会议目录"}]})
+
+    def web(url, **kwargs):
+        return httpx.Response(200, request=httpx.Request("GET", url), text=(
+            "<rss><channel><item><title>Grounded Planning</title><description>fake result 2601.09999</description>"
+            "</item></channel></rss>"))
+    monkeypatch.setattr(httpx, "get", web)
+    monkeypatch.setattr("paperloom.discovery.pipeline.localize_abstracts", lambda *a: None)
+    config = AppConfig(output_dir=str(tmp_path), profile_id="daily")
+    config.discovery.mode = "conference"
+    config.discovery.conferences = ["acl"]
+    config.discovery.conference_year_from = config.discovery.conference_year_to = 2024
+    config.discovery.min_score = -1
+    config.discovery.minimum_concept_groups = 0
+    config.ranking.llm_rerank = config.weekly.enabled = config.version_tracking.enabled = False
+    with DailyPipeline(config, tmp_path) as pipeline:
+        pipeline.clients.llm = SimpleNamespace(enabled=True, chat=plan)
+        pipeline.clients.conferences = SimpleNamespace(discover=discover)
+        pipeline.clients.verifier = SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))
+        pipeline.run(deliver=False)
+    audit = read_json(next(tmp_path.glob("*/selection-daily-*.json")), {})
+    assert [r["paper"]["arxiv_id"] for r in audit["items"] if r["selected"]] == (["1912.01603"] if eligible else [])
+    assert [r["tool"] for r in audit["search_log"]] == ["web", "conference"]
 
 
 def test_report_generation_uses_alphaxiv_for_unknown_local_id(tmp_path: Path) -> None:
