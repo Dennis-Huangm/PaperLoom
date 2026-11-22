@@ -22,7 +22,13 @@ def workspace(tmp_path, monkeypatch):
         "negative_keywords": [], "concept_groups": [["robot"], ["video"]],
         "minimum_concept_groups": 2,
     }))
-    monkeypatch.setattr(ResearchClients, "llm", property(lambda self: model))
+    def chat(system, *args, **kwargs):
+        # Background overview planning and foreground draft edits share this API.
+        if "下一步补查工具" in system:
+            return '{"actions":[]}'
+        return model.chat(system, *args, **kwargs)
+
+    monkeypatch.setattr(ResearchClients, "llm", property(lambda self: SimpleNamespace(enabled=model.enabled, chat=chat)))
     monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
     # Newly created directions now start a background overview. Keep its
     # external literature sources offline without replacing the workflow.

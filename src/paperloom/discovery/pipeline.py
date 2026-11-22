@@ -56,6 +56,8 @@ class DailyPipeline:
         self.output_root = output if output.is_absolute() else project_root / output
         self.clients = clients if clients is not None else ResearchClients(config)
         self._owns_clients = clients is None
+        self._search_log: list[dict] = []
+        self._discovery_paths: dict[str, str] = {}
 
     def __enter__(self):
         return self
@@ -69,8 +71,8 @@ class DailyPipeline:
         now = datetime.now(ZoneInfo(self.config.timezone))
         date_label = now.date().isoformat()
         self._run_date = date_label
-        self._search_log: list[dict] = []
-        self._discovery_paths: dict[str, str] = {}
+        self._search_log = []
+        self._discovery_paths = {}
         run_dir = self.output_root / date_label
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -96,6 +98,13 @@ class DailyPipeline:
         if not demo:
             task_progress("正在生成中文摘要…", 62)
             localize_abstracts(self.config, self.output_root, recommendations)
+            for paper, item in zip(selected, recommendations, strict=True):
+                snapshot = item["paper"]
+                path = self._discovery_paths.get(snapshot["arxiv_id"])
+                if path:
+                    for key in ("recommendation_reason", "recommendation_detail"):
+                        snapshot[key] = f"{snapshot.get(key, '')} {path}。".strip()
+                    paper.recommendation_reason = snapshot["recommendation_reason"]
 
         task_progress("正在生成推荐页面并保存结果…", 76)
         digest_path = self._publish_digest(
@@ -189,9 +198,6 @@ class DailyPipeline:
         self._annotate_feedback_reasons(candidates)
         for paper in candidates:
             finish_explanation(paper)
-            path = getattr(self, "_discovery_paths", {}).get(paper.arxiv_id)
-            if path:
-                paper.recommendation_reason = f"{paper.recommendation_reason} {path}。".strip()
             if paper.resolution_note:
                 note = paper.resolution_note.rstrip("。") + "。"
                 paper.recommendation_reason = (
@@ -240,6 +246,9 @@ class DailyPipeline:
         write_json(manifest, {"profile_id": self.config.profile_id, **self._discovery_result.to_dict(),
                               "search_log": getattr(self, "_search_log", [])})
         if failure and not self._discovery_result.papers:
+            if self._search_log:
+                self._selection_audit = []
+                self._save_selection_audit(run_dir, [], [])
             raise failure
         for source, source_state in self._discovery_result.sources.items():
             if source_state.get("status") in {"failed", "partial", "truncated", "unpublished"}:
@@ -550,8 +559,9 @@ class DailyPipeline:
                     existing = by_number.get(number)
                     if existing:
                         figure.page = existing.page
-                        existing.role, existing.section = figure.role, figure.section
-                    if figure.image_available or not existing or not existing.image_available:
+                        # HTML floats can sit under a different heading from the corresponding PDF figure.
+                        figure.role, figure.section = existing.role, existing.section
+                    if figure.image_available or not existing:
                         by_number[number] = figure
                 selected_figures = [by_number[number] for number in sorted(by_number)]
                 for index, figure in enumerate(selected_figures, start=1):

@@ -105,6 +105,88 @@ def test_writer_can_retrieve_and_cite_a_missing_foundational_paper(tmp_path):
     assert any(row.get("query") == classic.title for row in result["article"]["search_log"])
 
 
+def test_writer_reads_a_later_method_section_without_admitting_an_excluded_paper(tmp_path):
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "文献编辑" in system:
+                return '{"selected":["2001.00001"],"gaps":[]}'
+            if kwargs.get("json_mode"):
+                return '{"actions":[]}'
+            if "distinct verified evidence" not in prompt:
+                return json.dumps({"actions": [
+                    {"tool": "read", "query": "2501.00002", "reason": "尝试读取未入选的论文"},
+                    {"tool": "read", "query": "2001.00001", "passage": "Appendix method", "reason": "核对具体方法"}]})
+            return "## 方法\n\n附录说明了方法 [1]。"
+
+    config = AppConfig()
+    clients = ResearchClients(config, arxiv=LiteratureAPI(), llm=Author(),
+        conferences=SimpleNamespace(discover=lambda *a: ([], {})), parser=SimpleNamespace(
+            parse=lambda *a: SimpleNamespace(text="opening text " * 1500 + "Appendix method: distinct verified evidence")))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        generator.generate(direction())
+    result = OverviewStore(tmp_path / "run").read(direction())
+    assert "附录说明了方法" in result["markdown"]
+    assert [p["arxiv_id"] for p in result["article"]["sources"]] == ["2001.00001"]
+
+
+def test_failed_supplemental_selection_finishes_from_verified_evidence(tmp_path):
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "文献编辑" in system:
+                return json.dumps({"selected": ["invented" if "1912.01603" in prompt else "2001.00001"]})
+            if kwargs.get("json_mode"):
+                return '{"actions":[]}'
+            if "仅返回 Markdown 正文" in prompt:
+                return "## 已知方法\n\n现有材料见 [1]。"
+            if "重新选材" in prompt:
+                return '```json\n{"actions":'
+            return '{"actions":[{"tool":"id","query":"1912.01603","reason":"补查奠基工作"}]}'
+
+    config = AppConfig()
+    clients = ResearchClients(config, arxiv=LiteratureAPI(), llm=Author(),
+                              conferences=SimpleNamespace(discover=lambda *a: ([], {})))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        generator.generate(direction())
+    result = OverviewStore(tmp_path / "run").read(direction())
+    assert "现有材料见 [1](https://arxiv.org/abs/2001.00001v2)" in result["markdown"]
+    assert any(row.get("tool") == "重新选材" for row in result["article"]["search_log"])
+
+
+def test_active_search_recovers_the_requested_revision_after_a_failed_reference_lookup(tmp_path):
+    aid = "2401.00001"
+    class Archive(LiteratureAPI):
+        def get(self, requested):
+            if requested == aid + "v2" and not getattr(self, "failed_once", False):
+                self.failed_once = True
+                raise LookupError("temporarily unavailable")
+            return super().get(requested)
+
+        def find_by_title(self, title):
+            latest = literature(aid, 2024)
+            latest.version = 3
+            return [latest]
+
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "下一步补查工具" in system:
+                if "围绕研究主题规划" in prompt:
+                    return '{"actions":[{"tool":"title","query":"SVG editing","reason":"核实版本"}]}'
+                return '{"actions":[{"tool":"id","query":"2401.00001v2","reason":"取回指定版本"}]}'
+            if "文献编辑" in system:
+                candidates = prompt.split("候选文献：", 1)[1].split("\n", 1)[0]
+                selected = aid if aid in [row["arxiv_id"] for row in json.loads(candidates)] else "2001.00001"
+                return json.dumps({"selected": [selected]})
+            return "## 方法\n\n见原文 [1]。"
+
+    config = AppConfig()
+    clients = ResearchClients(config, arxiv=Archive(), llm=Author(),
+                              conferences=SimpleNamespace(discover=lambda *a: ([], {})))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        generator.generate(direction())
+    article = OverviewStore(tmp_path / "run").read(direction())["article"]
+    assert [(s["arxiv_id"], s["version"]) for s in article["sources"]] == [(aid, 2)]
+
+
 def test_generate_grounded_overview_and_keep_search_preferences_independent(tmp_path):
     profile = direction()
     profile["discovery"].update(lookback_days=1, mode="conference", conferences=["cvpr"])

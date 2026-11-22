@@ -1,11 +1,12 @@
 {% if search_log %}
 <details class="audit-row">
-  <summary>查看检索记录</summary>
+  <summary>{{ log_title or '查看检索记录' }}</summary>
   <ul>
     {% for row in search_log %}
     <li>
       {% if row.query %}<strong>{{ {'title':'按题名查找','topic':'按主题查找','id':'按编号查找','citations':'查找后续引用','references':'查找参考文献','conference':'查找会议论文','web':'查找网页线索','read':'查阅论文'}.get(row.tool, row.tool) }}</strong> · {{ row.query }}{% if row.venue %} · {{ row.venue|upper }} {{ row.year }}{% endif %}
         {% if row.reason %}（{{ row.reason }}）{% endif %}
+        {% if row.passage %} · {{ row.passage }}{% endif %}
       {% elif row.tool %}{{ row.tool }}{% endif %}
       {% if row.error %} · 请求未完成（{{ row.error }}）{% endif %}
       {% if row.found is defined %} · 找到 {{ row.found|length }} 篇{% endif %}

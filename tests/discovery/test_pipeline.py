@@ -150,7 +150,8 @@ def test_daily_explores_a_missing_route_even_with_a_full_list(tmp_path, monkeypa
     assert [r["paper"]["arxiv_id"] for r in audit["items"] if r["selected"]] == [recent.arxiv_id]
     assert old.arxiv_id not in {r["paper"]["arxiv_id"] for r in audit["items"]}
     assert audit["search_log"][0]["query"] == "latent planning"
-    assert "latent planning" in next(r["paper"]["recommendation_reason"] for r in audit["items"] if r["selected"])
+    published = read_json(next(tmp_path.glob("*/recommendations-daily.json")), [])[0]["paper"]
+    assert "latent planning" in published["recommendation_reason"] and "latent planning" in published["recommendation_detail"]
 
 
 @pytest.mark.parametrize("venue, eligible", [("acl", True), ("icml", False)])
