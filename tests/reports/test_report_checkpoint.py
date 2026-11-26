@@ -289,7 +289,9 @@ def test_retired_annotation_stage_never_writes_a_checkpoint(tmp_path, monkeypatc
 def test_final_artifact_write_failure_remains_resumable(tmp_path, monkeypatch, filename):
     config, clients = setup(tmp_path)
     checkpoint = ReportCheckpoint(config.output_dir, config, paper())
-    import paperloom.discovery.pipeline as module
+    import paperloom.reports.report_publication as publication
+    import paperloom.discovery.pipeline as pipeline
+    module = publication if filename == "metadata.json" else pipeline
     original = module.write_json
     def fail(path, value):
         if path.name == filename:
@@ -341,7 +343,7 @@ def test_figure_explanations_reused_with_verified_image(tmp_path):
     config, clients, checkpoint, parsed = prepared(tmp_path)
     figure_path = tmp_path / "figure.png"
     figure_path.write_bytes(b"fixture image")
-    clients.llm.describe_figure = Mock(return_value="Verified diagram explanation")
+    clients.llm.describe_figure = Mock(return_value="核对过图片的中文解读。")
     def run():
         with bind_report_checkpoint(checkpoint):
             clients.reporter.generate(paper(), VerifiedMetadata(), parsed, [FigureCandidate(figure_path, 1, "Figure 1")])
@@ -353,11 +355,37 @@ def test_figure_explanations_reused_with_verified_image(tmp_path):
     assert clients.llm.describe_figure.call_count == 2
 
 
+def test_experiment_reading_follows_selected_asset_on_resume(tmp_path):
+    from paperloom.reports.report_figures import experiment_material, render_experiment_figures
+
+    _, clients, checkpoint, parsed = prepared(tmp_path)
+    path = tmp_path / "figure.png"
+    figure = FigureCandidate(path, 1, "Figure 3: Comparison.", role="experiment")
+    clients.llm.describe_figure = Mock(side_effect=[RuntimeError("no vision"), "新裁图中实线与虚线分开。"])
+    clients.llm.chat.return_value = "作者比较了训练集和测试集。"
+    with bind_report_checkpoint(checkpoint):
+        path.write_bytes(b"first asset")
+        for _ in range(2):
+            clients.reporter.explain_figure(0, paper(), figure, parsed)
+            assert figure.explanation_basis == "text"
+            assert "仅依据原文图注及正文" in render_experiment_figures("", [figure])
+        assert clients.llm.chat.call_count == clients.llm.describe_figure.call_count == 1
+        path.write_bytes(b"replacement crop")
+        clients.reporter.explain_figure(0, paper(), figure, parsed)
+        assert figure.explanation_basis == "visual"
+        assert clients.llm.describe_figure.call_count == 2
+        assert figure.explanation not in experiment_material([figure])
+        report = render_experiment_figures("## 关键结果\n\n[[实验图:figure-3]]", [figure])
+        assert report.count(figure.explanation) == 1
+        assert "仅依据原文图注及正文" not in report
+
+
 def test_report_recovery_ui_api_progress_and_private_cache(tmp_path, monkeypatch):
     path = tmp_path / "config.yaml"
     path.write_text("output_dir: run\ndiscovery:\n  interest_description: alpha\n", encoding="utf-8")
     app = create_app(path)
     def fallback():
+        task_checkpoint_data("paper", {**paper().to_dict(), "title": "SVG <Title> & Results"})
         task_checkpoint_data("report_work", {"id": "a" * 32})
         task_checkpoint_data("report_progress", {"parsed": True, "chunks_done": 2, "chunks_total": 3,
                                                   "report_ready": False, "resumable": True})
@@ -370,12 +398,14 @@ def test_report_recovery_ui_api_progress_and_private_cache(tmp_path, monkeypatch
         wait_job(app.state.jobs, job.id)
         page = client.get("/generate").text
         assert "继续全文分析" in page and "分片 2/3" in page
+        assert '<p class="job-paper-title">SVG &lt;Title&gt; &amp; Results</p>' in page
         assert f'data-retry-job="{job.id}"' in page and "打开结果" in page
         private = tmp_path / "run/.jobs/report-work" / ("a" * 32) / "chunk-1.json"
         write_json(private, {"text": "private evidence"})
         assert client.get(f"/artifacts/.jobs/report-work/{'a' * 32}/chunk-1.json").status_code == 404
         payload = client.get(f"/api/jobs/{job.id}").json()
         assert payload["report_progress"]["chunks_done"] == 2
+        assert payload["paper_title"] == "SVG <Title> & Results"
         assert "report_work" not in payload and "checkpoint" not in payload
         assert client.post(f"/api/jobs/{job.id}/retry", headers={"X-Paperloom-Profile": "beta"}).status_code == 409
         monkeypatch.setattr("paperloom.runtime.jobs.manager.recovery_runner", lambda *a: lambda: tmp_path / "run/full.html")
@@ -423,3 +453,63 @@ def test_previous_parser_policy_is_reparsed_without_deleting_saved_work(tmp_path
     assert resumed.restore_parsed(tmp_path / 'new') is None
     assert record_path.read_bytes() == previous
     assert (checkpoint.root / 'paper.pdf').is_file()
+
+
+def test_selected_figure_recovery_checks_asset_and_source(tmp_path):
+    from paperloom.reports.report_checkpoint import ReportCheckpoint
+    from paperloom.papers.models import FigureCandidate
+    config, _ = setup(tmp_path)
+    cp = ReportCheckpoint(tmp_path, config, paper())
+    cp.source = 'pdf-signature'
+    image = tmp_path/'image.png'
+    image.write_bytes(b'figure contents')
+    cp.save_selection([FigureCandidate(image, 2, 'Figure 3: example', role='experiment')])
+    restored = cp.restore_selection(tmp_path/'retry')
+    assert restored[0].path.read_bytes() == image.read_bytes() and restored[0].role == 'experiment'
+    cp.source = 'another-pdf'
+    assert cp.restore_selection(tmp_path/'retry') is None
+    cp.source = 'pdf-signature'
+    (cp.root/'selection/0.png').write_bytes(b'changed')
+    assert cp.restore_selection(tmp_path/'retry') is None
+    (cp.root/'selection.json').write_text('{truncated')
+    assert cp.restore_selection(tmp_path/'retry') is None
+
+
+def test_generated_report_republishes_saved_figure_and_exact_source(tmp_path):
+    import fitz
+    from paperloom.reports.report_revision import revise_report
+    from paperloom.reports.tables.report_tables import GeneratedReport, ReportTables
+    from paperloom.sources.source_spans import source_spans
+
+    config, clients = setup(tmp_path)
+    pdf = tmp_path / "fixture.pdf"
+    image = tmp_path / "plot.png"
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 60), "The comparison uses the same evaluation settings for both methods.")
+        page.get_pixmap().save(image)
+        document.save(pdf)
+    with fitz.open(pdf) as document:
+        physical_text = document[0].get_text("text")
+    figure = FigureCandidate(image, 1, "Figure 2: Evaluation", role="experiment", kind="page_figure",
+                             explanation="两组使用相同的评测设置。", explanation_basis="image")
+    parsed = ParsedPaper(physical_text, [physical_text], figures=[figure])
+    clients.parser.parse.return_value = parsed
+    source_id = next(iter(source_spans(parsed)))
+    draft = "# Paper\n\n## 关键结果\n\n共同设置 [[证据ID:" + source_id + "]]\n\n[[实验图:figure-2]]"
+    clients.reporter.compose = Mock(return_value=GeneratedReport(draft, ReportTables(()), draft))
+    root = Path(config.output_dir)
+    with DailyPipeline(config, tmp_path, clients=clients) as pipeline:
+        original = pipeline.report_arxiv_id("2407.05600v2", snapshot=paper(), local_pdf=pdf)
+    original_bytes = original.read_bytes()
+    rid = original.with_suffix(".html").relative_to(root).as_posix()
+    revised = revise_report(root, config, None, "2407.05600v2", rid, "publish", "123456abcdef", "2026-11-26")
+    assert original.read_bytes() == original_bytes and revised != original
+    for output in (original, revised):
+        content = output.read_text(encoding="utf-8")
+        assert "[1](paper.pdf#page=1)" in content and figure.explanation in content
+        citations = read_json(output.with_name("evidence.json"))["citations"]
+        assert [c["source_id"] for c in citations] == [source_id]
+        row, = read_json(output.with_name("experiment-figures.json"))
+        assert row["explanation_basis"] == "image"
+        assert output.with_name(row["filename"]).read_bytes() == image.read_bytes()

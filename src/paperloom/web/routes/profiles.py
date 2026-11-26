@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ...profiles.profiles import ProfileManager
+from ...runtime.jobs.scheduler import ProfileScheduler
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from typing import Any, Awaitable, Callable
@@ -17,10 +18,12 @@ def register_routes(
     context: Callable[..., dict[str, Any]],
     generate_profile_draft: Callable[..., Awaitable[dict[str, Any]]],
     profiles: ProfileManager,
+    scheduler: ProfileScheduler,
     templates: Jinja2Templates,
 ) -> None:
     @app.get("/profiles", response_class=HTMLResponse)
-    def profile_page(request: Request, saved: str = "", switched: str = "", updated: str = "") -> HTMLResponse:
+    def profile_page(request: Request, saved: str = "", switched: str = "", updated: str = "",
+                     deleted: bool = False, restored: bool = False) -> HTMLResponse:
         return templates.TemplateResponse(
             request,
             "profiles.html",
@@ -28,14 +31,41 @@ def register_routes(
                 request,
                 "profiles",
                 profiles=profiles.list(),
+                deleted_profiles=profiles.deleted_profiles(),
                 drafts=profiles.drafts(),
                 deleted_drafts=profiles.deleted_drafts(),
                 draft_request_id=uuid.uuid4().hex,
                 saved=saved,
                 switched=switched,
                 updated=updated,
+                deleted=deleted,
+                restored=restored,
             ),
         )
+
+    @app.post("/profiles/{target_profile}/delete")
+    def delete_profile(target_profile: str) -> RedirectResponse:
+        try:
+            scheduler.delete_profile(target_profile)
+        except KeyError as exc:
+            raise HTTPException(404, "研究方向不存在") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "删除方向失败，请检查文件权限后重试") from exc
+        return RedirectResponse("/profiles?deleted=1#deleted-profiles", status_code=303)
+
+    @app.post("/profiles/{target_profile}/restore")
+    def restore_profile(target_profile: str) -> RedirectResponse:
+        try:
+            scheduler.restore_profile(target_profile)
+        except KeyError as exc:
+            raise HTTPException(404, "已删除方向不存在") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "恢复方向失败，请检查文件权限后重试") from exc
+        return RedirectResponse("/profiles?restored=1#saved-profiles", status_code=303)
 
     @app.post("/profiles/create")
     async def create_profile(request: Request) -> RedirectResponse:

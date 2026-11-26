@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from paperloom.config import AppConfig
-from paperloom.papers.models import Author, Paper, ReportArtifact, VerifiedMetadata
+from paperloom.papers.models import Author, FigureCandidate, Paper, ReportArtifact, VerifiedMetadata
 from paperloom.discovery.pipeline import DailyPipeline
 from paperloom.utils import read_json, write_json
 
@@ -38,7 +38,14 @@ def test_report_artifact_keeps_all_experiment_images_beyond_eight(tmp_path: Path
     config.llm.base_url_env = "PAPERLOOM_TEST_NO_URL"
     pipeline = DailyPipeline(config, tmp_path)
     pipeline.clients.verifier = SimpleNamespace(verify=lambda p: VerifiedMetadata(title=p.title))
-    pipeline.clients.arxiv_html = SimpleNamespace(fetch=lambda *_args: [])
+    def html_fetch(_arxiv_id, output_dir):
+        path = output_dir / "html-figure-02.png"
+        with fitz.open(pdf) as doc:
+            doc[1].get_pixmap().save(path)
+        return [FigureCandidate(path=path, page=0, caption="Figure 2: Result comparison.",
+                                kind="html_figure", role="method", section="Related work")]
+
+    pipeline.clients.arxiv_html = SimpleNamespace(fetch=html_fetch)
     result = pipeline.report_arxiv_id("2501.00001v1", snapshot=paper, local_pdf=pdf)
     report = result.read_text(encoding="utf-8")
     assert report.count("![论文实验图") == 10
@@ -47,6 +54,9 @@ def test_report_artifact_keeps_all_experiment_images_beyond_eight(tmp_path: Path
     inventory = read_json(result.parent / "experiment-figures.json", [])
     assert len(inventory) == 10
     assert all((result.parent / item["filename"]).is_file() for item in inventory)
+    assert inventory[0]["source"] == "html_figure"
+    assert inventory[0]["page"] == 2
+    assert inventory[0]["section"] == "3 Experiments"
 
 
 def test_report_generation_does_not_overwrite_daily_digest(tmp_path: Path) -> None:
@@ -349,6 +359,7 @@ def test_daily_pipeline_uses_alphaxiv_only_after_arxiv_failure(
     config.discovery.minimum_concept_groups = 2
     config.discovery.recommendation_count = 1
     config.discovery.alphaxiv_fallback_enabled = True
+    config.discovery.arxiv_categories = ["cs.CV"]
     config.ranking.llm_rerank = False
     config.weekly.enabled = False
     config.version_tracking.enabled = False

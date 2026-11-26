@@ -24,6 +24,7 @@
   {% if saved == 'model-deleted' %}<div class="notice success">✓ 已删除保存的模型配置，当前连接仍可使用。</div>{% endif %}
 
   <div class="settings-shell">
+    <div class="settings-toolbar">
     <nav class="settings-section-nav" aria-label="配置分区">
       <a href="#credentials" class="active" aria-current="location"><i class="fas fa-key" aria-hidden="true"></i>模型与 API</a>
       <a href="#appearance"><i class="fas fa-text-height" aria-hidden="true"></i>外观</a>
@@ -39,6 +40,8 @@
       <a href="#weekly-config"><i class="fas fa-chart-line" aria-hidden="true"></i>周报</a>
       <a href="#research-tracking"><i class="fas fa-code-branch" aria-hidden="true"></i>追踪</a>
     </nav>
+      <button class="button primary settings-save" type="submit" form="runtime-settings-form"><i class="fas fa-save" aria-hidden="true"></i>保存运行配置</button>
+    </div>
     <div class="settings-content">
 
   <section class="form-section credential-section" id="credentials">
@@ -96,7 +99,7 @@
     <p id="interface-font-help">即时应用到当前浏览器中的 PaperLoom 界面。</p>
   </section>
 
-  <form class="settings-form" method="post" action="/settings/config"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+  <form id="runtime-settings-form" class="settings-form" method="post" action="/settings/config"><input type="hidden" name="profile_id" value="{{ config.profile_id }}">
     <section class="form-section" id="general">
       <p class="section-kicker">APPLICATION</p><h2>常规设置</h2>
       <div class="form-columns">
@@ -106,35 +109,84 @@
     </section>
 
     <section class="form-section" id="discovery">
-      <p class="section-kicker">DISCOVERY</p><h2>研究兴趣与检索范围</h2>
-      {% with discovery=config.discovery|config_dict %}{% include 'conference_scope.html' %}{% endwith %}
-      <details><summary>OpenReview 官方 API 账号配置</summary><p>在凭据设置中填写账号和密码，供 ICLR 目录检索登录使用。</p><div class="form-columns"><input type="hidden" name="openreview_username_env" value="{{ config.discovery.openreview_username_env }}"><input type="hidden" name="openreview_password_env" value="{{ config.discovery.openreview_password_env }}"></div></details>
-      {% if config.discovery.search_plan %}<p class="notice">此方向使用已确认的检索计划。主题与条件请在<a href="/profiles">研究方向</a>中复制为草稿后修改；这里可调整运行预算和排序参数。</p>{% endif %}
-      <label>研究主题描述<textarea name="interest_description" {% if config.discovery.search_plan %}readonly{% endif %} rows="5">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
-      <label class="check-row"><input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}><span>根据最近 5 篇收藏微调推荐</span></label>
-      <p>保留基础搜索，自动归纳当前方向最近收藏的标题与摘要，补充定向搜索并辅助精排。样本变化后下次推荐生效；关闭后恢复基础搜索与排序，主题屏蔽仍生效。归纳结果可复用；启用时会增加定向检索请求。</p>
-      <div class="form-columns">
-        <label>检索来源模式<select name="discovery_provider"><option value="hybrid" {% if config.discovery.provider == 'hybrid' %}selected{% endif %}>协作：arXiv + alphaXiv</option><option value="auto" {% if config.discovery.provider == 'auto' %}selected{% endif %}>备用：arXiv 失败后使用 alphaXiv</option><option value="arxiv" {% if config.discovery.provider == 'arxiv' %}selected{% endif %}>仅使用 arXiv API</option></select><small>协作模式每次主动进行 alphaXiv 语义发现，使用其助手额度；arXiv 补全正式论文数据。</small></label>
-        <label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label>
-        <input type="hidden" name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}">
-        <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，检索投入更多轮次，耗时也可能增加。</small></label>
-        <label>alphaXiv 候选上限<input type="number" name="alphaxiv_max_candidates" min="1" max="15" value="{{ config.discovery.alphaxiv_max_candidates }}"><small>单次最多保留 15 篇，独立于 arXiv 候选预算。</small></label>
-        <label>语义候选最低概念组数<input type="number" name="alphaxiv_minimum_concept_groups" min="0" max="100" value="{{ config.discovery.alphaxiv_minimum_concept_groups }}"><small>仅用于 alphaXiv 召回的论文，不超过下方通用门槛；0 表示不要求精确词匹配。</small></label>
-        <label class="toggle-field"><span>启用 alphaXiv 检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
-        <label>arXiv 类别<textarea name="arxiv_categories" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
-        <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
-        <label>重点关键词<textarea name="positive_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="12">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
-        <label>不感兴趣的方向<textarea name="negative_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="12">{{ config.discovery.negative_keywords|join('\n') }}</textarea></label>
-        <label>种子论文 arXiv ID<textarea name="seed_papers" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{{ config.discovery.seed_papers|join('\n') }}</textarea></label>
-        <label>概念组<textarea name="concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} rows="7">{% for group in config.discovery.concept_groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea><small>每行一组，组内用英文逗号分隔。</small></label>
+      <header class="settings-card-heading">
+        <div class="settings-card-title"><span class="settings-card-icon"><i class="fas fa-search" aria-hidden="true"></i></span><h2>文献检索</h2></div>
+        <span class="discovery-profile">当前方向 · {{ config.profile_name }}</span>
+      </header>
+      <div class="discovery-pair">
+        <div class="discovery-pane">
+          <label for="discovery-mode">论文发现模式</label>
+          <select id="discovery-mode" name="mode">{% for key, label in discovery_modes.items() %}<option value="{{ key }}" {% if config.discovery.mode == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          <small>按投稿时间追新、按会议年份回溯，或合并两类候选。</small>
+        </div>
+        <div class="discovery-pane">
+          <label for="discovery-provider">检索来源模式</label>
+          {% set providers = {
+            'hybrid': ('协作：arXiv + alphaXiv', 'arXiv 和 alphaXiv 共同发现候选，alphaXiv 使用助手额度，arXiv 补全论文元数据。'),
+            'auto': ('备用：arXiv 失败后使用 alphaXiv', '优先检索 arXiv；检索失败或分支失败且无候选时，调用已启用的 alphaXiv。'),
+            'arxiv': ('仅使用 arXiv API', '仅查询 arXiv，不使用 alphaXiv 助手额度。')
+          } %}
+          <select id="discovery-provider" name="discovery_provider" aria-describedby="provider-help">
+            {% for key, option in providers.items() %}<option value="{{ key }}" {% if config.discovery.provider == key %}selected{% endif %} data-help="{{ option[1] }}">{{ option[0] }}</option>{% endfor %}
+          </select>
+          {% set alpha_off_help = 'alphaXiv 检索已关闭。展开下方服务参数即可启用。' %}
+          <small id="provider-help" aria-live="polite" data-off-help="{{ alpha_off_help }}">{{ alpha_off_help if config.discovery.provider != 'arxiv' and not config.discovery.alphaxiv_fallback_enabled else providers[config.discovery.provider][1] }}</small>
+        </div>
       </div>
-      <div class="config-grid six">
-        <label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ config.discovery.lookback_days }}"></label>
-        <label>最大候选数<input type="number" name="max_candidates" min="1" max="5000" value="{{ config.discovery.max_candidates }}"></label>
-        <label>LLM 预筛数量<input type="number" name="prefilter_count" min="1" max="5000" value="{{ config.discovery.prefilter_count }}"></label>
-        <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
-        <label>最低总分<input type="number" name="min_score" min="0" max="100" step="0.1" value="{{ config.discovery.min_score }}"></label>
-        <label>至少命中概念组<input type="number" name="minimum_concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} min="0" max="20" value="{{ config.discovery.minimum_concept_groups }}"></label>
+
+      <details class="discovery-details" id="conference-options" {% if config.discovery.mode != 'latest' %}open{% endif %}>
+        <summary>会议范围与年份</summary>
+        <div class="discovery-detail-body">
+          {% with discovery=config.discovery|config_dict %}{% include 'conference_year_fields.html' %}{% endwith %}
+          <p class="draft-help">ICLR 目录如需登录，可在<a href="#credentials">模型与 API</a>中配置 OpenReview 账号。</p>
+          <input type="hidden" name="openreview_username_env" value="{{ config.discovery.openreview_username_env }}">
+          <input type="hidden" name="openreview_password_env" value="{{ config.discovery.openreview_password_env }}">
+        </div>
+      </details>
+      <details class="discovery-details">
+        <summary>alphaXiv 服务与检索参数</summary>
+        <div class="discovery-detail-body">
+          <label class="toggle-field"><span>启用 alphaXiv 检索</span><input type="checkbox" name="alphaxiv_fallback_enabled" value="true" {% if config.discovery.alphaxiv_fallback_enabled %}checked{% endif %}></label>
+          <div class="form-columns"><label>alphaXiv MCP 地址<input type="url" name="alphaxiv_endpoint" value="{{ config.discovery.alphaxiv_endpoint }}" required><small>固定使用 api.alphaxiv.org。</small></label></div>
+          <div class="config-grid six">
+            <label>alphaXiv 检索难度<input type="number" name="alphaxiv_difficulty" min="1" max="10" value="{{ config.discovery.alphaxiv_difficulty }}"><small>数值越高，检索投入更多轮次，耗时也可能增加。</small></label>
+            <label>alphaXiv 候选上限<input type="number" name="alphaxiv_max_candidates" min="1" max="15" value="{{ config.discovery.alphaxiv_max_candidates }}"><small>单次最多保留 15 篇，独立于 arXiv 候选预算。</small></label>
+            <label>语义候选最低概念组数<input type="number" name="alphaxiv_minimum_concept_groups" min="0" max="100" value="{{ config.discovery.alphaxiv_minimum_concept_groups }}"><small>仅用于 alphaXiv 召回的论文，不超过下方通用门槛；0 表示不要求精确词匹配。</small></label>
+          </div>
+          <input type="hidden" name="alphaxiv_api_key_env" value="{{ config.discovery.alphaxiv_api_key_env }}">
+        </div>
+      </details>
+
+      <div class="discovery-block">
+        <h3>检索预算与入选门槛</h3>
+        <div class="config-grid six">
+          <label>回溯天数<input type="number" name="lookback_days" min="1" max="365" value="{{ config.discovery.lookback_days }}"></label>
+          <label>最大候选数<input type="number" name="max_candidates" min="1" max="5000" value="{{ config.discovery.max_candidates }}"></label>
+          <label>LLM 预筛数量<input type="number" name="prefilter_count" min="1" max="5000" value="{{ config.discovery.prefilter_count }}"></label>
+          <label>每日推荐数<input type="number" name="recommendation_count" min="1" max="50" value="{{ config.discovery.recommendation_count }}"></label>
+          <label>最低总分<input type="number" name="min_score" min="0" max="100" step="0.1" value="{{ config.discovery.min_score }}"></label>
+          <label>至少命中概念组<input type="number" name="minimum_concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} min="0" max="20" value="{{ config.discovery.minimum_concept_groups }}"></label>
+        </div>
+      </div>
+      <div class="discovery-block">
+        <h3>研究兴趣</h3>
+        {% if config.discovery.search_plan %}<p class="draft-help">主题与检索词来自已确认的计划。<a href="/profiles/{{ config.profile_id }}/edit">编辑研究方向</a></p>{% endif %}
+        <label>研究主题描述<textarea name="interest_description" {% if config.discovery.search_plan %}readonly{% endif %} rows="3">{{ config.discovery.interest_description }}</textarea><small>用于 LLM 判断论文是否真正符合研究方向。</small></label>
+        <label class="interest-toggle">
+          <input type="checkbox" name="recent_library_enabled" value="true" {% if config.discovery.recent_library_enabled %}checked{% endif %}>
+          <span><strong>根据最近 5 篇收藏微调推荐</strong><small>下次推荐时，系统会参考收藏论文的标题和摘要，增加定向检索并调整排序。</small></span>
+        </label>
+        <details class="discovery-details">
+          <summary>关键词、概念组与种子论文</summary>
+          <div class="form-columns discovery-detail-body">
+            <label>arXiv 类别<textarea name="arxiv_categories" {% if config.discovery.search_plan %}readonly{% endif %} rows="3">{{ config.discovery.arxiv_categories|join('\n') }}</textarea></label>
+            <label>arXiv 服务端查询词<textarea name="arxiv_query_terms" {% if config.discovery.search_plan %}readonly{% endif %} rows="3">{{ config.discovery.arxiv_query_terms|join('\n') }}</textarea></label>
+            <label>重点关键词<textarea name="positive_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="4">{{ config.discovery.positive_keywords|join('\n') }}</textarea></label>
+            <label>不感兴趣的方向<textarea name="negative_keywords" {% if config.discovery.search_plan %}readonly{% endif %} rows="4">{{ config.discovery.negative_keywords|join('\n') }}</textarea></label>
+            <label>种子论文 arXiv ID<textarea name="seed_papers" {% if config.discovery.search_plan %}readonly{% endif %} rows="3">{{ config.discovery.seed_papers|join('\n') }}</textarea></label>
+            <label>概念组<textarea name="concept_groups" {% if config.discovery.search_plan %}readonly{% endif %} rows="3">{% for group in config.discovery.concept_groups %}{{ group|join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</textarea><small>每行一组，组内用英文逗号分隔。</small></label>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -296,7 +348,6 @@
       </div>
     </section>
 
-    <div class="save-bar"><p>全局设置保存在 config.yaml；检索与排序参数保存在当前方向“{{ config.profile_name }}”中。</p><button class="button primary" type="submit">保存全部运行配置</button></div>
   </form>
     </div>
   </div>

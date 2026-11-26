@@ -66,10 +66,15 @@ manager.executor.shutdown(wait=True)
     result = subprocess.run([sys.executable, "-c", code, str(tmp_path)], timeout=20, capture_output=True)
     assert result.returncode == 77, result.stderr.decode(errors="replace")
     ids = read_json(tmp_path / "ids.json")
+    record_path = tmp_path / ".jobs" / f"{ids[0]}.json"
+    record = read_json(record_path)
+    record["job"].pop("paper_title")
+    write_json(record_path, record)
     manager = JobManager(tmp_path)
     try:
         assert all(manager.get(aid).status == "interrupted" for aid in ids)
         first = manager.get(ids[0])
+        assert first.paper_title == "Pinned"
         assert "PDF parsed" in first.detail and first.warnings[0]["message"] == "partial extraction"
         assert manager.checkpoints[first.id]["paper"]["version"] == 2
         assert not manager.pending and manager.active_count == 0

@@ -139,3 +139,64 @@ def test_failed_organization_preserves_sibling_matrix_footnotes_and_conditions()
     assert not any('乙实验使用额外训练数据' in note for note in first.context)
     assert any('乙实验使用额外训练数据' in note for note in second.context)
     assert '数据集：甲' in first.condition and '数据集：乙' in second.condition
+
+
+@pytest.mark.parametrize('edit', ['', 'different value', 'ambiguous source', 'unverified header', 'no full matrix'])
+@pytest.mark.parametrize(('heading', 'headers'), [
+    ('Table 2: Fragment', '| | | |'),
+    ('6.2 Table 2（本片段可见部分；列名缺失）', '| | 待核对列1 | 待核对列2 |'),
+    ('Table 2 / Table 3（片段数值行）', '| | 列1（待核对） | 列2（待核对） |'),
+    ('Table 2 / Table 3', '| | First value | Second value |'),
+    ('6.2 Table 2: Fragment', '| | 待核对列1 | Spatial |'),
+])
+def test_headerless_fragment_requires_a_unique_source_and_an_already_present_matrix(edit, heading, headers):
+    from paperloom.papers.models import ParsedPaper
+    from paperloom.reports.evidence import source_table_inventory
+
+    overall = '### Table 2: Overall\n\n| Model | Accuracy |\n|---|---|\n| Alpha | 71.9 |'
+    full = ('### Table 3: By dimension\n\n| Model | MAE | Spatial |\n|---|---|---|\n'
+            '| Alpha | 0.72 | 0.84 |\n| Beta | 0.68 | 0.81 |\n| Gamma | 0.59 | 0.73 |')
+    fragment = (f'### {heading}\n\nMissing column names.\n\n{headers}\n'
+                '|---|---|---|\n| eta | 0.68 | 0.81 |\n| Gamma | 0.59 | 0.73 |\n\n'
+                'Fragment-only annotation.\n\n### Other results\n\nUnrelated prose.')
+    pages = ['Table 2: Overall\nModel Accuracy\nAlpha 71.9',
+             'Table 3: By dimension\nModel MAE Spatial\n'
+             'Alpha 0.72 0.84\nBeta 0.68 0.81\nGamma 0.59 0.73']
+    if edit == 'different value':
+        fragment = fragment.replace('0.81', '0.82')
+    if edit == 'ambiguous source':
+        pages[0] += '\nBeta 0.68 0.81\nGamma 0.59 0.73'
+    if edit == 'unverified header':
+        full = full.replace('| MAE |', '| Unknown metric |')
+    if edit == 'no full matrix':
+        full = ''
+    notes = [overall, full, fragment]
+    parsed = ParsedPaper('', pages)
+    prompts = []
+
+    def offline(key, system, prompt):
+        prompts.append(prompt)
+        raise RuntimeError('offline')
+
+    result = organize_tables(notes, source_table_inventory(parsed), parsed, offline)
+    report = result.render('[[表格:table-2]]\n\n[[表格:table-3]]')
+    if edit or 'Spatial' in headers:
+        assert len(result.tables[0].variants) == 2
+        assert not result.source_resolutions
+    else:
+        assert len(result.tables[0].variants) == 1
+        assert '| Beta | 0.68 | 0.81 |' in report
+        assert '| eta |' not in report and 'Fragment-only annotation' not in report
+        assert 'Fragment-only annotation' not in prompts[0]
+        synthesis = '\n'.join(result.synthesis_notes(notes))
+        assert 'Fragment-only annotation' not in synthesis
+        assert 'Unrelated prose.' in synthesis
+        assert ReportTables.from_dict(result.to_dict()).source_resolutions == result.source_resolutions
+
+
+def test_checkpoint_write_failure_escapes_optional_organization():
+    from paperloom.reports.report_checkpoint import CheckpointWriteError
+    def fail(*args):
+        raise CheckpointWriteError('disk full')
+    with pytest.raises(CheckpointWriteError):
+        organize_tables(['### Table 1\n| A | B |\n|---|---|\n| x | 2 |'], [], None, fail)

@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict, replace
 from datetime import datetime, timezone
 import hashlib
 import json
+from itertools import chain, zip_longest
 import os
 from pathlib import Path
 import re
@@ -19,9 +20,9 @@ import httpx
 from ..papers.models import Paper
 from ..papers.paper_data import base_id
 from ..runtime.model_access.rate_limit import shared_rate_limit
-from ..runtime.jobs.task_runtime import task_checkpoint, task_progress
+from ..runtime.jobs.task_runtime import task_checkpoint, task_progress, task_warning
 from ..runtime.jobs.task_runtime import TaskCancelled
-from ..utils import read_json, write_json
+from ..utils import extract_json_object, read_json, write_json
 
 
 @dataclass
@@ -55,6 +56,28 @@ def matching_papers(record, papers):
                 and (not record.arxiv_id or base_id(record.arxiv_id) == base_id(paper.arxiv_id))):
             matches[base_id(paper.arxiv_id)] = paper
     return list(matches.values())
+
+
+def conference_topic_terms(topic, llm):
+    """Keep the original terms and expand Chinese topics before spending lookup slots."""
+    terms = topic.split()
+    if not re.search(r"[\u3400-\u9fff]", topic):
+        return terms
+    if llm.enabled:
+        try:
+            result = extract_json_object(llm.chat(
+                '将研究主题转换为 1 至 6 个具体、简短、适合匹配英文论文题名与摘要的英文检索短语。'
+                '保留术语原意，返回 JSON {"terms":["英文短语"]}。',
+                topic, json_mode=True))
+            phrases = result.get("terms") if isinstance(result, dict) else None
+            if isinstance(phrases, list):
+                english = [p.strip() for p in phrases if isinstance(p, str)
+                           and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 /+()._-]{0,79}", p.strip())]
+                if english:
+                    return list(dict.fromkeys(terms + english[:6]))
+        except Exception as exc:
+            task_warning("会议检索词", f"英文检索词生成失败（{type(exc).__name__}），使用原始主题词。")
+    return list(dict.fromkeys(terms + re.findall(r"[A-Za-z][A-Za-z0-9_+-]*", topic)))
 
 
 class ConferenceClient:
@@ -311,16 +334,31 @@ class ConferenceClient:
         attempts = 0
         excluded = {base_id(a) for a in excluded_ids}
         # Interleave venues and years so one volume cannot consume the budget.
-        ranked = []
-        terms = config.positive_keywords + config.arxiv_query_terms
+        matches_by_volume, remaining_by_volume = [], []
+        terms = {term.casefold() for term in config.positive_keywords + config.arxiv_query_terms if term}
+
+        def score(record):
+            text = (record.title + ' ' + record.abstract).casefold()
+            return sum(term in text for term in terms)
+
         for key, records in directories:
-            ranked.append((key, sorted(records, key=lambda r: sum(t.casefold() in (r.title + ' ' + r.abstract).casefold() for t in terms if t), reverse=True)))
-        for index in range(max((len(r) for _, r in ranked), default=0)):
-            for key, records in ranked:
-                if index >= len(records):
+            scored = [(score(record), record) for record in records]
+            scored.sort(key=lambda row: row[0], reverse=True)
+            matches = [(key, record) for value, record in scored if value]
+            matches_by_volume.append(matches)
+            remaining_by_volume.append([(key, record) for value, record in scored if not value])
+            if terms:
+                states[key]['topic_matches'] = len(matches)
+        # Interleave the matching records across volumes before spending any
+        # association budget on records with no lexical evidence.
+        rounds = chain(zip_longest(*matches_by_volume), zip_longest(*remaining_by_volume))
+        for row in rounds:
+            for item in row:
+                if item is None:
                     continue
+                key, record = item
                 task_checkpoint()
-                record, state = records[index], states[key]
+                state = states[key]
                 digest = hashlib.sha256(json.dumps(asdict(record), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
                 path = cache / 'associations' / f'{digest}.json' if cache else None
                 entry = None if refresh else self._read_fresh(path, self.ASSOCIATION_TTL)

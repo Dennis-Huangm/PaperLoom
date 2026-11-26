@@ -15,6 +15,20 @@ const fs = require('node:fs');
   await page.waitForSelector('.report-paper-link');
   assert.equal(await page.locator('.report-paper-link').count(), 3);
   assert.equal(await page.locator('.report-paper-link[aria-current="page"]').count(), 1);
+  async function openReportInNewTab(link) {
+    const original = page.url();
+    const destination = await link.getAttribute('href');
+    const popupPromise = page.waitForEvent('popup', {timeout: 3000});
+    await link.click();
+    const popup = await popupPromise;
+    try {
+      await popup.waitForLoadState();
+      assert.equal(popup.url(), new URL(destination, base).href);
+      assert.equal(page.url(), original, 'opening another report preserves the current report');
+      assert.equal(await popup.evaluate(() => window.opener === null), true);
+    } finally { await popup.close(); }
+  }
+  await openReportInNewTab(page.locator('.report-paper-link').filter({hasText: 'Visual Agents'}));
   assert.equal(Math.round((await page.locator('#report-papers').boundingBox()).width), 320);
   const sharedAppearance = await page.evaluate(() => {
     function appearance(node, borderSide) {
@@ -59,16 +73,11 @@ const fs = require('node:fs');
   await page.locator('#report-papers-search').fill('Visual Agents');
   assert.equal(await page.locator('.report-paper-link').count(), 1);
   await page.locator('#report-toc-close').click();
-  await page.locator('.report-paper-link').click();
-  await page.waitForURL('**/paper-1/report.html');
-  await page.waitForSelector('.report-paper-link');
+  await openReportInNewTab(page.locator('.report-paper-link'));
   assert.equal(await page.locator('#report-papers-search').inputValue(), 'Visual Agents');
-  assert.equal(await page.locator('.report-sidebar').isVisible(), false, 'TOC preference survives report navigation');
+  assert.equal(await page.locator('.report-sidebar').isVisible(), false, 'opening another report preserves the collapsed TOC');
   assert.equal(Math.round((await page.locator('#report-papers').boundingBox()).width), 380);
-  assert.equal(await page.evaluate(() => scrollY), 0);
-  await page.goBack();
-  await page.waitForURL('**/paper-0/report.html');
-  await page.waitForSelector('.report-paper-link');
+  assert.equal(page.url(), firstReport);
   await page.locator('#report-toc-toggle').click();
   await page.locator('#report-papers-search').fill('no-such-paper');
   assert.equal(await page.locator('#report-papers-clear').isVisible(), true);
@@ -91,10 +100,9 @@ const fs = require('node:fs');
     await page.screenshot({path: `work/report-qa/width-${width}.png`});
   }
   await page.locator('#report-papers-search').fill('Visual Agents');
-  await page.locator('.report-paper-link').click();
-  await page.waitForURL('**/paper-1/report.html');
-  await page.waitForSelector('.report-paper-link');
-  assert.equal(await page.locator('#report-papers').isVisible(), true, 'drawer persists on navigation');
+  await openReportInNewTab(page.locator('.report-paper-link'));
+  assert.equal(await page.locator('#report-papers-search').inputValue(), 'Visual Agents');
+  assert.equal(await page.locator('#report-papers').isVisible(), true, 'opening a report preserves the current drawer');
   await page.locator('#report-papers-close').click();
   await page.locator('.toc-toggle').click();
   assert.equal(await page.locator('#report-papers').isVisible(), false);

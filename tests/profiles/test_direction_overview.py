@@ -337,3 +337,127 @@ def test_bibliography_only_response_does_not_replace_readable_article(tmp_path):
         with pytest.raises(ValueError, match="正文生成失败"):
             generator.generate(profile)
     assert store.read(profile)["markdown"] == "# 原有文章"
+
+
+@pytest.mark.parametrize("outcome", ["fulltext", "rediscovered", "abstract", "missing", "error", "broad", "budget"])
+def test_overview_finishes_critical_lookup_before_accepting_prose(tmp_path, outcome):
+    title = "PaperBench: Evaluating AI's Ability to Replicate AI Research"
+    bench = literature("2504.01848", 2025)
+    bench.title = title
+    queries = []
+    initial_ids = ["2001.00001", "2501.00001", "2501.00002", "2401.00001", "2402.00001"]
+    gap = {"question": "PaperBench 如何给论文复现打分？", "available": "只有其他基准的描述",
+           "tool": "title", "query": title, "requires_original": True}
+
+    class Archive(LiteratureAPI):
+        def search_literature(self, *args, **kwargs):
+            if kwargs.get("max_results") == 12:
+                queries.append(("topic", args[1][0][0]))
+                return []
+            papers = [literature(aid, 2020 if aid.startswith("20") else 2025) for aid in initial_ids]
+            if outcome == "rediscovered":
+                papers.append(bench)
+            return papers
+
+        def find_by_title(self, query):
+            queries.append(query)
+            if outcome == "error":
+                raise TimeoutError()
+            return [bench] if query == "PaperBench" and outcome not in {"missing", "budget"} else []
+
+        def download_version(self, aid, version, destination):
+            if aid == bench.arxiv_id and outcome == "abstract":
+                raise LookupError("PDF unavailable")
+            super().download_version(aid, version, destination)
+
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "文献编辑" in system:
+                selected = initial_ids.copy()
+                if bench.arxiv_id in prompt.split("已执行的学术检索：")[1].splitlines()[0]:
+                    selected.append(bench.arxiv_id)
+                followups = [gap]
+                if outcome == "broad" or bench.arxiv_id in selected:
+                    followups = []
+                elif outcome == "budget":
+                    followups.extend(dict(gap, query=f"Missing benchmark {i}") for i in range(12))
+                return json.dumps({"selected": selected, "gaps": ["跨领域泛化证据有限"],
+                                   "followups": followups})
+            if kwargs.get("json_mode"):
+                if "围绕研究主题规划" in prompt and outcome != "broad":
+                    return json.dumps({"actions": [{"tool": "title", "query": title, "reason": "寻找原始评测"}]})
+                return '{"actions":[]}'
+            self.last_prompt = prompt
+            evidence = json.loads(prompt.split("文献材料：")[1].splitlines()[0])
+            for paper in evidence:
+                if paper["arxiv_id"] == bench.arxiv_id and paper["material"] == "fulltext":
+                    return f"## 评测比较\n\n原文评分细节 [{paper['number']}]。"
+            return "## 评测比较\n\n现有证据有限 [1]。"
+
+    config = AppConfig()
+    model = Author()
+    clients = ResearchClients(config, arxiv=Archive(), llm=model,
+                              conferences=SimpleNamespace(discover=lambda *args: ([], {})),
+                              parser=SimpleNamespace(parse=lambda *args: SimpleNamespace(text="grading rubric " * 30)))
+    with OverviewGenerator(config, tmp_path, clients=clients) as generator:
+        generator.generate(direction())
+    result = OverviewStore(tmp_path / "run").read(direction())
+    expected_queries = [] if outcome == "broad" else [title, "PaperBench"]
+    if outcome == "budget":
+        for i in range(4):
+            query = f"Missing benchmark {i}"
+            expected_queries.extend([query, ("topic", query)])
+        assert "剩余额度不足" in model.last_prompt
+    assert queries == expected_queries
+    if outcome in {"fulltext", "rediscovered"}:
+        assert "原文评分细节" in result["markdown"]
+        assert result["article"]["sources"][-1]["material"] == "fulltext"
+    if outcome in {"abstract", "missing", "error"}:
+        status = {"abstract": "仅取得摘要", "missing": "未命中", "error": "请求未完成"}[outcome]
+        assert any("PaperBench" in w and status in w for w in result["article"]["warnings"])
+        assert status in model.last_prompt
+
+
+def test_reselecting_new_revision_uses_its_own_original_text(tmp_path):
+    aid = "2001.00001"
+    reads = []
+
+    class Archive(LiteratureAPI):
+        def find_by_title(self, title):
+            upgraded = literature(aid, 2020)
+            upgraded.version = 3
+            return [upgraded]
+
+        def download_version(self, paper_id, version, destination):
+            reads.append((paper_id, version))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(f"material-v{version} " * 30)
+
+    class Author(OverviewModel):
+        def chat(self, system, prompt, **kwargs):
+            if "文献编辑" in system:
+                return json.dumps({"selected": [aid], "followups": [], "gaps": []})
+            if kwargs.get("json_mode"):
+                return '{"actions":[]}'
+            if not getattr(self, "requested_v2", False):
+                self.requested_v2 = True
+                return json.dumps({"actions": [{"tool": "read", "query": aid, "reason": "read current original"}]})
+            if "material-v3" not in prompt:
+                return json.dumps({"actions":[{"tool":"title","query":"new revision","reason":"check revision"}]})
+            evidence = json.loads(prompt.split("文献材料：")[1].splitlines()[0])
+            assert evidence[0]["version"] == 3 and "material-v2" not in evidence[0]["text"]
+            return "## 主要技术路线\n\n采用修订版原文的材料 [1]。"
+
+    cfg = AppConfig()
+    clients = ResearchClients(cfg, arxiv=Archive(), llm=Author(),
+        conferences=SimpleNamespace(discover=lambda *args: ([], {})),
+        parser=SimpleNamespace(parse=lambda path, folder: SimpleNamespace(text=path.read_text())))
+    profile = direction()
+    with OverviewGenerator(cfg, tmp_path, clients=clients) as generator:
+        generator.generate(profile)
+    result = OverviewStore(tmp_path / "run").read(profile)
+    inventory = next(tmp_path.rglob("sources.json"))
+    source, = json.loads(inventory.read_text(encoding="utf8"))["papers"]
+    assert source["version"] == 3 and source["material"] == "fulltext" and "material-v3" in source["text"]
+    assert f"{aid}v3" in result["markdown"]
+    assert reads == [(aid, 2), (aid, 3)]

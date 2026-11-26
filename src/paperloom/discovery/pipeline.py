@@ -29,12 +29,13 @@ from ..papers.reading_state import _locked
 from ..integrations.obsidian import ObsidianExporter
 from .ranker import matched_concept_groups, rank_papers, finish_explanation
 from .plan_selection import evaluate_plan, selectable
-from ..reports.render import render_recommendations, render_report
+from ..reports.render import render_recommendations
 from ..reports.report import finalize_report_structure
-from ..reports.report_figures import figure_number
-from ..reports.report_publication import prepare_publication, present_source_pages
+from ..reports.report_figures import merge_report_figures
+from ..reports.report_publication import assemble_report, figure_record, save_report_files
+from ..reports.reviewed_material import apply_figure_review, apply_publication_review, reviewed_material
 from ..runtime.research_clients import ResearchClients
-from ..utils import read_json, slugify, write_json
+from ..utils import atomic_write_text, read_json, slugify, write_json
 from ..reports.weekly import WeeklySynthesizer
 from ..versions.version_tracker import VersionTracker
 from ..papers.storage import recommendation_data_path, read_recommendations
@@ -513,6 +514,8 @@ class DailyPipeline:
         report_figures: list[FigureCandidate] = []
         checkpoint = current_report_checkpoint()
         errors: list[str] = [paper.resolution_note] if paper.resolution_note else []
+        reviews = reviewed_material(self.output_root, paper) if not demo else {}
+        publication = None
         if not demo:
             task_progress("正在核验论文元数据…", 18)
             try:
@@ -523,6 +526,8 @@ class DailyPipeline:
                     "出版元数据核验",
                     f"核验失败，已使用 arXiv 元数据：{type(exc).__name__}: {exc}",
                 )
+            if apply_publication_review(metadata, reviews.get("publication")):
+                publication = reviews["publication"]
             pdf_path = paper_dir / "paper.pdf"
             try:
                 task_progress("正在下载论文 PDF…", 27)
@@ -543,27 +548,23 @@ class DailyPipeline:
                 pdf_figures = [
                     figure for figure in parsed.figures if figure.kind == "page_figure"
                 ]
-                try:
-                    task_progress("正在补充提取论文方法图与实验图…", 54)
-                    html_figures = self.clients.arxiv_html.fetch(f"{paper.arxiv_id}{revision}", paper_dir)
-                except Exception as exc:
-                    task_warning(
-                        "arXiv HTML",
-                        f"HTML 图片提取失败，已仅使用 PDF 图片：{type(exc).__name__}: {exc}",
-                    )
-                    html_figures = []
+                selected_figures = checkpoint.restore_selection(paper_dir) if checkpoint else None
+                if selected_figures is None:
+                    try:
+                        task_progress("正在补充提取论文方法图与实验图…", 54)
+                        html_figures = self.clients.arxiv_html.fetch(f"{paper.arxiv_id}{revision}", paper_dir)
+                    except (CheckpointWriteError, OSError):
+                        raise
+                    except Exception as exc:
+                        task_warning(
+                            "arXiv HTML",
+                            f"HTML 图片提取失败，已仅使用 PDF 图片：{type(exc).__name__}: {exc}",
+                        )
+                        html_figures = []
 
-                by_number = {figure_number(figure): figure for figure in pdf_figures}
-                for figure in html_figures:
-                    number = figure_number(figure)
-                    existing = by_number.get(number)
-                    if existing:
-                        figure.page = existing.page
-                        # HTML floats can sit under a different heading from the corresponding PDF figure.
-                        figure.role, figure.section = existing.role, existing.section
-                    if figure.image_available or not existing:
-                        by_number[number] = figure
-                selected_figures = [by_number[number] for number in sorted(by_number)]
+                    selected_figures = merge_report_figures(pdf_figures, html_figures)
+                    if checkpoint and html_figures:
+                        checkpoint.save_selection(selected_figures)
                 for index, figure in enumerate(selected_figures, start=1):
                     if figure.role == "method" and (not figure.image_available or len(method_figures) >= 8):
                         continue
@@ -573,11 +574,13 @@ class DailyPipeline:
                     if figure.image_available and figure_copy.resolve() != figure.path.resolve():
                         shutil.copy2(figure.path, figure_copy)
                     figure.path = figure_copy
+                    if figure.role == "experiment":
+                        apply_figure_review(figure, reviews.get("figures", {}))
                     report_figures.append(figure)
                     if figure.role == "method":
                         method_figures.append(figure)
                 main_figure = method_figures[0] if method_figures else None
-            except CheckpointWriteError:
+            except (CheckpointWriteError, OSError):
                 raise
             except Exception as exc:
                 errors.append(f"PDF下载或解析失败：{exc}")
@@ -588,10 +591,14 @@ class DailyPipeline:
         task_progress("正在调用模型阅读全文并撰写报告…", 65)
         report_quality = "full" if parsed and parsed.text.strip() and self.clients.llm.enabled else "abstract"
         try:
-            report = self.clients.reporter.generate(paper, metadata, parsed, report_figures)
+            reporter = self.clients.reporter
+            compose = getattr(reporter, "compose", None) or reporter.generate
+            report = compose(paper, metadata, parsed, report_figures)
         except CheckpointWriteError:
             raise
         except Exception as exc:
+            if isinstance(exc, OSError) and not isinstance(exc, (TimeoutError, ConnectionError)):
+                raise
             report_quality = "abstract"
             errors.append(f"LLM 深度报告失败，已生成摘要级回退报告：{type(exc).__name__}: {exc}")
             task_warning(
@@ -603,69 +610,30 @@ class DailyPipeline:
         table_catalogue = getattr(report, 'tables', None)
         if table_catalogue is not None:
             write_json(paper_dir / 'tables.json', table_catalogue.to_dict())
-            (paper_dir / 'report-draft.md').write_text(report.draft, encoding='utf-8')
+            atomic_write_text(paper_dir / 'report-draft.md', report.draft)
         if errors:
             report += "\n\n## 运行警告\n\n" + "\n".join(f"- {error}" for error in errors)
-        report = prepare_publication(report, paper, metadata, report_figures, table_catalogue,
-                                     finalize_report_structure)
-        from ..reports.report_citations import strip_tokens, unavailable_citations
-        unlinked_report = report
-        try:
-            report, evidence = attach_evidence(report, parsed, pdf_available=(paper_dir / "paper.pdf").is_file(),
-                                               full_report=report_quality == "full")
-            if table_catalogue is not None and not table_catalogue.data_intact(report):
-                report = strip_tokens(unlinked_report)
-                evidence = unavailable_citations()
-        except Exception:
-            report = strip_tokens(unlinked_report)
-            evidence = unavailable_citations()
-        try:
-            from ..reports.evidence import source_table_inventory
-            visual = [item for item in source_table_inventory(parsed) if item.get('kind') == 'visual']
-            report, _ = present_source_pages(report, {'visual': visual}, paper_dir / 'paper.pdf')
-        except Exception:
-            # Original-page illustrations are presentation, not a publication gate.
-            pass
+        report, evidence = assemble_report(report, paper, metadata, report_figures, table_catalogue,
+                                           parsed, paper_dir, report_quality,
+                                           finalize_report_structure=finalize_report_structure,
+                                           attach_evidence=attach_evidence)
         write_json(paper_dir / "evidence.json", evidence)
         task_progress("报告内容已生成，正在保存和渲染…", 88)
         report_path = paper_dir / "report.md"
-        report_path.write_text(report, encoding="utf-8")
-        render_report(
-            report,
-            report_path.with_suffix(".html"),
-            paper.title,
-            arxiv_id=paper.arxiv_id,
-            profile_id=self.config.profile_id,
-            report_id=report_path.with_suffix(".html").relative_to(self.output_root).as_posix(),
-        )
-        write_json(
-            paper_dir / "method-figures.json",
-            [
-                {
-                    "filename": figure.path.name,
-                    "page": figure.page,
-                    "caption": figure.caption,
-                    "source": figure.kind,
-                    "explanation": figure.explanation,
-                }
-                for figure in method_figures
-            ],
-        )
-        write_json(paper_dir / "experiment-figures.json", [
-            {"filename": figure.path.name if figure.image_available else None,
-             "page": figure.page, "caption": figure.caption, "source": figure.kind,
-             "section": figure.section, "image_available": figure.image_available,
-             "explanation": figure.explanation}
-            for figure in report_figures if figure.role == "experiment"
-        ])
-        write_json(paper_dir / "metadata.json", {"profile_id": profile, "profile_name": self.config.profile_name,
+        write_json(paper_dir / "method-figures.json", [figure_record(f) for f in method_figures])
+        write_json(paper_dir / "experiment-figures.json",
+                   [figure_record(f) for f in report_figures if f.role == "experiment"])
+        payload = {"profile_id": profile, "profile_name": self.config.profile_name,
                    "paper": paper.to_dict(), "verified": metadata.to_dict(), "parser": parsed.parser if parsed else None,
+                   **({"publication_review": publication} if publication else {}),
                    "report_quality": report_quality, "errors": errors,
                    "evidence": {k: v for k, v in evidence.items() if k != "citations"},
                    "generated_at": datetime.now(ZoneInfo(self.config.timezone)).isoformat(),
                    "model": self.config.llm.model if self.clients.llm.enabled else "",
                    "parsed_pages": len(parsed.page_texts) if parsed else 0,
-                   "parsed_characters": len(parsed.text.strip()) if parsed else 0})
+                   "parsed_characters": len(parsed.text.strip()) if parsed else 0}
+        rid = report_path.with_suffix(".html").relative_to(self.output_root).as_posix()
+        save_report_files(paper_dir, report, paper, payload, rid, catalog_root=self.output_root)
         if checkpoint:
             checkpoint.publish(resumable=report_quality != "full")
         if (

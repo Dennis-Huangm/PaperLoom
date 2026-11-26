@@ -1,12 +1,15 @@
-from paperloom.sources.arxiv_html import parse_html_figure_specs
+import httpx
 import pytest
+import pymupdf
+
+from paperloom.sources.arxiv_html import ArxivHtmlFigureClient, parse_html_figure_specs
 
 
 @pytest.mark.parametrize('heading', ['4 Experiments on ImageNet', '4 Results and Analysis',
-                                  'Experimental Evaluation on Benchmarks'])
+                                  'Experimental Evaluation on Benchmarks', '5 Empirical Analysis'])
 def test_descriptive_experiment_headings_keep_figures_in_results(heading):
     html = (f'<h2>{heading}</h2><figure class="ltx_figure"><img src="f9.png">'
-            '<figcaption>Figure 9: Benchmark results.</figcaption></figure>')
+            '<figcaption>Figure 9 | Benchmark results.</figcaption></figure>')
     figures = parse_html_figure_specs(html, 'https://arxiv.org/html/example')
     assert [figure.role for figure in figures] == ['experiment']
 
@@ -73,3 +76,33 @@ def test_document_title_starting_with_a_is_not_an_appendix() -> None:
             '<h2>3 Experiments</h2><figure class="ltx_figure"><img src="f5.png">'
             '<figcaption>Figure 5: Results.</figcaption></figure>')
     assert [s.number for s in parse_html_figure_specs(html, "https://arxiv.org/html/example")] == [5]
+
+
+@pytest.mark.parametrize("has_clip_path", [False, True])
+def test_downloads_an_svg_object_as_a_png_when_it_can_be_rendered_reliably(tmp_path, has_clip_path) -> None:
+    html = ('<h2>4 Experiments</h2><figure class="ltx_figure">'
+            '<object type="image/svg+xml" data="paper/plot.svg"><img src="fallback.png"></object>'
+            '<figcaption>Figure 2: Results.</figcaption></figure>')
+    clip = '<defs><clipPath id="plot"><rect x="4" y="4" width="30" height="16"/></clipPath></defs>'
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40">'
+           + (clip if has_clip_path else '') + '<rect x="4" y="4" width="72" height="32" fill="blue"'
+           + (' clip-path="url(#plot)"' if has_clip_path else '') + '/></svg>')
+
+    def respond(request):
+        if request.url.path == "/html/paper/plot.svg":
+            return httpx.Response(200, text=svg, headers={"Content-Type": "image/svg+xml"})
+        assert request.url.path == "/html/paper"
+        return httpx.Response(200, text=html, headers={"Content-Type": "text/html"})
+
+    client = ArxivHtmlFigureClient()
+    client.client.close()
+    with httpx.Client(transport=httpx.MockTransport(respond)) as mock:
+        client.client = mock
+        figure, = client.fetch("paper", tmp_path)
+
+    assert figure.image_available is not has_clip_path
+    if has_clip_path:
+        assert not figure.path.exists()
+        return
+    assert figure.path.suffix == ".png"
+    assert pymupdf.Pixmap(figure.path).pixel(20, 20) == (0, 0, 255)

@@ -8,6 +8,7 @@ import uuid
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from ..discovery.conference_discovery import conference_topic_terms
 from ..discovery.conference_scope import scope_from_form
 from ..discovery.discovery import DiscoveryService, DiscoveryError
 from ..papers.library import PaperLibraryStore
@@ -112,6 +113,8 @@ def register_conference_routes(app, templates, context, current_config, jobs, ou
         refresh = 'refresh' in form
         def run():
             with ResearchClients(task_config) as clients:
+                if topic_mode == 'custom':
+                    discovery.positive_keywords = conference_topic_terms(topic, clients.llm)
                 service = DiscoveryService(discovery, clients.arxiv, clients.alphaxiv, output_root,
                     conferences=clients.conferences, refresh_conferences=refresh)
                 error = ''

@@ -40,6 +40,10 @@ def task_checkpoint() -> None:
         raise TaskCancelled()
 
 
+def task_supports_cancellation() -> bool:
+    return _CURRENT_HOOKS.get() is not None
+
+
 def task_checkpoint_data(key: str, value: dict) -> None:
     """Persist resolved input before starting work that depends on it."""
     task_checkpoint()

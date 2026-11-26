@@ -61,3 +61,15 @@ def test_independent_invalid_branch_still_fails():
     assert draft['status'] == 'failed'
     assert draft['generation_error'] == '每条分支需要独立的核心主题锚点组'
     assert all(c['origin'] == 'user' for c in draft['plan']['conditions'])
+
+
+def test_new_draft_and_missing_provider_default_to_collaboration(tmp_path):
+    from paperloom.config import load_config
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("discovery: {}", encoding="utf-8")
+    assert load_config(config_path).discovery.provider == "hybrid"
+    assert make_draft("input")["discovery"]["provider"] == "hybrid"
+    for provider in ("arxiv", "auto"):
+        config_path.write_text(f"discovery: {{provider: {provider}}}", encoding="utf-8")
+        assert load_config(config_path).discovery.provider == provider

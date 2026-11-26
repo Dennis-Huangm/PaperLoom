@@ -30,7 +30,11 @@ def restore_config(request, output_root):
     return config
 
 
-def recovery_note(kind):
+def recovery_note(kind, request=None):
+    stage = ((request or {}).get("parameters") or {}).get("stage")
+    if kind == "report" and stage in {"figure", "render", "metadata", "publish"}:
+        return ("按原图号重试局部更新，重新解读实验图并检查关联的跨图结论。" if stage == "figure"
+                else "按提交时选择的范围重新处理这份本地报告，复用已保存的正文和图表。")
     if kind == "direction-overview":
         return "按提交时的主题与参考论文重新检索并生成小综述；已有文章继续保留。"
     if kind == "version-batch":
@@ -81,6 +85,11 @@ def request_runner(request, output_root, checkpoint=None):
             from ...discovery.pipeline import DailyPipeline
             snapshot = checkpoint.get("paper") or params.get("snapshot")
             with DailyPipeline(config, root) as service:
+                if params.get("stage", "full") != "full":
+                    from ...reports.report_revision import revise_report
+                    return revise_report(output_root, config, service.clients, params["arxiv_id"],
+                                         params["report_id"], params["stage"], params["revision_id"],
+                                         params["revision_date"], params.get("figure", 0))
                 options = {"snapshot": Paper.from_dict(snapshot) if snapshot else None}
                 if checkpoint.get("report_work"):
                     options["resume"] = checkpoint["report_work"]

@@ -1,19 +1,32 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
+import sys
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pymupdf as fitz
 
 from ..config import PDFConfig
 from ..papers.models import FigureCandidate, ParsedPaper
-from ..runtime.jobs.task_runtime import task_checkpoint, task_progress, task_warning
-from ..utils import normalize_space
-from .figure_sections import END_EXPERIMENT_RE, is_body_end, is_experiment_heading
+from ..runtime.jobs.task_runtime import task_checkpoint, task_progress, task_supports_cancellation, task_warning
+from ..utils import normalize_space, read_json
+from .figure_sections import (
+    BACK_MATTER_HEADING_RE,
+    END_EXPERIMENT_RE,
+    FIGURE_CAPTION_RE,
+    appendix_heading_id,
+    is_experiment_heading,
+)
 
-CAPTION_RE = re.compile(r"^(?:figure|fig\.?|图)\s*\d+[.:：\s]", re.I)
-FIGURE_CAPTION_RE = re.compile(r"^(?:figure|fig\.?)\s*(\d+)\s*[:.]", re.I)
+CAPTION_RE = re.compile(r"^(?:figure|fig\.?|图)\s*\d+[.:：|\s]", re.I)
+APPENDIX_REFERENCE_RE = re.compile(r"(?i:\bappendix)\s+([A-Z])\b")
+FIGURE_REFERENCE_RE = re.compile(r"\b(?:figures?|figs?\.?)\s*(\d+(?:(?:,\s*|\s+and\s+)\d+)*)\b", re.I)
 MAIN_FIGURE_TERMS = {
     "overview": 6,
     "framework": 6,
@@ -58,9 +71,9 @@ def _overlaps_horizontally(rect: fitz.Rect, region: fitz.Rect) -> bool:
     return min(rect.x1, region.x1) - max(rect.x0, region.x0) > 4
 
 
-def _figure_caption_blocks(page: fitz.Page) -> list[tuple[int, str, fitz.Rect]]:
+def _figure_caption_blocks(blocks: list[dict]) -> list[tuple[int, str, fitz.Rect]]:
     captions: list[tuple[int, str, fitz.Rect]] = []
-    for block in page.get_text("dict").get("blocks", []):
+    for block in blocks:
         lines = block.get("lines") or []
         if not lines:
             continue
@@ -82,7 +95,50 @@ def _figure_caption_blocks(page: fitz.Page) -> list[tuple[int, str, fitz.Rect]]:
             accepted.append(line_text)
             accepted_rects.append(line_rect)
             previous_bottom = line_rect.y1
-        caption = normalize_space(" ".join(accepted))
+        # Inline icons/font changes can put the caption prefix and its
+        # continuation in separate PDF text blocks. Wrapped lines can also
+        # restart in a new block. Require either an adjacent inline fragment
+        # or a tightly spaced line aligned with the caption's left edge.
+        joined = {id(block)}
+        while True:
+            continuation = None
+            for other in blocks:
+                other_lines = other.get("lines") or []
+                if id(other) in joined or not other_lines:
+                    continue
+                first = fitz.Rect(other_lines[0]["bbox"])
+                inline = any(
+                    abs(first.y1 - rect.y1) <= 2.2
+                    and -1 <= first.x0 - rect.x1 <= max(18, rect.height * 2)
+                    for rect in accepted_rects
+                )
+                wrapped = (
+                    abs(first.x0 - accepted_rects[0].x0) <= 3
+                    and 2.2 < first.y1 - max(rect.y1 for rect in accepted_rects) <= first.height + 2.2
+                    and abs(first.height - accepted_rects[0].height) <= 2.2
+                )
+                if inline or wrapped:
+                    continuation = other
+                    break
+            if continuation is None:
+                break
+            joined.add(id(continuation))
+            previous_bottom = None
+            for line in continuation["lines"]:
+                rect = fitz.Rect(line["bbox"])
+                if previous_bottom is not None and rect.y0 - previous_bottom > 2.2:
+                    break
+                accepted.append("".join(span.get("text", "") for span in line.get("spans", [])))
+                accepted_rects.append(rect)
+                previous_bottom = rect.y1
+        rows: list[list[tuple[fitz.Rect, str]]] = []
+        for rect, text in sorted(zip(accepted_rects, accepted), key=lambda item: item[0].y1):
+            if not rows or abs(rect.y1 - rows[-1][0][0].y1) > 2.2:
+                rows.append([])
+            rows[-1].append((rect, text))
+        caption = normalize_space(" ".join(
+            text for row in rows for _, text in sorted(row, key=lambda item: item[0].x0)
+        ))
         caption = caption.replace("�C", "–").replace("�", '"')
         caption = re.sub(r"(?<=\w)-\s+(?=[a-z])", "", caption)
         caption = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", caption)
@@ -93,21 +149,31 @@ def _figure_caption_blocks(page: fitz.Page) -> list[tuple[int, str, fitz.Rect]]:
     return captions
 
 
+@dataclass(frozen=True)
+class _ExperimentReferences:
+    appendices: set[str]
+    figures: set[int]
+
+
 def _extract_report_figures(
     document: fitz.Document,
     output_dir: Path,
-    page_texts: list[str],
     max_pages: int,
+    only_number: int | None = None,
 ) -> list[FigureCandidate]:
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     role, section = "method", ""
+    back_matter = False
+    referenced_appendices: set[str] = set()
+    referenced_figures: set[int] = set()
     extracted: list[FigureCandidate] = []
     seen_numbers: set[int] = set()
     for page_index in range(max_pages):
+        task_checkpoint()
         page = document[page_index]
-        headings = []
-        text_blocks = page.get_text("dict").get("blocks", [])
+        events: list[tuple[fitz.Rect, str | _ExperimentReferences | tuple[int, str, fitz.Rect]]] = []
+        text_blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES)["blocks"]
         font_sizes: Counter[float] = Counter()
         for block in text_blocks:
             for line in block.get("lines", []):
@@ -120,17 +186,35 @@ def _extract_report_figures(
             and any(block.get("lines") and block["bbox"][0] > midpoint - 12 for block in text_blocks)
         )
         for block in text_blocks:
-            for line in block.get("lines", []):
-                text = normalize_space("".join(span.get("text", "") for span in line.get("spans", [])))
-                spans = line.get("spans", [])
+            lines = block.get("lines", [])
+            texts = [normalize_space("".join(span["text"] for span in line["spans"])) for line in lines]
+            split_heading = False
+            # LaTeX can emit the appendix letter and title as separate lines on the same baseline.
+            if len(lines) == 2 and re.fullmatch(r"[A-Z](?:\.\d+)*\.?", texts[0]):
+                first, second = (fitz.Rect(line["bbox"]) for line in lines)
+                if abs(first.y1 - second.y1) <= 2.2 and 0 <= second.x0 - first.x1 <= 32:
+                    lines = [{"bbox": first | second, "spans": lines[0]["spans"] + lines[1]["spans"]}]
+                    texts = [" ".join(texts)]
+                    split_heading = True
+            for line, text in zip(lines, texts):
+                spans = line["spans"]
                 heading_style = any(span.get("size", 0) > body_size * 1.1 or span.get("flags", 0) & 16 for span in spans)
-                if (is_body_end(text, allow_lettered=heading_style)
-                        or is_experiment_heading(text, heading_style=heading_style)
-                        or END_EXPERIMENT_RE.match(text)):
-                    headings.append((fitz.Rect(line["bbox"]), text))
-        events: list[tuple[fitz.Rect, str | tuple[int, str, fitz.Rect]]] = list(headings)
+                standalone = len(lines) == 1
+                appendix = appendix_heading_id(text)
+                if (is_experiment_heading(text, heading_style=heading_style)
+                        or END_EXPERIMENT_RE.match(text)
+                        or (standalone and (BACK_MATTER_HEADING_RE.fullmatch(text)
+                                            or (appendix is not None and (heading_style or split_heading))))):
+                    events.append((fitz.Rect(line["bbox"]), text))
+            if texts and not FIGURE_CAPTION_RE.match(texts[0]):
+                paragraph = " ".join(texts)
+                appendices = set(APPENDIX_REFERENCE_RE.findall(paragraph))
+                numbers = {int(number) for mention in FIGURE_REFERENCE_RE.findall(paragraph)
+                           for number in re.findall(r"\d+", mention)}
+                if appendices or numbers:
+                    events.append((fitz.Rect(block["bbox"]), _ExperimentReferences(appendices, numbers)))
         events.extend((rect, (number, caption, rect))
-                      for number, caption, rect in _figure_caption_blocks(page))
+                      for number, caption, rect in _figure_caption_blocks(text_blocks))
         events.sort(key=lambda item: item[0].y0)
         if two_columns:
             ordered = []
@@ -147,19 +231,33 @@ def _extract_report_figures(
             events = ordered
         previous_captions: list[fitz.Rect] = []
         for _, value in events:
+            if isinstance(value, _ExperimentReferences):
+                if role == "experiment" and not back_matter:
+                    referenced_appendices.update(value.appendices)
+                    referenced_figures.update(value.figures)
+                continue
             if isinstance(value, str):
-                section = value
-                if is_body_end(section, allow_lettered=role != "method"):
-                    return extracted
-                if is_experiment_heading(section):
+                appendix = appendix_heading_id(value, allow_lettered=role != "method")
+                if appendix is not None or BACK_MATTER_HEADING_RE.fullmatch(value):
+                    if not referenced_appendices and referenced_figures <= seen_numbers:
+                        return extracted
+                    back_matter = True
+                    role = "experiment" if appendix in referenced_appendices else "other"
+                    section = value
+                elif not back_matter and is_experiment_heading(value):
                     role = "experiment"
-                elif END_EXPERIMENT_RE.match(section):
+                    section = value
+                elif not back_matter and END_EXPERIMENT_RE.match(value):
                     role = "other"
                 continue
             figure_number, caption, caption_rect = value
-            if role == "other":
+            figure_role = "experiment" if back_matter and figure_number in referenced_figures else role
+            if figure_role == "other" or figure_number in seen_numbers:
+                previous_captions.append(caption_rect)
                 continue
-            if figure_number in seen_numbers:
+            if only_number is not None and figure_number != only_number:
+                previous_captions.append(caption_rect)
+                seen_numbers.add(figure_number)
                 continue
             previous_caption_bottom = max(
                 (rect.y1 + 4 for rect in previous_captions if _overlaps_horizontally(rect, caption_rect)),
@@ -208,24 +306,25 @@ def _extract_report_figures(
                 path=path,
                 page=page_index + 1,
                 caption=caption,
-                kind="page_figure", role=role, section=section, image_available=available,
+                kind="page_figure", role=figure_role, section=section, image_available=available,
             )
             candidate.score = score_figure(candidate) + 5
             extracted.append(candidate)
             seen_numbers.add(figure_number)
+            if only_number is not None:
+                return extracted
     return extracted
 
 
 def extract_report_figures(
     pdf_path: Path,
     output_dir: Path,
-    max_pages: int = 60,
+    max_pages: int = 60, *, only_number: int | None = None,
 ) -> list[FigureCandidate]:
     document = fitz.open(pdf_path)
     try:
         page_count = min(len(document), max_pages)
-        page_texts = [document[index].get_text("text") for index in range(page_count)]
-        return _extract_report_figures(document, output_dir, page_texts, page_count)
+        return _extract_report_figures(document, output_dir, page_count, only_number)
     finally:
         document.close()
 
@@ -247,15 +346,17 @@ class PDFParser:
             raise ValueError("PDF 解析器必须是 pymupdf 或 docling")
         output_dir.mkdir(parents=True, exist_ok=True)
         parsed = None
+        needs_docling, do_ocr = parser == "docling", True
         if parser != "docling":
             parsed = self._parse_pymupdf(pdf_path, output_dir)
-        if parser == "docling" or (
-            parsed is not None and self.config.use_docling_if_available
-            and self._needs_docling(pdf_path, parsed)
-        ):
-            task_progress("正在使用 Docling 解析版面或识别扫描页…")
+            if self.config.use_docling_if_available:
+                needs_docling, do_ocr = self._docling_requirements(pdf_path, parsed)
+        if needs_docling:
+            task_progress("正在使用 Docling 解析版面与识别扫描页…" if do_ocr
+                          else "正在使用 Docling 解析表格版面…")
             try:
-                enhanced = self._parse_docling(pdf_path, output_dir)
+                convert = self._parse_docling_isolated if task_supports_cancellation() else self._parse_docling
+                enhanced = convert(pdf_path, output_dir, do_ocr=do_ocr)
                 if not enhanced.text.strip():
                     raise ValueError("Docling 未提取到有效正文")
                 enhanced.figures = extract_report_figures(
@@ -270,9 +371,10 @@ class PDFParser:
         return parsed if parsed is not None else self._parse_pymupdf(pdf_path, output_dir)
 
     @staticmethod
-    def _needs_docling(pdf_path: Path, parsed: ParsedPaper) -> bool:
+    def _docling_requirements(pdf_path: Path, parsed: ParsedPaper) -> tuple[bool, bool]:
         # A page number is not a usable text layer. Require a large raster too,
         # so blank pages or sparse text with a small logo don't start Docling.
+        needs_layout = False
         with fitz.open(pdf_path) as document:
             for page, text in zip(document, parsed.page_texts):
                 task_checkpoint()
@@ -281,22 +383,71 @@ class PDFParser:
                 # changing any value. This is a fallback signal, not an audit.
                 if (re.search(r"(?im)^\s*(?:Table|表)\s*\d+", text)
                         and re.search(r"\d+\.\d{3,}\.\d+", text)):
-                    return True
+                    needs_layout = True
                 if len(text.strip()) >= 40:
                     continue
                 for image in page.get_images(full=True):
                     if any((rect & page.rect).get_area() >= page.rect.get_area() / 2
                            for rect in page.get_image_rects(image[0])):
-                        return True
-        return False
+                        return True, True
+        return needs_layout, False
 
-    def _parse_docling(self, pdf_path: Path, output_dir: Path) -> ParsedPaper:
+    def _parse_docling_isolated(self, pdf_path: Path, output_dir: Path, *, do_ocr: bool) -> ParsedPaper:
+        # Docling's converter can spend minutes inside native code. Stage its
+        # outputs in a child process that cancellation can stop and reap.
+        executable = sys.executable
+        env = None
+        if os.name == "nt" and sys.prefix != sys.base_prefix:
+            # Bypass the Windows venv redirector so Popen owns the real process.
+            executable = sys._base_executable
+            env = dict(os.environ, __PYVENV_LAUNCHER__=sys.executable)
+        with TemporaryDirectory(prefix=".docling-", dir=output_dir) as staging:
+            stage = Path(staging).resolve()
+            log_path = stage / "worker.log"
+            command = [executable, "-m", "paperloom.sources.docling_worker",
+                       str(pdf_path.resolve()), str(stage), str(self.config.max_pages),
+                       str(int(do_ocr))]
+            task_checkpoint()
+            with log_path.open("wb") as log, subprocess.Popen(
+                command, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            ) as process:
+                try:
+                    while process.poll() is None:
+                        task_checkpoint()
+                        try:
+                            process.wait(timeout=0.2)
+                        except subprocess.TimeoutExpired:
+                            continue
+                    task_checkpoint()
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+            if process.returncode == 2:
+                raise ImportError("Docling unavailable")
+            if process.returncode:
+                with log_path.open("rb") as log:
+                    log.seek(max(0, log_path.stat().st_size - 4096))
+                    detail = log.read().decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"Docling 进程退出（{process.returncode}）\n{detail}")
+            data = read_json(stage / "parsed.json")
+            figures = [FigureCandidate(**{**figure, "path": output_dir / "figures" / figure["path"]})
+                       for figure in data.pop("figures")]
+            if figures and data["text"].strip():
+                (output_dir / "figures").mkdir(exist_ok=True)
+                for figure in figures:
+                    shutil.move(stage / "figures" / figure.path.name, figure.path)
+            return ParsedPaper(**data, figures=figures)
+
+    def _parse_docling(self, pdf_path: Path, output_dir: Path, *, do_ocr: bool) -> ParsedPaper:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling_core.types.doc import PictureItem
 
         options = PdfPipelineOptions()
+        options.do_ocr = do_ocr
         options.generate_picture_images = True
         options.generate_page_images = True
         converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
@@ -364,18 +515,19 @@ class PDFParser:
                     seen_xrefs.add(xref)
                     try:
                         pixmap = fitz.Pixmap(document, xref)
-                        if pixmap.alpha or pixmap.colorspace is None or pixmap.colorspace.n > 3:
-                            pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
+                        if pixmap.colorspace is None:
+                            continue  # A standalone mask has no color image to export.
+                        # Indexed JPX images may report one channel while still
+                        # requiring palette expansion before PNG encoding.
+                        pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
                         path = figures_dir / f"page-{page_index + 1:02d}-image-{image_index:02d}.png"
                         pixmap.save(path)
                         candidate = FigureCandidate(path=path, page=page_index + 1, caption=caption)
                         candidate.score = score_figure(candidate) + min(width * height / 1_000_000, 2)
                         figures.append(candidate)
-                    except RuntimeError:
+                    except (RuntimeError, ValueError, fitz.mupdf.FzErrorArgument):
                         continue
-            page_figures = _extract_report_figures(
-                document, output_dir, page_texts, max_pages
-            )
+            page_figures = _extract_report_figures(document, output_dir, max_pages)
             return ParsedPaper(
                 text=("\n\n".join(f"[第 {i + 1} 页]\n{text}" for i, text in enumerate(page_texts))
                       if any(text.strip() for text in page_texts) else ""),

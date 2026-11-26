@@ -72,6 +72,7 @@ class ProfileManager:
     def __init__(self, project_root: Path) -> None:
         self.root = project_root / "profiles"
         self.active_path = self.root / "active.txt"
+        self.deleted_root = self.root / "deleted-profiles"
 
     def ensure_default(self, config_path: Path) -> str:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -83,7 +84,7 @@ class ProfileManager:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         description = str((raw.get("discovery") or {}).get("interest_description") or "")
         name = description.strip() or "默认研究方向"
-        profile_id = _slug(name)
+        profile_id = self.unique_id(name)
         payload = {
             "id": profile_id,
             "name": name,
@@ -118,18 +119,19 @@ class ProfileManager:
         return self.active_path.read_text(encoding="utf-8").strip()
 
     def activate(self, profile_id: str) -> None:
-        if not PROFILE_ID_RE.match(profile_id) or not (self.root / f"{profile_id}.yaml").exists():
-            raise ValueError("研究方向档案不存在")
-        self.root.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(self.active_path, profile_id + "\n")
+        with _locked(self.root / "profiles.lock"):
+            if not PROFILE_ID_RE.fullmatch(profile_id) or not (self.root / f"{profile_id}.yaml").is_file():
+                raise ValueError("研究方向档案不存在")
+            atomic_write_text(self.active_path, profile_id + "\n")
 
     def get(self, profile_id: str) -> dict[str, Any]:
         if not PROFILE_ID_RE.match(profile_id):
             raise ValueError("无效的研究方向 ID")
         path = self.root / f"{profile_id}.yaml"
-        if not path.exists():
-            raise KeyError(profile_id)
-        return read_yaml(path) or {}
+        try:
+            return read_yaml(path) or {}
+        except FileNotFoundError as exc:
+            raise KeyError(profile_id) from exc
 
     def list(self) -> list[dict[str, Any]]:
         active = self.active_id()
@@ -137,7 +139,10 @@ class ProfileManager:
         if not self.root.exists():
             return profiles
         for path in sorted(self.root.glob("*.yaml")):
-            payload = read_yaml(path) or {}
+            try:
+                payload = read_yaml(path) or {}
+            except FileNotFoundError:
+                continue
             discovery = payload.get("discovery") or {}
             profiles.append(
                 {
@@ -155,12 +160,58 @@ class ProfileManager:
         profiles.sort(key=lambda item: (not item["active"], item["name"].casefold()))
         return profiles
 
+    def is_deleted(self, profile_id: str) -> bool:
+        return bool(PROFILE_ID_RE.fullmatch(profile_id) and (self.deleted_root / f"{profile_id}.yaml").is_file())
+
+    def deleted_ids(self) -> set[str]:
+        return {path.stem for path in self.deleted_root.glob("*.yaml")
+                if PROFILE_ID_RE.fullmatch(path.stem) and path.is_file()}
+
+    def deleted_profiles(self) -> list[dict[str, str]]:
+        with _locked(self.root / "profiles.lock"):
+            profiles = []
+            for profile_id in sorted(self.deleted_ids()):
+                payload = read_yaml(self.deleted_root / f"{profile_id}.yaml") or {}
+                profiles.append({"id": profile_id, "name": payload.get("name") or profile_id})
+            return profiles
+
+    def delete_saved(self, profile_id: str) -> None:
+        if not PROFILE_ID_RE.fullmatch(profile_id):
+            raise ValueError("无效的研究方向 ID")
+        source = self.root / f"{profile_id}.yaml"
+        target = self.deleted_root / source.name
+        with _locked(self.root / "drafts.lock"), _locked(self.root / "profiles.lock"):
+            if not source.is_file():
+                raise KeyError(profile_id)
+            if sum(path.is_file() for path in self.root.glob("*.yaml")) <= 1:
+                raise ValueError("请至少保留一个研究方向")
+            if self.active_id() == profile_id:
+                raise ValueError("请先切换到其他研究方向，再删除当前方向")
+            if target.exists():
+                raise ValueError("已删除方向中存在相同记录，请刷新后重试")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.replace(target)
+
+    def restore_saved(self, profile_id: str) -> None:
+        if not PROFILE_ID_RE.fullmatch(profile_id):
+            raise ValueError("无效的研究方向 ID")
+        source = self.deleted_root / f"{profile_id}.yaml"
+        target = self.root / source.name
+        with _locked(self.root / "profiles.lock"):
+            if not source.is_file():
+                raise KeyError(profile_id)
+            if target.exists():
+                raise ValueError("已保存方向中存在相同记录，请刷新后重试")
+            source.replace(target)
+
     def save(self, payload: dict[str, Any]) -> Path:
         profile_id = str(payload.get("id") or "")
         if not PROFILE_ID_RE.match(profile_id):
             raise ValueError("无效的研究方向 ID")
         path = self.root / f"{profile_id}.yaml"
         with _locked(self.root / "profiles.lock"):
+            if self.is_deleted(profile_id):
+                raise ValueError("研究方向已删除，请先恢复")
             _atomic_yaml(path, payload)
         return path
 
@@ -201,9 +252,19 @@ class ProfileManager:
         if not PROFILE_ID_RE.fullmatch(draft_id):
             raise ValueError("无效的草稿 ID")
         path = self.root / "drafts" / f"{draft_id}.yaml"
-        if not path.exists():
+        if self.is_deleted(draft_id) or not path.exists():
             raise KeyError(draft_id)
-        return yaml.safe_load(path.read_text(encoding="utf-8"))
+        draft = yaml.safe_load(path.read_text(encoding="utf-8"))
+        saved_path = self.root / f"{draft_id}.yaml"
+        saved = (read_yaml(saved_path) or {}) if saved_path.exists() else {}
+        revision = draft["revision"]
+        # Older versions marked the draft. New activations mark the saved profile.
+        if saved.get("revision") == revision and revision in (
+            draft.get("activated_revision"), saved.get("activated_revision")
+        ):
+            path.unlink(missing_ok=True)
+            raise KeyError(draft_id)
+        return draft
 
     def save_draft(self, payload: dict, *, expected_revision: int | None = None) -> dict:
         draft_id = payload["id"]
@@ -211,12 +272,17 @@ class ProfileManager:
             raise ValueError("无效的草稿 ID")
         with _locked(self.root / "drafts.lock"):
             path = self.root / "drafts" / f"{draft_id}.yaml"
+            if self.is_deleted(draft_id):
+                raise DraftConflict("研究方向已删除，请先恢复，或创建新的草稿")
             if (self.root / "deleted-drafts" / ".purged" / f"{draft_id}.marker").exists():
                 raise DraftConflict("草稿已永久删除，请创建新的草稿")
             if (self.root / "deleted-drafts" / f"{draft_id}.yaml").exists():
                 raise DraftConflict("草稿已删除；请先恢复，或创建新的草稿")
-            if path.exists():
+            try:
                 old = self._read_draft(draft_id)
+            except KeyError:
+                old = None
+            if old is not None:
                 if expected_revision is None and payload.get("request_id") and payload.get("request_id") == old.get("request_id"):
                     if payload.get("request_fingerprint") != old.get("request_fingerprint"):
                         raise DraftConflict("同一次创建请求的内容已改变，请刷新后重新创建")
@@ -229,12 +295,20 @@ class ProfileManager:
                         payload[key] = old[key]
             elif expected_revision is not None:
                 raise DraftConflict("草稿已不存在")
+            elif (self.root / f"{draft_id}.yaml").exists():
+                raise DraftConflict("草稿已保存为研究方向，请从已保存方向打开")
             _atomic_yaml(path, payload)
         return payload
 
     def drafts(self) -> list[dict]:
         with _locked(self.root / "drafts.lock"):
-            return [self._read_draft(p.stem) for p in sorted((self.root / "drafts").glob("*.yaml"))]
+            drafts = []
+            for path in sorted((self.root / "drafts").glob("*.yaml")):
+                try:
+                    drafts.append(self._read_draft(path.stem))
+                except KeyError:
+                    continue
+            return drafts
 
     def deleted_drafts(self) -> list[dict]:
         with _locked(self.root / "drafts.lock"):
@@ -294,20 +368,26 @@ class ProfileManager:
             return draft
 
     def activate_draft(self, draft_id: str, revision: int) -> dict:
+        if type(revision) is not int:
+            raise DraftConflict("草稿已更新，请刷新后启用")
         with _locked(self.root / "drafts.lock"):
-            draft = self._read_draft(draft_id)
+            try:
+                draft = self._read_draft(draft_id)
+            except KeyError:
+                saved = self.get(draft_id)
+                if saved.get("revision") != revision:
+                    raise DraftConflict("草稿已更新，请刷新后启用") from None
+                self.activate(draft_id)
+                return saved
             if draft["revision"] != revision:
                 raise DraftConflict("草稿已更新，请刷新后启用")
-            if draft.get("activated_revision") == revision and (self.root / f"{draft_id}.yaml").exists():
-                self.activate(draft_id)
-                return draft
             refresh_draft(draft)
             if draft["status"] != "ready":
                 raise ValueError("草稿尚不可启用，请补全主题或修复生成错误")
+            draft["activated_revision"] = revision
             self.save(draft)
             self.activate(draft_id)
-            draft["activated_revision"] = revision
-            _atomic_yaml(self.root / "drafts" / f"{draft_id}.yaml", draft)
+            (self.root / "drafts" / f"{draft_id}.yaml").unlink(missing_ok=True)
             return draft
 
     def save_preview(self, draft_id: str, preview: dict, *, references_only=False):
@@ -315,7 +395,7 @@ class ProfileManager:
             try:
                 draft = self._read_draft(draft_id)
             except KeyError:
-                return  # A completed background check must not recreate a deleted draft.
+                return  # A completed check must not recreate a deleted or promoted draft.
             key = "reference_check" if references_only else "preview"
             previous = draft.get(key) or {}
             if previous.get("revision", 0) > preview["revision"]:
@@ -328,7 +408,7 @@ class ProfileManager:
         candidate = base
         counter = 2
         while (any((folder / f"{candidate}.yaml").exists() for folder in
-                   (self.root, self.root / "drafts", self.root / "deleted-drafts"))
+                   (self.root, self.root / "drafts", self.root / "deleted-drafts", self.deleted_root))
                or (self.root / "deleted-drafts" / ".purged" / f"{candidate}.marker").exists()):
             candidate = f"{base[:54]}-{counter}"
             counter += 1
@@ -368,7 +448,7 @@ class ProfileGenerator:
                 paper, reason = None, _reference_error_reason(exc)
             references.append(
                 {
-                    "arxiv_id": paper.arxiv_id if paper else arxiv_id,
+                    "arxiv_id": arxiv_id,
                     "title": paper.title if paper else "",
                     "abstract": paper.abstract if paper else "",
                     "categories": paper.categories if paper else [],

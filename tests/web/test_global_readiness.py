@@ -47,8 +47,8 @@ def test_conflicting_venue_cannot_replace_original_publication_date():
         }, source)
     finally:
         verifier.client.close()
-    assert result.venue == "Journal A"
-    assert result.publication_date == "2025-01-01"
+    assert result.venue is None and result.venue_status == "unverified"
+    assert result.publication_date is None
     assert result.conflicts
 
 

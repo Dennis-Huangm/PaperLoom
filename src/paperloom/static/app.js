@@ -74,10 +74,17 @@ const renderJob = (job) => {
   const title = document.createElement('strong');
   title.className = 'job-title';
   title.textContent = job.label;
+  copy.append(title);
+  if (job.paper_title && ['succeeded', 'succeeded_with_warnings'].includes(job.status)) {
+    const paperTitle = document.createElement('p');
+    paperTitle.className = 'job-paper-title';
+    paperTitle.textContent = job.paper_title;
+    copy.append(paperTitle);
+  }
   const detail = document.createElement('p');
   detail.className = 'job-detail';
   detail.textContent = job.progress == null ? job.detail : `${job.progress}% · ${job.detail}`;
-  copy.append(title, detail);
+  copy.append(detail);
   if (job.report_progress && Object.keys(job.report_progress).length) {
     const steps = document.createElement('p');
     const state = job.report_progress;
@@ -137,6 +144,8 @@ const renderJob = (job) => {
   if (job.result_url) {
     const link = document.createElement('a');
     link.href = job.result_url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     link.textContent = '打开结果';
     actions.append(link);
   }
@@ -286,7 +295,7 @@ document.querySelector('.recommendations-clear-form')?.addEventListener('submit'
 
 document.querySelector('.report-table')?.addEventListener('submit', (event) => {
   if (!event.target.matches('.report-delete-form')) return;
-  if (!window.confirm('删除这篇论文的所有本地报告及对应 PDF、方法图？文献库收藏会保留。')) {
+  if (!window.confirm('删除这篇论文的本地报告及对应 PDF、方法图？已删除方向的报告和文献库收藏会保留。')) {
     event.preventDefault();
   }
 });
@@ -321,8 +330,9 @@ if (reportBulkForm) {
     event.preventDefault();
     const selected = choices.filter((choice) => choice.checked).length;
     if (deleting || !selected) return;
-    if (!window.confirm(`删除所选 ${selected} 篇论文的所有本地报告及对应 PDF、方法图？此操作不可撤销，文献库收藏会保留。`)) return;
+    if (!window.confirm(`删除所选 ${selected} 篇论文的本地报告及对应 PDF、方法图？此操作不可撤销。已删除方向的报告和文献库收藏会保留。`)) return;
     const body = new FormData(reportBulkForm);
+    for (const choice of choices) if (choice.checked) body.append('delete_tokens', choice.dataset.deleteToken);
     deleting = true;
     choices.forEach((choice) => { choice.disabled = true; });
     selectAll.disabled = true;
@@ -351,6 +361,8 @@ if (reportBulkForm) {
 const bindJobForm = (form, afterSubmit = () => {}) => {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (form.getAttribute('aria-busy') === 'true') return;
+    form.setAttribute('aria-busy', 'true');
     const button = form.querySelector('button[type="submit"]');
     const original = button?.innerHTML;
     if (button) {
@@ -361,12 +373,15 @@ const bindJobForm = (form, afterSubmit = () => {}) => {
       const response = await scopedFetch(form.action, {method: 'POST', body: new FormData(form)});
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || '无法创建任务');
+      form.dispatchEvent(new Event('job-queued'));
       renderJob(payload);
       toast('任务已加入后台队列，可继续浏览其他页面');
       pollJob(payload.id);
     } catch (error) {
+      form.dispatchEvent(new CustomEvent('job-error', {detail: error.message}));
       toast(error.message);
     } finally {
+      form.removeAttribute('aria-busy');
       if (button) {
         button.disabled = false;
         button.innerHTML = original;
@@ -1445,6 +1460,49 @@ if (draftDeleteDialog) {
 if (window.location.hash === '#deleted-drafts') {
   const deletedDrafts = document.querySelector('#deleted-drafts');
   if (deletedDrafts) deletedDrafts.open = true;
+}
+
+const profileDeleteDialog = document.querySelector('#profile-delete-dialog');
+if (profileDeleteDialog) {
+  let selectedForm;
+  const confirmDelete = profileDeleteDialog.querySelector('#profile-delete-confirm');
+  const cancelDelete = profileDeleteDialog.querySelector('form[method="dialog"] button');
+  const name = profileDeleteDialog.querySelector('#profile-delete-name');
+  document.querySelectorAll('.profile-delete-form').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (confirmDelete.disabled || form.querySelector('button').disabled) return;
+      selectedForm = form;
+      name.textContent = form.dataset.profileName;
+      profileDeleteDialog.showModal();
+    });
+  });
+  profileDeleteDialog.addEventListener('cancel', (event) => {
+    if (confirmDelete.disabled) event.preventDefault();
+  });
+  confirmDelete.addEventListener('click', async () => {
+    if (!selectedForm || confirmDelete.disabled) return;
+    confirmDelete.disabled = true;
+    cancelDelete.disabled = true;
+    confirmDelete.textContent = '正在删除…';
+    try {
+      const response = await scopedFetch(selectedForm.action, {method: 'POST', body: new FormData(selectedForm)});
+      if (!response.ok) throw new Error((await response.json()).detail || '删除失败，请重试');
+      window.location.assign('/profiles?deleted=1#deleted-profiles');
+    } catch (error) {
+      toast(error.message);
+      confirmDelete.disabled = false;
+      cancelDelete.disabled = false;
+      confirmDelete.textContent = '删除方向';
+      profileDeleteDialog.close();
+    }
+  });
+  document.querySelector('a[href="#deleted-profiles"]').addEventListener('click', () => {
+    document.querySelector('#deleted-profiles').open = true;
+  });
+  if (window.location.hash === '#deleted-profiles') {
+    document.querySelector('#deleted-profiles').open = true;
+  }
 }
 
 // Durable collection actions use the same profile boundary as other mutations.

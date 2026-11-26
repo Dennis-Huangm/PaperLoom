@@ -12,6 +12,7 @@ import uvicorn
 from paperloom.web import create_app
 from paperloom.runtime.research_clients import ResearchClients
 from paperloom.profiles.direction_overview import OverviewGenerator
+from paperloom.profiles.profile_plan import new_draft
 from paperloom.config import load_config
 from tests.profiles.test_direction_overview import direction, LiteratureAPI, OverviewModel
 
@@ -41,6 +42,17 @@ profile = direction()
 app.state.profiles.save(profile)
 with OverviewGenerator(load_config(config), root) as generator:
     generator.generate(profile)
+
+versioned = new_draft(
+    load_config(config), "versioned", "智能体驱动的 SVG 生成与编辑",
+    ["SVG generation", "structured vector editing", "render feedback", "multimodal agents"],
+    ["raster-only image generation"], [],
+    "研究智能体如何生成与编辑可缩放矢量图形。关注结构化代码生成、工具调用、渲染反馈和迭代修复，"
+    "以及对路径、图层和视觉一致性的评测。",
+    {"arxiv_categories": ["cs.CV"]},
+)
+versioned["references"] = [{"arxiv_id": f"2401.{index:05}v2"} for index in range(1, 5)]
+app.state.profiles.save(versioned)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8776, log_level="warning")

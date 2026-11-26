@@ -387,3 +387,29 @@ os._exit(0)
     assert index.search("Replacement")["total"] == 1
     with closing(index._read()) as reader:
         assert reader.execute("SELECT body FROM docs WHERE kind='report'").fetchone()[0] == "Replacement report"
+
+
+def test_opening_indexed_source_reads_only_its_own_artifacts(tmp_path):
+    from paperloom.utils import read_json
+
+    path = report(tmp_path)
+    note(tmp_path)
+    for day in ("2026-09-23", "2026-09-24"):
+        write_json(tmp_path / day / "recommendations-a.json", [{"profile_id": "a", "paper": paper()}])
+    for n in range(15):
+        write_json(tmp_path / f"2026-09-25/reports/other-{n}/metadata.json",
+                   {"profile_id": "a", "paper": paper(f"2407.{n:05d}")})
+    index = SearchIndex(tmp_path, "a")
+    index.refresh()
+    keys = ["recommendation:2407.05600:2", "notes:2407.05600", "library:2407.05600",
+            path.relative_to(tmp_path).as_posix(), path.with_name("paper.pdf").relative_to(tmp_path).as_posix(),
+            path.with_name("metadata.json").relative_to(tmp_path).as_posix() + ":metadata"]
+    with closing(index._read()) as db:
+        ids = [db.execute("SELECT id FROM docs WHERE source=?", (key,)).fetchone()[0] for key in keys]
+    with (patch.object(index, "sources", side_effect=AssertionError("full scan")),
+          patch("paperloom.papers.search.read_json", wraps=read_json) as metadata):
+        assert all(index.document(doc_id) for doc_id in ids)
+    assert [call.args[0] for call in metadata.call_args_list] == [path.with_name("metadata.json")] * 3
+    write_json(tmp_path / "2026-09-24/recommendations-a.json", [])
+    with pytest.raises(ValueError, match="来源已更新"):
+        index.document(ids[0])

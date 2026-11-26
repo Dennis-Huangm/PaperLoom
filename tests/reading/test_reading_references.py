@@ -92,11 +92,13 @@ def test_chat_without_papers_then_add_paper_and_retry_original_scope(config_path
         value = wait_answer(client, sid)
         original = value['messages'][0]
         assert original['references'] == []
+        assert original['selection'] == ''
         assert value['messages'][-1]['status'] == 'completed'
         assert value['messages'][-1]['citations'] == []
         assert 'tools' not in requests[0] and 'tool_choice' not in requests[0]
         assert requests[0]['max_tokens'] == 4000
         assert '普通对话' in requests[0]['messages'][0]['content']
+        assert requests[0]['messages'][-1]['content'] == [{'type': 'text', 'text': 'hi'}]
         assert client.get('/api/reading/sessions').json()[0]['id'] == sid
 
         rid = report(config_path)
@@ -107,15 +109,21 @@ def test_chat_without_papers_then_add_paper_and_retry_original_scope(config_path
         value = wait_answer(client, sid)
         assert value['messages'][-2]['references'] == []
         assert 'tools' not in requests[1] and 'tool_choice' not in requests[1]
-        assert client.post(url+'/messages', json={'text':'现在讨论这篇论文', 'request_id':'with-paper'}).status_code == 200
+        assert requests[1]['messages'][-1]['content'] == [{'type': 'text', 'text': 'hi'}]
+        assert client.post(url+'/messages', json={
+            'text': '现在讨论这篇论文', 'request_id': 'with-paper', 'selection': ' \n', 'report_id': rid,
+        }).status_code == 200
         value = wait_answer(client, sid)
         assert value['messages'][-2]['references'][0]['report_id'] == rid
         assert requests[2]['tools'] and requests[2]['tool_choice'] == 'auto'
+        assert requests[2]['messages'][-1]['content'] == [{'type': 'text', 'text': '现在讨论这篇论文'}]
         assert client.put(url+'/references', json={'report_ids':[]}).status_code == 200
         assert client.post(url+'/messages', json={'text':'继续普通聊天', 'request_id':'removed'}).status_code == 200
         value = wait_answer(client, sid)
         assert value['messages'][-1]['status'] == 'completed'
         assert 'tools' not in requests[3]
+        assert requests[3]['messages'][-1]['content'] == [{'type': 'text', 'text': '继续普通聊天'}]
+        assert all('报告选区' not in m['content'] for m in requests[3]['messages'][:-1])
     with TestClient(create_app(config_path)) as client:
         restored = client.get(url).json()
         assert len(restored['messages']) == 8
@@ -223,7 +231,7 @@ def test_streaming_model_receives_multi_paper_tools_and_report_results(config_pa
     monkeypatch.setenv('LLM_API_KEY','fixture')
     calls = []
     def complete(_self, **kwargs):
-        calls.append(kwargs)
+        calls.append({**kwargs, 'messages': list(kwargs['messages'])})
         if len(calls) == 1:
             functions = [NS(index=i,id='call-'+str(i),function=NS(name='read_report',arguments=json.dumps({'paper_id':pid})))
                          for i,pid in enumerate(['2401.12345v1','2402.12345v1'])]
@@ -234,13 +242,18 @@ def test_streaming_model_receives_multi_paper_tools_and_report_results(config_pa
     a,b = report(config_path),report(config_path,'2402.12345')
     with TestClient(create_app(config_path)) as client:
         sid=client.post('/api/reading/sessions',json={'mode':'workspace','report_ids':[a,b]}).json()['id']
-        assert client.post('/api/reading/sessions/'+sid+'/messages',json={'text':'比较方法','request_id':'compare'}).status_code==200
+        assert client.post('/api/reading/sessions/'+sid+'/messages', json={
+            'text': '比较方法', 'request_id': 'compare', 'selection': '选中的报告原句', 'report_id': a,
+        }).status_code == 200
         value=wait_answer(client,sid)
         assert value['messages'][-1]['status']=='completed'
         results=[json.loads(m['content']) for m in calls[-1]['messages'] if m['role']=='tool']
         assert {r['paper_id'] for r in results}=={'2401.12345v1','2402.12345v1'}
         assert {r['text'] for r in results}=={'Report for 2401.12345','Report for 2402.12345'}
         assert all('paper_id' in t['function']['parameters']['properties'] for t in calls[0]['tools'])
+        assert calls[0]['messages'][-1]['content'] == [
+            {'type': 'text', 'text': '比较方法\n报告选区（非原文）：选中的报告原句'},
+        ]
         assert len(value['messages'][-1]['steps'])==2
 
 

@@ -1,5 +1,6 @@
 """Select report evidence by stored identity, never by a filename's sort order."""
 import re
+import hashlib
 import shutil
 import json
 from dataclasses import dataclass
@@ -60,7 +61,7 @@ class StoredReport:
         return {**self.metadata, "_source_date": self.date}
 
 
-def _report_records(output_root: Path, *, catalog: bool = False) -> Iterator[StoredReport]:
+def iter_report_records(output_root: Path, *, catalog: bool = False) -> Iterator[StoredReport]:
     """Read metadata once, preserving the two existing malformed-data policies."""
     for path in output_root.glob("????-??-??/reports/*/metadata.json"):
         try:
@@ -78,9 +79,14 @@ def _report_records(output_root: Path, *, catalog: bool = False) -> Iterator[Sto
             yield StoredReport(path, payload)
 
 
+def report_records(output_root: Path) -> list[StoredReport]:
+    """One operation's metadata in stable discovery order, including Markdown-only attempts."""
+    return sorted(iter_report_records(output_root), key=lambda record: record.metadata_path)
+
+
 def html_reports(output_root: Path) -> Iterator[StoredReport]:
     """Discover catalog-visible reports without choosing a preferred one."""
-    return (record for record in _report_records(output_root, catalog=True)
+    return (record for record in iter_report_records(output_root, catalog=True)
             if record.html_path.exists())
 
 
@@ -105,10 +111,10 @@ def preferred_report_index(reports: list[dict], profile_id: str) -> dict[tuple, 
     return selected
 
 
-def matching_report(output_root: Path, profile_id: str,
-                    paper: dict[str, Any], *, before: datetime | None = None) -> Path | None:
+def matching_record(records, profile_id: str, paper: dict[str, Any], *,
+                    before: datetime | None = None) -> StoredReport | None:
     candidates = []
-    for record in _report_records(output_root):
+    for record in records:
         try:
             payload = record.metadata
             if not profile_matches(payload, profile_id):
@@ -128,38 +134,95 @@ def matching_report(output_root: Path, profile_id: str,
             if report.is_file():
                 candidates.append((bool(payload.get("profile_id")),
                                    quality_rank(payload),
-                                   report.stat().st_mtime_ns, str(report), report))
+                                   report.stat().st_mtime_ns, str(report), record))
         except (OSError, ValueError, TypeError):
             continue
     return max(candidates)[-1] if candidates else None
 
 
-def delete_report_attempts(output_root: Path, arxiv_id: str, *, report_id: str = "") -> list[str]:
-    """Delete only dated report directories whose metadata names this paper."""
-    root = output_root.resolve()
-    removed = []
-    with _locked(root / "report-catalog.lock"):
-        for metadata_path in root.glob("????-??-??/reports/*/metadata.json"):
+def matching_report(output_root: Path, profile_id: str,
+                    paper: dict[str, Any], *, before: datetime | None = None) -> Path | None:
+    match = matching_record(iter_report_records(output_root), profile_id, paper, before=before)
+    return match.markdown_path if match else None
+
+
+def catalog_lock(root: Path):
+    return _locked(root / "report-catalog.lock")
+
+
+def deletion_token(report_ids: list[str]) -> str:
+    return hashlib.sha256(json.dumps(sorted(report_ids), ensure_ascii=False).encode()).hexdigest()
+
+
+def deletion_folders(root: Path, report_ids: list[str], arxiv_id: str, hidden: set[str]) -> list[Path]:
+    """Resolve only validated, visible report attempts before any deletion starts."""
+    root = root.resolve()
+    folders = []
+    for rid in report_ids:
+        folder = (root / rid).parent
+        relative = folder.resolve().relative_to(root)
+        if (len(relative.parts) != 3 or relative.parts[1] != "reports"
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", relative.parts[0])
+                or folder != folder.resolve()):
+            raise ValueError("报告目录已变化")
+        meta = read_json(folder / "metadata.json")
+        if (not isinstance(meta, dict) or str(meta.get("profile_id") or "") in hidden
+                or base_id(str((meta.get("paper") or {}).get("arxiv_id") or "")) != arxiv_id):
+            raise ValueError("报告归属已变化")
+        folders.append(folder)
+    # Keep a visible entry for retries until every incomplete attempt has been removed.
+    return sorted(folders, key=lambda folder: (folder / "report.html").is_file())
+
+
+def _remove_attempt(folder: Path) -> None:
+    # A failed recursive removal can erase the catalog entry before reaching a locked file.
+    catalog_files = {path: path.read_bytes() for path in (folder / "metadata.json", folder / "report.html")
+                     if path.is_file() and not path.is_symlink()}
+    try:
+        shutil.rmtree(folder)
+    except OSError:
+        if folder.is_dir():
+            for path, content in catalog_files.items():
+                if not path.exists():
+                    with path.open("xb") as stream:
+                        stream.write(content)
+        raise
+
+
+def delete_selected_reports(output_root, report_ids, tokens, *, expected_paper, hidden,
+                            load_catalog, active_report, on_removed):
+    """Validate the entire selection and remove exactly its confirmed directories in order."""
+    with catalog_lock(output_root):
+        catalog = {item["report_id"]: item for item in load_catalog()}
+        plans = []
+        for rid in dict.fromkeys(report_ids):
+            item = catalog.get(rid)
+            if item is None or item["delete_token"] not in tokens:
+                raise ValueError("所选论文的报告已变化，请刷新后重新确认，本次未删除")
+            aid = item["arxiv_id"]
+            if expected_paper is not None and aid != expected_paper:
+                raise ValueError("报告归属已变化，请刷新后重新确认")
+            if aid and active_report(aid):
+                raise ValueError(f"论文 {aid} 正在生成报告，请等待任务结束")
             try:
-                payload = read_json(metadata_path, {})
-                paper = payload.get("paper") if isinstance(payload, dict) else None
-                stored_id = base_id(str((paper or {}).get("arxiv_id") or ""))
-                if stored_id != arxiv_id:
-                    continue
-                folder = metadata_path.parent
-                selected_id = (folder / "report.html").relative_to(root).as_posix()
-                # Missing identities must never group unrelated orphan artifacts.
-                if not arxiv_id and (not report_id or selected_id != report_id):
-                    continue
-                relative = folder.resolve().relative_to(root)
-                if (len(relative.parts) != 3 or relative.parts[1] != "reports"
-                        or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", relative.parts[0])
-                        or folder.is_symlink()):
-                    continue
-            except (OSError, ValueError, TypeError, AttributeError):
-                # A damaged or inaccessible artifact must never widen deletion
-                # to another directory; leave it for explicit inspection.
-                continue
-            shutil.rmtree(folder)
-            removed.append(selected_id)
-    return removed
+                folders = deletion_folders(output_root, item["attempt_ids"], aid, hidden)
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                raise ValueError("报告目录或归属已变化，本次未删除") from exc
+            plans.append((aid or rid, folders))
+
+        completed = []
+        for index, (label, folders) in enumerate(plans):
+            for attempt, folder in enumerate(folders):
+                try:
+                    _remove_attempt(folder)
+                    on_removed(folder / "report.html")
+                except OSError as exc:
+                    if folder.exists() or attempt + 1 < len(folders):
+                        partial = label
+                    else:
+                        completed.append(label)
+                        partial = "无"
+                    remaining = [paper for paper, _ in plans[index + 1:]]
+                    raise OSError(f"已删除：{'、'.join(completed) or '无'}。未删完：{partial}。"
+                                  f"未处理：{'、'.join(remaining) or '无'}。错误：{exc}。请刷新后查看。") from exc
+            completed.append(label)

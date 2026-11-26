@@ -411,3 +411,38 @@ def test_pipeline_conference_recommendations_respect_history_and_feedback(tmp_pa
     selected, _, _ = pipeline._select_candidates(pipeline._rank_candidates(run, False), False)
     assert [p.arxiv_id for p in selected] == [values[2].arxiv_id]
     assert selected[0].conference_publications[0]['year'] == 2024
+
+
+@pytest.mark.parametrize("translation,expected_title,matches", [
+    ('{"terms":["robot navigation"]}', "Robot navigation", 1),
+    ('{"terms":[]}', "Cloud pricing", 0),
+])
+def test_chinese_custom_topic_applies_before_association_budget(tmp_path, translation, expected_title, matches):
+    from paperloom.discovery.conference_discovery import ConferenceClient, ConferenceRecord, conference_topic_terms
+
+    llm = SimpleNamespace(enabled=True, chat=Mock(return_value=translation))
+    topic = "机器人导航"
+    config = DiscoveryConfig(mode="conference", conferences=["icml"], conference_year_from=2024,
+                             conference_year_to=2024, interest_description=topic, max_candidates=1,
+                             positive_keywords=conference_topic_terms(topic, llm))
+    records = [ConferenceRecord("icml", 2024, title, ["Ada Researcher"], "https://example.org")
+               for title in ["Cloud pricing", "Robot navigation"]]
+    arxiv = SimpleNamespace(find_by_title=Mock(return_value=[]))
+    with ConferenceClient() as directory:
+        directory._directory = Mock(return_value=(records, "https://example.org"))
+        _, states = directory.discover(config, arxiv, tmp_path, set())
+    arxiv.find_by_title.assert_called_once_with(expected_title)
+    assert states["icml:2024"]["topic_matches"] == matches
+    assert config.interest_description == topic
+
+
+def test_single_slot_checks_matching_volume_before_unrelated_volume(tmp_path):
+    from paperloom.discovery.conference_discovery import ConferenceClient, ConferenceRecord
+    config = DiscoveryConfig(mode="conference", conferences=["icml", "acl"], conference_year_from=2024,
+                             conference_year_to=2024, max_candidates=1, positive_keywords=["robot navigation"])
+    arxiv = SimpleNamespace(find_by_title=Mock(return_value=[]))
+    with ConferenceClient() as directory:
+        directory._directory = lambda venue, year: ([ConferenceRecord(venue, year,
+            "Robot navigation" if venue == "acl" else "Cloud pricing", [], "https://example.org")], "https://example.org")
+        directory.discover(config, arxiv, tmp_path, set())
+    arxiv.find_by_title.assert_called_once_with("Robot navigation")

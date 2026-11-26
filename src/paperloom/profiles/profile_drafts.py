@@ -53,7 +53,12 @@ class ProfileDraftWorkflow:
             try:
                 existing = self.profiles.draft(draft_id)
             except KeyError:
-                pass
+                try:
+                    self.profiles.get(draft_id)
+                except KeyError:
+                    pass
+                else:
+                    raise DraftConflict("草稿已保存为研究方向，请从已保存方向打开") from None
             else:
                 if existing.get("request_fingerprint") != fingerprint:
                     raise DraftConflict("同一次创建请求的内容已改变，请刷新后重新创建")
@@ -84,6 +89,8 @@ class ProfileDraftWorkflow:
             if type(revision) is not int:
                 raise ValueError("草稿版本无效")
             return self.profiles.restore_draft(draft_id, revision)
+        if action == "activate":
+            return self.profiles.activate_draft(draft_id, revision)
         draft = self.profiles.draft(draft_id)
         if type(revision) is not int or revision != draft["revision"]:
             raise DraftConflict("草稿已更新，请刷新后重试")
@@ -92,8 +99,6 @@ class ProfileDraftWorkflow:
         if action == "delete":
             self.profiles.delete_draft(draft_id, revision)
             return {"deleted": True, "id": draft_id}
-        if action == "activate":
-            return self.profiles.activate_draft(draft_id, revision)
         if action == "regenerate":
             user_conditions = [c for c in draft["plan"]["conditions"] if c["origin"] != "model"]
             intent = draft["description"] + "\n已确认条件：" + "; ".join(

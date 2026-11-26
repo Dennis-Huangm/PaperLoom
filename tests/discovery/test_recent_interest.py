@@ -162,7 +162,7 @@ def test_supplemental_search_preserves_base_queries_and_tracks_both_routes(tmp_p
 def test_focused_provider_failures_keep_base_results(tmp_path):
     arxiv = SimpleNamespace(search=Mock(side_effect=[[paper()], TimeoutError("offline")]))
     alpha = SimpleNamespace(discover=Mock(side_effect=[[], TimeoutError("offline")]))
-    result = DiscoveryService(DiscoveryConfig(provider="hybrid"), arxiv, alpha, tmp_path).discover(
+    result = DiscoveryService(DiscoveryConfig(provider="hybrid", arxiv_categories=["cs.RO"]), arxiv, alpha, tmp_path).discover(
         recent_interest=RecentInterest("ready", query_terms=["tactile feedback"]))
     assert len(result.papers) == 1
     assert result.sources["arxiv_recent"]["status"] == result.sources["alphaxiv_recent"]["status"] == "failed"
@@ -173,7 +173,7 @@ def test_live_focused_arxiv_metadata_replaces_older_complete_alpha_cache(tmp_pat
     current = paper(title="Updated official findings", version=3)
     arxiv = SimpleNamespace(search=Mock(side_effect=[[], [current]]))
     alpha = SimpleNamespace(discover=Mock(side_effect=[[old], []]))
-    service = DiscoveryService(DiscoveryConfig(provider="hybrid"), arxiv, alpha, tmp_path)
+    service = DiscoveryService(DiscoveryConfig(provider="hybrid", arxiv_categories=["cs.RO"]), arxiv, alpha, tmp_path)
     service.resolver.remember(old)
     result = service.discover(recent_interest=RecentInterest("ready", query_terms=["tactile feedback"]))
     assert len(result.papers) == 1
@@ -185,7 +185,7 @@ def test_live_focused_arxiv_metadata_replaces_older_complete_alpha_cache(tmp_pat
 def test_exhausted_arxiv_is_not_retried_for_focus(tmp_path):
     arxiv = SimpleNamespace(search=Mock(side_effect=TimeoutError("offline")))
     alpha = SimpleNamespace(discover=Mock(return_value=[paper()]))
-    result = DiscoveryService(DiscoveryConfig(provider="hybrid"), arxiv, alpha, tmp_path).discover(
+    result = DiscoveryService(DiscoveryConfig(provider="hybrid", arxiv_categories=["cs.RO"]), arxiv, alpha, tmp_path).discover(
         recent_interest=RecentInterest("ready", query_terms=["tactile feedback"]))
     assert len(result.papers) == 1
     arxiv.search.assert_called_once()

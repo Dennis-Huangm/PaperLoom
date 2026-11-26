@@ -10,9 +10,12 @@ class ReadingReferences:
     def __init__(self, root):
         self.root = root
 
-    def catalog(self):
+    def catalog(self, *, deleted_profiles: set[str] | None = None):
+        hidden = deleted_profiles or set()
         chosen = {}
         for record in html_reports(self.root):
+            if str(record.metadata.get('profile_id') or '') in hidden:
+                continue
             paper = record.paper
             aid, version = paper.get('arxiv_id'), paper.get('version')
             if not aid or type(version) is not int or version < 1:

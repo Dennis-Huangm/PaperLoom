@@ -31,7 +31,7 @@
     <header><span class="weekly-period"><i class="far fa-calendar-alt" aria-hidden="true"></i>{{ report.week_id }}</span>{% if report.includes_personal_notes %}<span class="research-badge">含个人笔记</span>{% endif %}</header>
     <div class="weekly-card-body"><h2>{{ report.profile_name }}</h2><p>汇总 <strong>{{ report.paper_count }}</strong> 篇论文</p>
     {% if report.activity_counts %}<div class="weekly-card-activity"><span>已读 {{ report.activity_counts.get('completed', 0) }}</span><span>报告 {{ report.activity_counts.get('report', 0) }}</span><span>新版 {{ report.activity_counts.get('version', 0) }}</span></div>{% endif %}</div>
-    <footer><time>{{ report.generated_at[:16]|replace('T', ' ') }}</time><a class="button secondary" href="{{ report.report_url }}">打开周报 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></footer>
+    <footer><time>{{ report.generated_at[:16]|replace('T', ' ') }}</time><a class="button secondary" href="{{ report.report_url }}" target="_blank" rel="noopener noreferrer">打开周报 <i class="fas fa-arrow-right" aria-hidden="true"></i></a></footer>
   </article>
   {% endfor %}
 </section>

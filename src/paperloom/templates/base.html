@@ -13,12 +13,13 @@
   {% if active == 'profiles' %}<link rel="stylesheet" href="{{ url_for('static', path='/profiles.css') }}?v={{ asset_version('profiles.css') }}">{% endif %}
   {% if active == 'settings' %}<link rel="stylesheet" href="{{ url_for('static', path='/settings.css') }}?v={{ asset_version('settings.css') }}">{% endif %}
   {% if active == 'library' %}<link rel="stylesheet" href="{{ url_for('static', path='/library.css') }}?v={{ asset_version('library.css') }}">{% endif %}
+  {% if active == 'reports' %}<link rel="stylesheet" href="{{ url_for('static', path='/reports.css') }}?v={{ asset_version('reports.css') }}">{% endif %}
   {% if active in ['weekly', 'versions', 'citations', 'search', 'conferences'] %}<link rel="stylesheet" href="{{ url_for('static', path='/research.css') }}?v={{ asset_version('research.css') }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', path='/vendor/katex/katex.min.css') }}">
   <script async src="{{ url_for('static', path='/vendor/katex/katex.min.js') }}"></script>
   <script defer src="{{ url_for('static', path='/math.js') }}?v=20261008-readiness"></script>
   <script defer src="{{ url_for('static', path='/app.js') }}?v={{ asset_version('app.js') }}"></script>
-  {% if active in ['conferences', 'settings'] %}<script defer src="{{ url_for('static', path='/' + active + '.js') }}?v={{ asset_version(active + '.js') }}"></script>{% endif %}
+  {% if active in ['conferences', 'settings', 'reports'] %}<script defer src="{{ url_for('static', path='/' + active + '.js') }}?v={{ asset_version(active + '.js') }}"></script>{% endif %}
 </head>
 <body class="page-{{ active }}" data-profile-id="{{ config.profile_id }}">
   <header class="app-header">

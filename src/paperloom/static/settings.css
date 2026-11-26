@@ -6,7 +6,9 @@
 .settings-heading-actions{display:flex;align-items:center;gap:20px}
 .settings-local-note{display:inline-flex;align-items:center;gap:6px;color:var(--green);font-size:.75rem;white-space:nowrap}
 .page-settings .settings-shell{display:block}
-.page-settings .settings-section-nav{position:sticky;top:62px;z-index:20;display:flex;align-items:center;gap:4px;padding:6px;margin-bottom:20px;border-radius:8px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;box-shadow:0 3px 12px #20262d05}
+.page-settings .settings-toolbar{position:sticky;top:62px;z-index:20;display:flex;align-items:center;gap:12px;padding:6px;margin-bottom:20px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 3px 12px #20262d05}
+.page-settings .settings-section-nav{position:static;display:flex;flex:1;min-width:0;align-items:center;gap:4px;padding:0;margin:0;border:0;border-radius:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;box-shadow:none}
+.page-settings .settings-save{flex-shrink:0}
 .page-settings .settings-section-nav a{flex:0 0 auto;min-width:max-content;min-height:38px;font-size:.8125rem;padding:0 12px;border:0;border-radius:5px;white-space:nowrap}
 .page-settings .settings-section-nav a.active{box-shadow:none;background:var(--accent-soft);color:var(--accent)}
 .page-settings .settings-content{padding:0;border:0;background:transparent;overflow:visible;min-width:0}
@@ -76,8 +78,6 @@
 .page-settings .notice p{font-size:.75rem}
 .page-settings .form-section fieldset{border:1px solid var(--line);border-radius:8px;padding:18px;margin:0 0 18px;min-width:0}
 .page-settings .form-section legend{font-size:.8125rem;font-weight:650;padding:0 8px}
-.page-settings .save-bar{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:18px 24px}
-.page-settings .save-bar p{font-size:.75rem;line-height:1.7}
 
 @media(max-width:1100px){
   .page-settings .app-main{padding:24px}
@@ -94,7 +94,8 @@
   .page-settings .page-heading{gap:16px;margin-bottom:20px}
   .settings-heading-actions{gap:16px;flex-wrap:wrap}
   .settings-local-note{font-size:.6875rem}
-  .page-settings .settings-section-nav{top:58px;margin-bottom:16px}
+  .page-settings .settings-toolbar{top:58px;gap:6px;margin-bottom:16px}
+  .page-settings .settings-save{padding:0 10px;font-size:.75rem}
   .page-settings .form-section{scroll-margin-top:126px}
   .page-settings .form-section{padding:20px;margin-bottom:16px;border-radius:8px}
   .page-settings .credential-grid{grid-template-columns:1fr;gap:20px}
@@ -111,9 +112,43 @@
   .page-settings .connection-actions .button{flex:1;padding:0 12px}
   .connection-editor-heading>span{font-size:.6875rem}
   .page-settings .form-columns,.page-settings .config-grid{grid-template-columns:1fr}
-  .page-settings .save-bar{padding:18px}
 }
 
 .interface-font-preference:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .interface-font-preference select{width:auto}
 .interface-font-preference .button:disabled{opacity:.55;cursor:default}
+
+/* Put related discovery choices together and keep optional fields within reach. */
+.page-settings .settings-form :is(input, textarea, select) { font-weight: 400; }
+.page-settings .settings-form .toggle-field { align-self: start; cursor: pointer; }
+.page-settings .settings-form input[type=checkbox] { flex: none; accent-color: var(--accent); }
+.page-settings #discovery .settings-card-heading { padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.page-settings #discovery .settings-card-heading h2 { margin: 0; }
+.discovery-profile { color: var(--muted); font-size: .78rem; text-align: end; overflow-wrap: anywhere; }
+.discovery-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 14px; }
+.discovery-pane { display: grid; align-content: start; gap: 8px; padding: 16px; border: 1px solid var(--line); background: var(--surface-subtle); border-radius: 8px; }
+.discovery-pane label, .discovery-block > label { font-size: .8125rem; font-weight: 650; }
+.discovery-pane select { background-color: var(--surface); }
+.discovery-details { border-bottom: 1px solid var(--line); }
+.discovery-details > summary { display: flex; align-items: center; gap: 10px; padding: 13px 2px; cursor: pointer; font-size: .85rem; font-weight: 600; list-style: none; }
+.discovery-details > summary::-webkit-details-marker { display: none; }
+.discovery-details > summary::before { content: ''; width: 7px; height: 7px; margin: 0 3px; border: solid var(--muted); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); }
+.discovery-details[open] > summary::before { transform: rotate(135deg) translateY(-2px); }
+.discovery-details > summary:hover, .discovery-details a, .discovery-block .draft-help a { color: var(--accent); }
+.discovery-detail-body { padding: 3px 2px 16px; }
+.discovery-detail-body .draft-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.discovery-detail-body .draft-checks label { display: inline-flex; align-items: center; gap: 5px; font-size: .85rem; }
+.discovery-detail-body .toggle-field { width: fit-content; gap: 14px; font-size: .8125rem; }
+.discovery-block { margin-top: 23px; }
+.discovery-block h3 { font-size: 1rem; margin: 0 0 12px; }
+.discovery-block .config-grid, .discovery-details > .form-columns { margin-top: 0; }
+.discovery-block > label:not(.interest-toggle) { display: grid; gap: 6px; }
+.discovery-block .interest-toggle { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 2px; padding: 12px 14px; border-radius: 7px; background: var(--surface-subtle); cursor: pointer; }
+.discovery-block .interest-toggle input { width: 16px; height: 16px; margin: 2px 0 0; }
+.interest-toggle small { display: block; margin-top: 3px; }
+.page-settings #discovery textarea[readonly] { background: var(--surface-subtle); }
+@media (max-width: 760px) {
+  .discovery-pair { grid-template-columns: 1fr; gap: 8px; }
+  .discovery-pane { padding: 12px; }
+  .discovery-profile { max-width: 55%; }
+}

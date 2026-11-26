@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ...config import AppConfig
+from ...profiles.profiles import ProfileManager
 from ...runtime.jobs.manager import JobManager
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
@@ -32,6 +33,7 @@ def register_routes(
     current_config: Callable[[], AppConfig],
     jobs: JobManager,
     output_root: Path,
+    profiles: ProfileManager,
     templates: Jinja2Templates,
 ) -> None:
     @app.get("/", response_class=HTMLResponse)
@@ -56,7 +58,8 @@ def register_routes(
         )
         feedback = FeedbackStore(output_root, current.profile_id).all()
         saved_papers = PaperLibraryStore(output_root, current.profile_id).all()
-        reports_by_id = preferred_report_index(report_library(output_root), current.profile_id)
+        local_reports = report_library(output_root)
+        reports_by_id = preferred_report_index(local_reports, current.profile_id)
         for item in recommendations:
             arxiv_id = str((item.get("paper") or {}).get("arxiv_id") or "")
             item["feedback"] = feedback.get(arxiv_id)
@@ -77,7 +80,7 @@ def register_routes(
                 recommendation_history=history,
                 selected_date=date_label or "",
                 is_latest=is_latest,
-                recent_reports=grouped_report_library(report_library(output_root))[:4],
+                recent_reports=grouped_report_library(local_reports, deleted_profiles=profiles.deleted_ids())[:4],
                 recent_weekly=weekly_library(output_root, current.profile_id)[:2],
             ),
         )

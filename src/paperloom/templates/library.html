@@ -25,7 +25,7 @@
         <div><a class="library-arxiv-id" href="{{ paper.abs_url }}" target="_blank" rel="noopener noreferrer">{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}</a><em>{{ paper.primary_category }}</em></div>
         <span class="library-reading-badge status-{{ entry.reading.status }}">{{ reading_statuses[entry.reading.status] }}</span>
       </header>
-      <h2 id="library-title-{{ paper.arxiv_id }}"><a href="{{ entry.report_url or paper.abs_url }}">{{ paper.title }}</a></h2>
+      <h2 id="library-title-{{ paper.arxiv_id }}"><a href="{{ entry.report_url or paper.abs_url }}" target="_blank" rel="noopener noreferrer">{{ paper.title }}</a></h2>
       {% if paper.conference_publications %}<p class="library-publications">{% for pub in paper.conference_publications %}<a href="{{ pub.evidence_url }}" target="_blank" rel="noopener noreferrer">{{ conference_choices.get(pub.conference, pub.conference) }} {{ pub.year }} · 主会长文</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
       <p class="saved-paper-authors">{% for author in paper.authors[:5] %}{{ author.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if paper.authors|length > 5 %} et al.{% endif %}</p>
       <div class="library-paper-content" id="library-content-{{ paper.arxiv_id }}"><section class="library-abstract"><h3>摘要精要</h3><div class="paper-summary">{{ (paper.abstract_zh or paper.abstract or '暂无摘要，可查看论文原文。')|summary_html|safe }}</div></section><section class="saved-paper-reason"><h3><i class="far fa-bookmark" aria-hidden="true"></i>保存价值</h3><div class="paper-summary">{{ (paper.recommendation_detail or paper.recommendation_reason or '由你从推荐列表加入，尚未生成详细推荐依据。')|summary_html|safe }}</div></section></div>
@@ -49,7 +49,7 @@
       <div class="library-card-meta"><time datetime="{{ entry.saved_at }}">收藏于 {{ entry.saved_at[:10] }}</time><span class="saved-status" title="已收藏论文会作为当前研究方向后续推荐的相关样本"><i class="fas fa-thumbs-up" aria-hidden="true"></i>相关样本</span></div>
       <footer class="library-card-actions">
         {% if entry.report_url %}
-        <a class="button library-report-button" href="{{ entry.report_url }}"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
+        <a class="button library-report-button" href="{{ entry.report_url }}" target="_blank" rel="noopener noreferrer"><i class="far fa-folder-open" aria-hidden="true"></i>打开论文报告</a>
         {% else %}
         <form class="job-form" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ paper.arxiv_id }}{% if paper.version %}v{{ paper.version }}{% endif %}"><input type="hidden" name="origin" value="library"><button class="button library-report-button" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i>生成论文报告</button></form>
         {% endif %}

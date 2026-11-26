@@ -13,6 +13,13 @@ from paperloom.web import create_app
 from paperloom.web.web_catalog import grouped_report_library, report_library
 
 
+def deletion_rows(client):
+    page = BeautifulSoup(client.get("/reports").text, "html.parser")
+    return [{key: form.select_one(f'[name="{name}"]')["value"]
+             for key, name in (("arxiv_id", "arxiv_id"), ("report_id", "report_id"), ("delete_token", "delete_tokens"))}
+            for form in page.select(".report-delete-form")]
+
+
 def add_report(root: Path, date: str, folder: str, *, arxiv_id: str = "2407.05600",
                version: int = 1, profile_id: str = "alpha", profile_name: str = "方向 A",
                quality: str = "abstract") -> Path:
@@ -66,7 +73,7 @@ def test_reports_page_filters_by_direction_and_deletes_all_attempts(tmp_path):
         selected = next(item for item in grouped_report_library(report_library(root)) if item["arxiv_id"] == "2407.05600")
         stale = client.post("/reports/delete", data={"arxiv_id": "2407.05600", "report_id": "2026-09-01/reports/old/report.html"}, follow_redirects=False)
         assert stale.status_code == 409
-        deleted = client.post("/reports/delete", data={"arxiv_id": "2407.05600", "report_id": selected["report_id"]}, follow_redirects=False)
+        deleted = client.post("/reports/delete", data={"arxiv_id": "2407.05600", "report_id": selected["report_id"], "delete_tokens": selected["delete_token"]}, follow_redirects=False)
         assert deleted.status_code == 303
         assert not old.exists() and not new.exists() and other.exists()
         assert app.state.jobs.get(completed.id).result_url is None
@@ -105,9 +112,9 @@ def test_report_delete_waits_for_active_generation(tmp_path, batch):
             current = catalog["2407.05600"]
             if batch:
                 response = client.post("/reports/delete-batch", data={"report_ids": [
-                    catalog["2407.05601"]["report_id"], current["report_id"]]})
+                    catalog["2407.05601"]["report_id"], current["report_id"]], "delete_tokens": [r["delete_token"] for r in catalog.values()]})
             else:
-                response = client.post("/reports/delete", data={"arxiv_id": "2407.05600", "report_id": current["report_id"]})
+                response = client.post("/reports/delete", data={"arxiv_id": "2407.05600", "report_id": current["report_id"], "delete_tokens": current["delete_token"]})
             assert response.status_code == 409
             assert existing.exists() and other.exists()
         finally:
@@ -139,6 +146,7 @@ def test_batch_delete_selected_reports_and_keep_filters(tmp_path):
         first_id = catalog["2407.05600"]["report_id"]
         response = client.post("/reports/delete-batch", data={
             "report_ids": [first_id, catalog["2407.05601"]["report_id"], first_id],
+            "delete_tokens": [catalog[aid]["delete_token"] for aid in ("2407.05600", "2407.05601")],
             "q": "Paper", "direction": "beta",
         }, follow_redirects=False)
         assert response.status_code == 303
@@ -176,10 +184,11 @@ def test_delete_report_without_paper_identity(tmp_path, batch):
     valid = add_report(root, "2026-10-01", "valid")
     report_id = (orphan / "report.html").relative_to(root).as_posix()
     with TestClient(create_app(config)) as client:
+        token = next(r["delete_token"] for r in deletion_rows(client) if r["report_id"] == report_id)
         if batch:
-            response = client.post("/reports/delete-batch", data={"report_ids": [report_id]}, follow_redirects=False)
+            response = client.post("/reports/delete-batch", data={"report_ids": [report_id], "delete_tokens": token}, follow_redirects=False)
         else:
-            response = client.post("/reports/delete", data={"arxiv_id": "", "report_id": report_id}, follow_redirects=False)
+            response = client.post("/reports/delete", data={"arxiv_id": "", "report_id": report_id, "delete_tokens": token}, follow_redirects=False)
         assert response.status_code == 303, response.text
         assert not orphan.exists()
         assert other_orphan.exists() and valid.exists()
@@ -205,3 +214,97 @@ def test_catalog_profile_names_and_direction_guard_update_without_restart(tmp_pa
         manager.active_path.write_text('beta', encoding='utf-8')
         assert client.get('/api/reports', headers={'X-Paperloom-Profile': 'alpha'}).status_code == 409
         assert client.get('/api/reports', headers={'X-Paperloom-Profile': 'beta'}).status_code == 200
+
+
+def test_batch_rejects_changed_members_even_with_same_representative(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\n", encoding="utf-8")
+    root = tmp_path / "run"
+    first = add_report(root, "2026-09-02", "first", arxiv_id="2407.05601")
+    second = add_report(root, "2026-09-02", "current", version=3)
+    with TestClient(create_app(config)) as client:
+        rows = deletion_rows(client)
+        extra = add_report(root, "2026-09-01", "older", version=1)
+        response = client.post("/reports/delete-batch", data={
+            "report_ids": [r["report_id"] for r in rows], "delete_tokens": [r["delete_token"] for r in rows]})
+        assert response.status_code == 409
+        assert all(folder.is_dir() for folder in (first, second, extra))
+
+
+def test_publication_during_confirmed_deletion_keeps_new_report(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+    from paperloom.reports import report_publication, report_store
+
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\n", encoding="utf-8")
+    root = tmp_path / "run"
+    old = add_report(root, "2026-09-02", "old")
+    new = old.with_name("new")
+    new.mkdir()
+    removing, publishing, release = threading.Event(), threading.Event(), threading.Event()
+    remove = report_store._remove_attempt
+    lock = report_publication.catalog_lock
+
+    def hold_removal(folder):
+        removing.set()
+        assert release.wait(10)
+        remove(folder)
+
+    def entering_publication(output):
+        publishing.set()
+        return lock(output)
+
+    monkeypatch.setattr(report_store, "_remove_attempt", hold_removal)
+    monkeypatch.setattr(report_publication, "catalog_lock", entering_publication)
+    with TestClient(create_app(config)) as client, ThreadPoolExecutor(2) as workers:
+        selected, = deletion_rows(client)
+        paper = SimpleNamespace(title="New attempt", arxiv_id=selected["arxiv_id"])
+        deletion = workers.submit(client.post, "/reports/delete", follow_redirects=False, data={
+            "arxiv_id": paper.arxiv_id, "report_id": selected["report_id"], "delete_tokens": selected["delete_token"]})
+        try:
+            assert removing.wait(10)
+            publication = workers.submit(report_publication.save_report_files, new, "# New", paper,
+                {"paper": vars(paper), "profile_id": "alpha"}, (new / "report.html").relative_to(root).as_posix(),
+                catalog_root=root)
+            assert publishing.wait(10)
+            assert not (new / "metadata.json").exists()
+        finally:
+            release.set()
+        assert deletion.result().status_code == 303
+        publication.result()
+        assert not old.exists()
+        refreshed, = deletion_rows(client)
+        assert refreshed["report_id"] == (new / "report.html").relative_to(root).as_posix()
+
+
+def test_batch_disk_failure_identifies_remaining_papers(tmp_path, monkeypatch):
+    import shutil
+    config = tmp_path / "config.yaml"
+    config.write_text("output_dir: run\n", encoding="utf-8")
+    root = tmp_path / "run"
+    ids = ["2407.05601", "2407.05602", "2407.05603"]
+    folders = [add_report(root, "2026-09-02", aid, arxiv_id=aid) for aid in ids]
+    remove = shutil.rmtree
+    def fail_second(folder):
+        if folder == folders[1]:
+            (folder / "metadata.json").unlink()
+            (folder / "report.html").unlink()
+            raise PermissionError("occupied")
+        remove(folder)
+    with TestClient(create_app(config)) as client:
+        rows = {r["arxiv_id"]: r for r in deletion_rows(client)}
+        monkeypatch.setattr(shutil, "rmtree", fail_second)
+        response = client.post("/reports/delete-batch", data={
+            "report_ids": [rows[i]["report_id"] for i in ids], "delete_tokens": [rows[i]["delete_token"] for i in ids]})
+        assert response.status_code == 500
+        detail = response.json()["detail"]
+        assert all(f"{label}：{aid}" in detail for label, aid in zip(["已删除", "未删完", "未处理"], ids))
+        assert [folder.exists() for folder in folders] == [False, True, True]
+        rows = deletion_rows(client)
+        assert {r["arxiv_id"] for r in rows} == set(ids[1:])
+        monkeypatch.setattr(shutil, "rmtree", remove)
+        retry = client.post("/reports/delete-batch", data={
+            "report_ids": [r["report_id"] for r in rows], "delete_tokens": [r["delete_token"] for r in rows]})
+        assert retry.status_code == 200
+        assert all(not folder.exists() for folder in folders)

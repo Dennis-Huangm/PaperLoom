@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from ..papers.activity import literal, safe_json
 from ..config import AppConfig
 from ..papers.reading_state import ReadingStateStore
-from .report_store import matching_report
+from .report_store import matching_record, report_records
 from ..runtime.research_clients import ResearchClients
 from .render import render_report
 from ..papers.storage import read_recommendations
@@ -33,7 +33,7 @@ def source_key(paper: dict) -> str:
     return f"{aid}v{version}" if aid and type(version) is int and version > 0 else ""
 
 
-def available_papers(output: Path, profile_id: str) -> list[dict]:
+def available_papers(output: Path, profile_id: str, *, records=None) -> list[dict]:
     """No network hydration: unknown revisions cannot enter a comparison."""
     by_key = {}
     def add(paper):
@@ -42,10 +42,9 @@ def available_papers(output: Path, profile_id: str) -> list[dict]:
     for directory in sorted(output.glob("????-??-??")):
         for item in read_recommendations(output, directory.name, profile_id):
             add(item.get("paper"))
-    for path in sorted(output.glob("????-??-??/reports/*/metadata.json")):
-        data = safe_json(path, {}) or {}
-        if isinstance(data, dict) and data.get("profile_id") == (profile_id or "default"):
-            add(data.get("paper"))
+    for record in report_records(output) if records is None else records:
+        if record.metadata.get("profile_id") == (profile_id or "default"):
+            add(record.paper)
     for entry in ReadingStateStore(output, profile_id).snapshot()["library"].values():
         add(entry.get("paper"))
     return [{"key": key, "paper": paper} for key, paper in sorted(by_key.items(), key=lambda kv: str(kv[1].get("title") or "").casefold())]
@@ -114,7 +113,9 @@ class ComparisonService:
             raise ValueError("请选择 2–5 篇不同论文的指定版本")
         if len(question) > 1000:
             raise ValueError("比较关注点最多 1000 字")
-        available = {item["key"]: item["paper"] for item in available_papers(self.output_root, self.config.profile_id)}
+        records = report_records(self.output_root)
+        available = {item["key"]: item["paper"] for item in
+                     available_papers(self.output_root, self.config.profile_id, records=records)}
         if any(key not in available for key in keys):
             raise ValueError("所选版本已不在当前方向的本地资料中，请刷新后选择")
         if len({available[key]["arxiv_id"] for key in keys}) != len(keys):
@@ -127,12 +128,12 @@ class ComparisonService:
             abstract = str(paper.get("abstract") or "")
             if abstract.strip():
                 source["evidence"].append({"id": f"{tag}:A", "kind": "abstract", "text": abstract[:6000]})
-            path = matching_report(self.output_root, self.config.profile_id, paper)
-            if path:
-                path = path.resolve()
+            match = matching_record(records, self.config.profile_id, paper)
+            if match:
+                path = match.markdown_path.resolve()
                 if not path.is_relative_to(self.output_root):
                     raise ValueError("报告路径不在当前输出目录中")
-                payload = safe_json(path.with_name("metadata.json"), {}) or {}
+                payload = match.metadata
                 # Comparison never silently borrows an unscoped legacy report.
                 if payload.get("profile_id") == (self.config.profile_id or "default"):
                     report = path.read_text(encoding="utf-8")

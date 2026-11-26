@@ -9,8 +9,9 @@ def history_text(message):
     text = message['text'][:5000]
     if message.get('references'):
         text += chr(10) + '当时引用范围：' + ', '.join(f"{r['paper']['arxiv_id']}v{r['paper']['version']}" for r in message['references'])
-    if message.get('selection'):
-        text += '\n当时报告选区（非原文）：' + message['selection'][:3000]
+    selection = message.get('selection') or ''
+    if selection.strip():
+        text += '\n当时报告选区（非原文）：' + selection[:3000]
     if message.get('citations'):
         text += '\n当时核验引用：' + json.dumps(message['citations'], ensure_ascii=False)[:6000]
     if message['status'] != 'completed':
@@ -52,7 +53,11 @@ def make_context(value, user, *, images, summarize):
             if message.get('images'):
                 content += '\n（较早图片未重新发送，需要时请重新附图）'
             messages.append({'role': message['role'], 'content': content})
-    content = [{'type': 'text', 'text': user['text'] + '\n报告选区（非原文）：' + user['selection']}]
+    text = user['text']
+    selection = user['selection']
+    if selection.strip():
+        text += '\n报告选区（非原文）：' + selection
+    content = [{'type': 'text', 'text': text}]
     content.extend({'type': 'image_url', 'image_url': {'url': pic}} for pic in user['images'])
     messages.append({'role': 'user', 'content': content})
     return messages, memory

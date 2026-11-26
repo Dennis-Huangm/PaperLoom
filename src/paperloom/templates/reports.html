@@ -6,19 +6,62 @@
     <div class="report-heading-actions"><a class="button secondary" href="/compare"><i class="fas fa-columns" aria-hidden="true"></i>跨论文比较</a><a class="button primary" href="/generate"><i class="fas fa-plus" aria-hidden="true"></i>生成新报告</a></div>
   </header>
 
-  <form class="library-search{% if catalog_ready %} report-search{% endif %}" method="get">
-    <span class="library-search-icon" aria-hidden="true"><i class="fas fa-search"></i></span>
-    <input name="q" value="{{ query }}" placeholder="搜索标题、作者或 arXiv ID">
-    {% if query %}<a href="/reports{% if direction %}?direction={{ direction|urlencode }}{% endif %}" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
-    {% if catalog_ready %}<select name="direction" aria-label="按研究方向筛选"><option value="">全部方向</option>{% for id, name in directions %}<option value="{{ id }}" {% if id == direction %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>{% endif %}
-    <button type="submit">搜索</button>
+  <form id="report-search-form" class="report-search" method="get" role="search" aria-label="搜索本地报告">
+    <div class="report-query-controls">
+      <div class="report-query">
+        <i class="fas fa-search" aria-hidden="true"></i>
+        <input type="search" name="q" value="{{ query }}" placeholder="搜索标题、作者或 arXiv ID" aria-label="标题、作者或 arXiv ID">
+        {% if query %}<a href="/reports?sort={{ sort|default('opened_desc') }}{% if direction %}&amp;direction={{ direction|urlencode }}{% endif %}" aria-label="清除搜索"><i class="fas fa-times" aria-hidden="true"></i></a>{% endif %}
+      </div>
+      <button class="button secondary report-search-submit" type="submit">搜索</button>
+    </div>
+    {% if catalog_ready %}
+    <div class="report-refinements">
+      <div class="report-filter report-direction-filter">
+        <i class="fas fa-layer-group" aria-hidden="true"></i>
+        <select name="direction" aria-label="按研究方向筛选">
+          <button type="button"><selectedcontent></selectedcontent></button>
+          <option value="">全部方向</option>
+          {% for id, name in directions %}<option value="{{ id }}" {% if id == direction %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="report-filter report-sort-filter">
+        <i class="fas fa-sort-amount-down" aria-hidden="true"></i>
+        <select id="report-sort" name="sort" aria-label="排序" aria-describedby="report-sort-help">
+          {% for value, label in sort_options %}<option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <p id="report-sort-help">添加时间按首次生成报告计算。发表时间为 arXiv 首次公开时间，未知日期排在最后。最近打开优先显示有打开记录的报告，其余按添加时间从新到旧排列。</p>
+    {% endif %}
   </form>
 
+  <button class="button report-directory-toggle" id="report-directory-toggle" type="button" aria-controls="report-directory" aria-expanded="true" hidden><i class="fas fa-list" aria-hidden="true"></i>论文目录 <span>{{ reports|length }}</span></button>
+  <dialog id="report-directory-dialog" class="report-directory-dialog" aria-labelledby="report-directory-title"></dialog>
+  <div class="report-library-workspace" id="report-library-workspace">
+    <aside class="report-directory" id="report-directory" aria-labelledby="report-directory-title">
+      <header class="report-directory-heading">
+        <div><h2 id="report-directory-title">论文目录</h2><p>当前列表 · {{ reports|length }} 篇</p></div>
+        <button class="report-directory-close" id="report-directory-close" type="button" aria-label="收起论文目录" hidden><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+      </header>
+      <nav class="report-directory-list" aria-label="按论文标题定位">
+        {% for report in reports %}
+        <a class="report-directory-link" href="#report-entry-{{ loop.index }}" title="{{ report.title }}">
+          <span class="report-directory-number" aria-hidden="true">{{ loop.index }}</span>
+          <span class="report-directory-copy"><strong>{{ report.title }}</strong><small>{{ report.arxiv_id }}{% if report.version %} · v{{ report.version }}{% endif %}</small></span>
+        </a>
+        {% else %}
+        <p class="report-directory-empty">没有匹配的论文。{% if query or direction %}试试调整搜索词或研究方向。{% else %}生成报告后即可在这里查找。{% endif %}</p>
+        {% endfor %}
+      </nav>
+    </aside>
+    <div class="report-library-results">
   {% if reports %}
   {% if catalog_ready %}
   <form id="report-bulk-delete-form" class="report-bulk-toolbar" action="/reports/delete-batch" method="post">
     <input type="hidden" name="q" value="{{ query }}">
     <input type="hidden" name="direction" value="{{ direction }}">
+    <input type="hidden" name="sort" value="{{ sort }}">
     <label class="report-select-all"><input type="checkbox" id="report-select-all">全选当前列表</label>
     <span id="report-selection-count" role="status" aria-live="polite">已选择 0 篇</span>
     <button class="button subtle" id="report-selection-clear" type="button" disabled>取消选择</button>
@@ -28,13 +71,14 @@
   <section class="report-table" aria-label="本地报告列表">
     <header><span>论文</span><span>出版与依据</span><span>生成日期</span><span>操作</span></header>
     {% for report in reports %}
-    <article class="report-row">
+    <article class="report-row" id="report-entry-{{ loop.index }}" data-report-id="{{ report.report_id }}" tabindex="-1" aria-labelledby="report-title-{{ loop.index }}">
       <div class="report-paper">
-        {% if catalog_ready %}<label class="report-select"><input class="report-selection" type="checkbox" name="report_ids" value="{{ report.report_id }}" form="report-bulk-delete-form" aria-label="选择报告：{{ report.title }}">选择</label>{% endif %}
+        {% if catalog_ready %}<label class="report-select"><input class="report-selection" data-delete-token="{{ report.delete_token }}" type="checkbox" name="report_ids" value="{{ report.report_id }}" form="report-bulk-delete-form" aria-label="选择报告：{{ report.title }}">选择</label>{% endif %}
         <span class="report-id">{{ report.arxiv_id }}{% if report.version %} · v{{ report.version }}{% endif %}</span>
-        <h2><a href="{{ report.report_url }}">{{ report.title }}</a></h2>
+        <h2 id="report-title-{{ loop.index }}"><a href="{{ report.report_url }}" target="_blank" rel="noopener noreferrer">{{ report.title }}</a></h2>
         {% if catalog_ready %}<div class="report-directions"><span>所属方向</span>{% for item in report.directions %}<span class="report-direction">{{ item.name }}</span>{% endfor %}</div>{% endif %}
         <p>{{ report.authors[:5]|join(', ') }}{% if report.authors|length > 5 %} et al.{% endif %}</p>
+        <p class="report-dates"><span>添加：{{ report.added_at[:10] if report.added_at else '未知' }}</span><span title="arXiv 首次公开日期">发表：{{ report.published_at[:10] if report.published_at else '未知' }}</span></p>
         <p class="report-quality">{% if report.report_quality == 'full' %}全文分析{% elif report.report_quality == 'abstract' %}摘要级回退 · 可补生成{% else %}历史报告 · 质量未记录{% endif %}{% if report.model %} · {{ report.model }}{% endif %}{% if report.parsed_pages is not none %} · 提取 {{ report.parsed_pages }} 页{% endif %}</p>
         {% if report.errors %}<details class="report-notes"><summary>运行提示 <span>{{ report.errors|length }} 条</span></summary><ul>{% for error in report.errors %}<li>{{ error }}</li>{% endfor %}</ul></details>{% endif %}
       </div>
@@ -47,22 +91,65 @@
       </div>
       <time>{{ report.date }}</time>
       <div class="report-actions">
-        <a class="report-action-open" href="{{ report.report_url }}"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
-        {% if report.version %}<form class="job-form report-action-regenerate" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-redo" aria-hidden="true"></i>{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
-        {% if report.in_library %}
-        <span class="saved-status report-action-library"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
-        {% else %}
-        <form class="library-add-form report-action-library" action="/api/library/add" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
-        {% endif %}
-        <a href="/collection?arxiv_id={{ report.arxiv_id|urlencode }}&amp;origin=report&amp;report_id={{ report.report_id|urlencode }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
-        {% for target, url in collection_links(report.arxiv_id).items() %}<a href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}
-        {% if report.method_figure_count %}<span class="report-action-figures"><i class="far fa-images" aria-hidden="true"></i>{{ report.method_figure_count }} 张方法图</span>{% endif %}
-        {% if catalog_ready %}<form class="report-delete-form report-action-delete" action="/reports/delete" method="post"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><input type="hidden" name="q" value="{{ query }}"><input type="hidden" name="direction" value="{{ direction }}"><button type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>删除报告</button></form>{% endif %}
+        <div class="report-action-column">
+          <a class="report-action-open" href="{{ report.report_url }}" target="_blank" rel="noopener noreferrer"><i class="far fa-file-alt" aria-hidden="true"></i>打开报告</a>
+          {% if report.in_library %}
+          <span class="saved-status report-action-library"><i class="fas fa-thumbs-up" aria-hidden="true"></i>已加入文献库（相关）</span>
+          {% else %}
+          <form class="library-add-form report-action-library" action="/api/library/add" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="far fa-bookmark" aria-hidden="true"></i>加入文献库</button></form>
+          {% endif %}
+          <a href="/collection?arxiv_id={{ report.arxiv_id|urlencode }}&amp;origin=report&amp;report_id={{ report.report_id|urlencode }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
+          {% for target, url in collection_links(report.arxiv_id).items() %}<a href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}
+          {% if catalog_ready %}<form class="report-delete-form report-action-delete" action="/reports/delete" method="post"><input type="hidden" name="delete_tokens" value="{{ report.delete_token }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}"><input type="hidden" name="report_id" value="{{ report.report_id }}"><input type="hidden" name="q" value="{{ query }}"><input type="hidden" name="direction" value="{{ direction }}"><input type="hidden" name="sort" value="{{ sort }}"><button type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>删除报告</button></form>{% endif %}
+        </div>
+        <div class="report-action-column">
+          {% if report.version %}<form class="job-form report-action-regenerate" action="/api/jobs/report" method="post"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="arxiv_id" value="{{ report.arxiv_id }}v{{ report.version }}"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id" value="{{ report.report_id }}"><button type="submit"><i class="fas fa-redo" aria-hidden="true"></i>{% if report.report_quality == 'abstract' %}补生成全文报告{% else %}重新生成此版本{% endif %}</button></form>{% endif %}
+          {% if report.version %}<button type="button" class="report-action-revise" data-paper-id="{{ report.arxiv_id }}v{{ report.version }}" aria-haspopup="dialog" aria-controls="report-revision-dialog"><i class="fas fa-sliders-h" aria-hidden="true"></i>修订报告</button>{% endif %}
+          {% if report.pdf_url %}<a class="report-action-pdf" href="{{ report.pdf_url }}" target="_blank" rel="noopener noreferrer" title="打开论文原文 PDF"><i class="far fa-file-pdf" aria-hidden="true"></i>打开原文</a>{% endif %}
+        </div>
       </div>
     </article>
     {% endfor %}
   </section>
   {% else %}
   <section class="empty-state"><i class="far fa-folder-open" aria-hidden="true"></i><h1>没有匹配的报告</h1><p>{% if query or direction %}换个搜索词或研究方向试试。{% else %}输入 arXiv ID 后即可生成第一份完整报告。{% endif %}</p><a class="button primary" href="/generate">生成报告</a></section>
+  {% endif %}
+    </div>
+  </div>
+  {% if reports %}
+  <dialog id="report-revision-dialog" class="revision-dialog" aria-labelledby="revision-title" aria-describedby="revision-paper">
+    <form class="job-form" action="/api/jobs/report" method="post">
+      <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+      <input type="hidden" name="arxiv_id"><input type="hidden" name="origin" value="report"><input type="hidden" name="report_id">
+      <header class="revision-heading">
+        <div><h2 id="revision-title">修订报告</h2><p id="revision-paper"></p></div>
+        <button type="button" class="revision-close" aria-label="关闭修订窗口"><i class="fas fa-times" aria-hidden="true"></i></button>
+      </header>
+      <fieldset class="revision-choices">
+        <legend>要更新哪部分？</legend>
+        <div class="revision-grid">
+          {% for stage, icon, label, hint in [
+            ('figure', 'chart-line', '实验图与解读', '重新裁取指定图，核对图下解读'),
+            ('metadata', 'book-open', '出版信息', '重新核对会议、发表日期和 DOI'),
+            ('render', 'align-left', '页面排版', '用新版样式呈现已有正文'),
+            ('publish', 'layer-group', '从草稿定稿', '用已有草稿重新编排图表和出处')
+          ] %}
+          <label class="revision-choice">
+            <input type="radio" name="stage" value="{{ stage }}" required>
+            <i class="fas fa-{{ icon }}" aria-hidden="true"></i>
+            <strong>{{ label }}</strong><small>{{ hint }}</small>
+          </label>
+          {% endfor %}
+        </div>
+        <label class="revision-figure" hidden>论文中的图号 <input type="number" name="figure" min="1" step="1" placeholder="例如 3" disabled></label>
+      </fieldset>
+      <p class="revision-error" role="alert" hidden></p>
+      <footer class="revision-footer">
+        <span>原报告会保留</span>
+        <button type="button" class="button secondary revision-cancel">取消</button>
+        <button type="submit" class="button primary" disabled>生成修订副本</button>
+      </footer>
+    </form>
+  </dialog>
   {% endif %}
 {% endblock %}

@@ -9,8 +9,10 @@
   {% if saved %}<div class="notice success">✓ 新方向已生成并保存；{% if saved == active_profile %}现在已启用。{% else %}可在下方手动启用。{% endif %}</div>{% endif %}
   {% if updated %}<div class="notice success">方向修改已保存。</div>{% endif %}
   {% if switched %}<div class="notice success">✓ 已切换研究方向。后续手动任务使用新档案，多方向调度仍按各自计划运行。</div>{% endif %}
+  {% if deleted %}<div class="notice success">研究方向已移至「已删除方向」。</div>{% endif %}
+  {% if restored %}<div class="notice success">研究方向已恢复。可手动切换到该方向，或重新启用调度。</div>{% endif %}
 
-  <nav class="profile-section-nav" aria-label="方向管理"><a href="#saved-profiles"><i class="fas fa-layer-group" aria-hidden="true"></i>已保存方向 <span>{{ profiles|length }}</span></a><a href="#profile-drafts"><i class="far fa-file-alt" aria-hidden="true"></i>检索草稿 <span>{{ drafts|length }}</span></a><a href="#deleted-drafts"><i class="far fa-trash-alt" aria-hidden="true"></i>已删除草稿 <span>{{ deleted_drafts|length }}</span></a></nav>
+  <nav class="profile-section-nav" aria-label="方向管理"><a href="#saved-profiles"><i class="fas fa-layer-group" aria-hidden="true"></i>已保存方向 <span>{{ profiles|length }}</span></a><a href="#profile-drafts"><i class="far fa-file-alt" aria-hidden="true"></i>检索草稿 <span>{{ drafts|length }}</span></a><a href="#deleted-profiles"><i class="far fa-trash-alt" aria-hidden="true"></i>已删除方向 <span>{{ deleted_profiles|length }}</span></a><a href="#deleted-drafts"><i class="far fa-trash-alt" aria-hidden="true"></i>已删除草稿 <span>{{ deleted_drafts|length }}</span></a></nav>
   <div class="profile-layout">
     <section class="profile-library">
       <section id="saved-profiles" class="profile-group">
@@ -28,7 +30,16 @@
           <div class="profile-card-meta"><span><i class="far fa-calendar" aria-hidden="true"></i>回溯 {{ profile.lookback_days }} 天</span><span><i class="far fa-file-alt" aria-hidden="true"></i>每日 {{ profile.recommendation_count }} 篇</span><span><i class="fas fa-link" aria-hidden="true"></i>{{ profile.references|length }} 篇参考论文</span></div>
           <details class="profile-card-details"><summary>方向详情 <span>完整描述与参考论文</span><i class="fas fa-chevron-down" aria-hidden="true"></i></summary><div class="profile-card-detail-content"><p>{{ profile.description or '尚未填写方向描述。' }}</p>{% if profile.keywords %}<h4>主题关键词</h4><div class="profile-tags">{% for keyword in profile.keywords %}<span>{{ keyword }}</span>{% endfor %}</div>{% endif %}{% if profile.references %}<h4>参考论文</h4><ul class="profile-reference-list">{% for paper in profile.references %}<li><a href="https://arxiv.org/abs/{{ paper.arxiv_id }}" target="_blank" rel="noopener noreferrer"><span>arXiv:{{ paper.arxiv_id }}</span>{{ paper.title or '查看论文' }}<i class="fas fa-external-link-alt" aria-hidden="true"></i></a></li>{% endfor %}</ul>{% endif %}</div></details>
           <a class="profile-overview-link" href="/profiles/{{ profile.id }}/overview?source=saved"><span class="profile-overview-icon"><i class="fas fa-book-open" aria-hidden="true"></i></span><span><strong>方向小综述</strong><small>阅读方向介绍与相关研究</small></span><i class="fas fa-arrow-right" aria-hidden="true"></i></a>
-          <footer class="profile-card-actions"><a class="button secondary" href="/profiles/{{ profile.id }}/edit"><i class="far fa-edit" aria-hidden="true"></i>编辑方向</a><form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="profile-copy-button" title="基于当前方向的配置创建草稿"><i class="far fa-copy" aria-hidden="true"></i>复制为草稿</button></form>{% if not profile.active %}<form class="profile-activate-form" method="post" action="/profiles/{{ profile.id }}/activate"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button primary" type="submit">切换到此方向<i class="fas fa-arrow-right" aria-hidden="true"></i></button></form>{% endif %}</footer>
+          <footer class="profile-card-actions">
+            <a class="button secondary" href="/profiles/{{ profile.id }}/edit"><i class="far fa-edit" aria-hidden="true"></i>编辑方向</a>
+            <form method="post" action="/profiles/{{ profile.id }}/copy"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button type="submit" class="profile-copy-button" title="基于当前方向的配置创建草稿"><i class="far fa-copy" aria-hidden="true"></i>复制为草稿</button></form>
+            <form method="post" action="/profiles/{{ profile.id }}/delete" class="profile-delete-form" data-profile-name="{{ profile.name }}">
+              <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+              {% set delete_hint = '请至少保留一个研究方向' if profiles|length <= 1 else ('请先切换到其他研究方向' if profile.active else '') %}
+              <button type="submit" class="draft-delete-button" {% if delete_hint %}disabled title="{{ delete_hint }}" aria-label="删除方向，{{ delete_hint }}"{% endif %}>删除方向</button>
+            </form>
+            {% if not profile.active %}<form class="profile-activate-form" method="post" action="/profiles/{{ profile.id }}/activate"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button primary" type="submit">切换到此方向<i class="fas fa-arrow-right" aria-hidden="true"></i></button></form>{% endif %}
+          </footer>
         </article>
         {% endfor %}
       </div>
@@ -37,7 +48,7 @@
         <header class="profile-group-heading"><div><h2>检索草稿</h2><p>尚在整理的方案，检查后再启用。</p></div><span>{{ drafts|length }} 份</span></header>
         <div class="draft-card-list">
         {% for draft in drafts %}<article class="draft-list-card">
-          <div class="draft-list-card-heading"><h3><a href="/profiles/drafts/{{ draft.id }}">{{ draft.name }}</a></h3><span class="draft-badge {{ draft.status }}">{% if draft.get('activated_revision') == draft.revision %}已启用此版本{% else %}{{ {'ready':'待检查','needs_input':'待补全','failed':'生成失败'}[draft.status] }}{% endif %}</span></div>
+          <div class="draft-list-card-heading"><h3><a href="/profiles/drafts/{{ draft.id }}">{{ draft.name }}</a></h3><span class="draft-badge {{ draft.status }}">{{ {'ready':'待检查','needs_input':'待补全','failed':'生成失败'}[draft.status] }}</span></div>
           <p class="draft-list-description">{{ draft.description or '尚未填写主题描述' }}</p>
           <div class="draft-list-meta"><span>第 {{ draft.revision }} 版</span><span>{{ draft.references|length }} 篇参考论文</span><span>{{ draft.plan.conditions|selectattr('confirmed')|list|length }} 条已采用条件</span></div>
           {% if draft.status == 'failed' %}<p class="draft-list-error">{{ draft.generation_error or '请打开草稿检查生成结果' }}</p>{% endif %}
@@ -45,9 +56,60 @@
         </article>{% else %}<div class="profile-empty"><span class="profile-empty-icon"><i class="far fa-file-alt" aria-hidden="true"></i></span><div><strong>还没有待整理的草稿</strong><p>先生成检索方案，检查主题并试搜论文，再启用为研究方向。</p></div><button class="button secondary" type="button" data-open-profile-create><i class="fas fa-plus" aria-hidden="true"></i>创建第一个草稿</button></div>{% endfor %}
         </div>
       </section>
-      <details id="deleted-drafts" class="profile-trash"><summary>已删除草稿 <span>{{ deleted_drafts|length }} 份 · 可恢复</span></summary><p>这里只删除草稿副本，不影响已保存方向、阅读记录或报告。</p>
-      {% if deleted_drafts %}<form class="draft-clear-form" method="post" action="/profiles/deleted-drafts/clear" data-count="{{ deleted_drafts|length }}"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><button class="button secondary" type="submit"><i class="far fa-trash-alt" aria-hidden="true"></i>清空已删除草稿</button><small>永久删除，清空后无法恢复。</small></form>{% endif %}
-      {% for draft in deleted_drafts %}<div class="profile-trash-row"><div><strong>{{ draft.name }}</strong><small>第 {{ draft.revision }} 版</small></div><form method="post" action="/profiles/drafts/{{ draft.id }}/restore"><input type="hidden" name="profile_id" value="{{ config.profile_id }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><button class="button secondary" type="submit">恢复草稿</button></form></div>{% else %}<p>暂无已删除草稿。</p>{% endfor %}</details>
+      {% macro deleted_summary(title, count, unit, icon) %}
+      <summary>
+        <span class="deleted-panel-icon"><i class="{{ icon }}" aria-hidden="true"></i></span>
+        <span class="deleted-panel-title">{{ title }}</span>
+        <span class="profile-count">{{ count }} {{ unit }}</span>
+        <i class="fas fa-chevron-down deleted-panel-chevron" aria-hidden="true"></i>
+      </summary>
+      {% endmacro %}
+      <div class="deleted-panels">
+        <details id="deleted-profiles" class="deleted-panel"{% if deleted %} open{% endif %}>
+          {{ deleted_summary('已删除方向', deleted_profiles|length, '个', 'fas fa-layer-group') }}
+          {% if deleted_profiles %}
+          <ul class="deleted-item-list">
+            {% for profile in deleted_profiles %}
+            <li class="deleted-item">
+              <i class="fas fa-layer-group deleted-item-icon" aria-hidden="true"></i>
+              <strong>{{ profile.name }}</strong>
+              <form method="post" action="/profiles/{{ profile.id }}/restore" class="profile-restore-form">
+                <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+                <button class="button secondary" type="submit"><i class="fas fa-undo" aria-hidden="true"></i>恢复方向</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="deleted-panel-empty">暂无已删除方向。</p>
+          {% endif %}
+        </details>
+        <details id="deleted-drafts" class="deleted-panel">
+          {{ deleted_summary('已删除草稿', deleted_drafts|length, '份', 'far fa-file-alt') }}
+          {% if deleted_drafts %}
+          <ul class="deleted-item-list">
+            {% for draft in deleted_drafts %}
+            <li class="deleted-item">
+              <i class="far fa-file-alt deleted-item-icon" aria-hidden="true"></i>
+              <div><strong>{{ draft.name }}</strong><small>第 {{ draft.revision }} 版</small></div>
+              <form method="post" action="/profiles/drafts/{{ draft.id }}/restore">
+                <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+                <input type="hidden" name="revision" value="{{ draft.revision }}">
+                <button class="button secondary" type="submit"><i class="fas fa-undo" aria-hidden="true"></i>恢复草稿</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+          <form class="draft-clear-form" method="post" action="/profiles/deleted-drafts/clear" data-count="{{ deleted_drafts|length }}">
+            <input type="hidden" name="profile_id" value="{{ config.profile_id }}">
+            <button class="button secondary" type="submit" aria-describedby="draft-clear-help"><i class="far fa-trash-alt" aria-hidden="true"></i>清空已删除草稿</button>
+            <small id="draft-clear-help">永久删除，清空后无法恢复。</small>
+          </form>
+          {% else %}
+          <p class="deleted-panel-empty">暂无已删除草稿。</p>
+          {% endif %}
+        </details>
+      </div>
     </section>
   </div>
 </div>
@@ -79,4 +141,13 @@
     </section>
 </dialog>
 <dialog id="draft-delete-dialog" class="draft-delete-dialog" aria-labelledby="draft-delete-title"><h2 id="draft-delete-title">删除这份草稿？</h2><p id="draft-delete-name"></p><p>草稿会移入“已删除草稿”，可随时恢复。已保存的研究方向、论文和报告不受影响。</p><footer><button type="button" class="button secondary" id="draft-delete-cancel">取消</button><button type="button" class="button primary" id="draft-delete-confirm">删除草稿</button></footer></dialog>
+<dialog id="profile-delete-dialog" class="draft-delete-dialog" aria-labelledby="profile-delete-title">
+  <h2 id="profile-delete-title">删除这个研究方向？</h2>
+  <p><strong id="profile-delete-name"></strong></p>
+  <p>该方向将移入「已删除方向」，自动调度暂停。只关联此方向的报告将从报告库隐藏，恢复方向后会重新显示。</p>
+  <footer>
+    <form method="dialog"><button type="submit" class="button secondary" autofocus>取消</button></form>
+    <button type="button" class="button primary" id="profile-delete-confirm">删除方向</button>
+  </footer>
+</dialog>
 {% endblock %}

@@ -132,3 +132,26 @@ def test_cli_has_explicit_note_opt_in_and_pinned_compare_inputs():
     assert parser.parse_args(["weekly", "--include-notes"]).include_notes
     args = parser.parse_args(["compare", "2407.05600v1", "2407.05601v2", "--question", "成本"])
     assert len(args.papers) == 2 and args.question == "成本"
+
+
+def test_five_paper_comparison_reads_each_metadata_once(service, tmp_path, monkeypatch):
+    from pathlib import Path
+    from collections import Counter
+    ids = [f"2407.{index:05d}" for index in range(5)]
+    paths = [add_report(tmp_path, "a", paper(aid), f"Original {aid}", name=aid) for aid in ids]
+    calls = Counter()
+    original = Path.open
+
+    def counted(path, *args, **kwargs):
+        if path.name == "metadata.json":
+            calls[path] += 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", counted)
+    first = service.prepare([aid + "v1" for aid in ids])
+    assert calls == {path.with_name("metadata.json"): 1 for path in paths}
+    assert all(source["report_sha256"] and source["evidence"] for source in first["sources"])
+    add_report(tmp_path, "a", paper(ids[0], version=2), "New revision", name="new")
+    second = service.prepare([ids[0] + "v2", ids[1] + "v1"])
+    assert second["sources"][0]["paper"]["version"] == 2
+    assert "New revision" in str(second["sources"][0]["evidence"])

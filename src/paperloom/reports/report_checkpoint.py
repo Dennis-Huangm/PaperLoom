@@ -18,6 +18,9 @@ from ..papers.models import FigureCandidate, ParsedPaper
 from ..runtime.jobs.task_runtime import task_checkpoint, task_checkpoint_data, task_warning, task_progress
 from ..utils import read_json, write_json
 
+_PARSED_VERSION = 5
+_SELECTION_VERSION = 2
+
 
 class CheckpointWriteError(RuntimeError):
     """Do not hide a failed checkpoint write behind an abstract-only fallback."""
@@ -106,7 +109,7 @@ class ReportCheckpoint:
             return None
         try:
             data = read_json(path)
-            if data["config"] != self.pdf_config or data["version"] != 3:
+            if data["config"] != self.pdf_config or data["version"] != _PARSED_VERSION:
                 raise ValueError("parser settings changed")
             for name, digest in data["files"].items():
                 if file_digest(self._file(name)) != digest:
@@ -155,10 +158,54 @@ class ReportCheckpoint:
                 shutil.copy2(figure.path, destination)
                 files[name] = file_digest(destination)
             raw["figures"][index]["path"] = name
-        self._write(self.root / "parsed.json", {"version": 3, "config": self.pdf_config,
+        self._write(self.root / "parsed.json", {"version": _PARSED_VERSION, "config": self.pdf_config,
                     "files": files, "parsed": raw, "parsed_hash": fingerprint(raw)})
         self.source = fingerprint([self.pdf_config, files["paper.pdf"], fingerprint(raw)])
         self.publish(parsed=True)
+
+    def save_selection(self, figures):
+        items = []
+        try:
+            for i, figure in enumerate(figures):
+                name = f"selection/{i}{figure.path.suffix}"
+                item = dict(asdict(figure), path=name)
+                target = self._file(name)
+                if figure.image_available:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(figure.path, target)
+                    item["sha256"] = file_digest(target)
+                items.append(item)
+            self._write(self.root / "selection.json", {"source": self.source, "version": _SELECTION_VERSION,
+                        "figures": items, "digest": fingerprint(items)})
+        except OSError as exc:
+            raise CheckpointWriteError("无法保存报告选图中间结果") from exc
+
+    def restore_selection(self, target):
+        try:
+            data = read_json(self.root / "selection.json", {})
+            if not data:
+                return None
+            items = data["figures"]
+            if data["version"] != _SELECTION_VERSION or data["source"] != self.source or data["digest"] != fingerprint(items):
+                return None
+            figures = []
+            for item in items:
+                values = dict(item)
+                name = values.pop("path")
+                path = self._file(name)
+                destination = target / name
+                destination.resolve().relative_to(target.resolve())
+                if values["image_available"]:
+                    if file_digest(path) != values.pop("sha256"):
+                        return None
+                figures.append(FigureCandidate(path=destination, **values))
+        except (ValueError, KeyError, OSError, TypeError, AttributeError):
+            return None
+        for item, figure in zip(items, figures):
+            if figure.image_available:
+                figure.path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(self._file(item["path"]), figure.path)
+        return figures
 
     def configure_model(self, config, llm):
         # Hash the effective endpoint; never store its credentials or runtime key.

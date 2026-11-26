@@ -48,8 +48,8 @@
 </div><p id="draft-task-status" role="status" aria-live="polite" class="draft-help">完成后结果会显示在下方。</p>
 </section>
 {% include 'profile_draft_results.html' %}
-<section id="draft-enable" class="draft-panel draft-enable"><div><h2>3 · 启用研究方向</h2><p class="draft-help">满意后启用已保存的草稿，后续推荐将使用这套配置。试搜不是必选步骤。</p></div><form method="post" action="/profiles/drafts/{{ draft.id }}/activate" data-draft-action>{{ hidden_fields() }}<button type="submit" class="button primary" {% if draft.status != 'ready' %}disabled{% endif %}>启用此方向</button></form></section>
-<details class="draft-panel draft-reference"><summary>参考论文 · {{ draft.references|length }} 篇</summary>{% for ref in draft.references %}<p><a href="https://arxiv.org/abs/{{ ref.arxiv_id }}" rel="noreferrer">{{ ref.title or ref.arxiv_id }}</a><small>arXiv:{{ ref.arxiv_id }} · {{ '资料已读取' if ref.title and ref.abstract else '资料不完整' }}</small></p>{% endfor %}</details>
+<section id="draft-enable" class="draft-panel draft-enable"><div><h2>3 · 启用研究方向</h2><p class="draft-help">启用后可在「已保存方向」继续编辑，后续推荐将使用这套配置。可以跳过试搜。</p></div><form method="post" action="/profiles/drafts/{{ draft.id }}/activate" data-draft-action>{{ hidden_fields() }}<button type="submit" class="button primary" {% if draft.status != 'ready' %}disabled{% endif %}>启用此方向</button></form></section>
+<details class="draft-panel draft-reference"><summary>参考论文 · {{ draft.references|length }} 篇</summary>{% for ref in draft.references %}<p><a href="https://arxiv.org/abs/{{ ref.arxiv_id }}" target="_blank" rel="noopener noreferrer">{{ ref.title or ref.arxiv_id }}</a><small>arXiv:{{ ref.arxiv_id }} · {{ '资料已读取' if ref.title and ref.abstract else '资料不完整' }}</small></p>{% endfor %}</details>
 <details class="draft-panel"><summary>重新生成模型建议</summary><p class="draft-help">重新读取参考论文，提炼方向名称与检索建议；保留你手动修改的名称、条件和已删除项。需等待模型处理。</p><form method="post" action="/profiles/drafts/{{ draft.id }}/regenerate" data-draft-action>{{ hidden_fields() }}<button type="submit" class="button secondary">重新生成建议</button></form></details>
 </div>
 {% endblock %}

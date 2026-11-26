@@ -42,7 +42,7 @@
           saveDraft(); generation++; session = null;
           currentAid = host.dataset.arxivId; currentReport = host.dataset.reportId;
           input.value = ''; selection = ''; pictures = []; showPictures(); showSelection();
-          await start();
+          if(!await start())return;
         }
         if (text.trim()) setSelection(text.trim());
         input.focus();
@@ -52,6 +52,7 @@
   const reportHistory = host.id === 'report-reading';
   const view=createReadingView(host, reportHistory ? 'report' : 'workspace');
   const $ = selector => host.querySelector(selector);
+  if(reportHistory)installSidebarFontSize();
   if(papers)installDock();
   else installWorkspaceResize();
   const input = $('textarea'), status = $('.reading-status'), messages = $('.reading-messages');
@@ -73,17 +74,32 @@
   let elapsedTimer = setInterval(updateElapsed, 1000);
   window.addEventListener('pagehide', () => clearInterval(elapsedTimer));
   window.addEventListener('pageshow', event => {if(event.persisted)elapsedTimer=setInterval(updateElapsed, 1000);});
+  const drafts = new Map();
+  const rollbackDrafts = new Map();
+  const draftHistory = new Map();
+  const deletedSessions = new Set();
+  function currentOperation() {
+    const sid = session?.id, ticket = generation;
+    return {sid, current: () => generation === ticket && session?.id === sid};
+  }
+  function forgetSession(id) {
+    deletedSessions.add(id);
+    drafts.delete(id); rollbackDrafts.delete(id); draftHistory.delete(id);
+    if(session?.id===id) clearDeletedSession();
+  }
   const historyController=createConversationHistory({host,view,reportHistory,api,
-    getContext:()=>({session,currentAid}),
+    getContext:()=>({session,currentAid,draftHistory}),
     async onOpen(row) {
-      saveDraft();generation++;busy=false;session=row;
+      saveDraft();generation++;busy=false;session=row;requestToken=null;
       $('[data-action=retry-start]').hidden=true;
       currentAid=reportHistory ? row.paper.arxiv_id+'v'+row.paper.version : '';
       currentReport='';selection='';pictures=[];showPictures();input.value='';restoreDraft();
-      lastRender='';await refresh();
+      const operation=currentOperation();
+      lastRender='';try {await refresh();} catch(e){if(operation.current())error(e);}
+      if(!operation.current())return;
       if(papers || innerWidth<850)setHistory(false);else await historyController.refresh();
     },
-    onDeleted(id){if(session?.id===id)clearDeletedSession();},
+    onDeleted:forgetSession,
     async onRenamed(id){if(session?.id===id)await refresh();},error,
   });
   const labels = {queued:'等待开始',running:'正在回答',completed:'',failed:'回答未完成',stopped:'已停止',interrupted:'已中断'};
@@ -98,9 +114,77 @@
   host.querySelectorAll('[data-prompt]').forEach(button => {button.onclick = () => {input.value = button.dataset.prompt; input.oninput(); input.focus();};});
   const explainButton = $('[data-action=explain]');
   if (explainButton) explainButton.onclick = () => {if(!selection) {status.textContent='先在报告正文中选中文字，再点击“阅读对话 / 提问选区”。';return;} input.value='请结合原文解释这段选区，说明关键概念及其在论文中的作用。'; input.oninput(); input.focus();};
-  const draftKey = () => 'paperloom.reading.draft:' + (session?.id || currentAid) + ':' + currentReport;
-  function saveDraft() {try {sessionStorage.setItem(draftKey(), JSON.stringify({text: input.value, selection, report: currentReport}));} catch { /* optional */ }}
-  function restoreDraft() {try {const d = JSON.parse(sessionStorage.getItem(draftKey()) || '{}'); input.value = d.text || ''; selection = d.report === currentReport ? d.selection || '' : ''; showSelection();} catch { /* optional */ }}
+  const draftScope = report => reportHistory ? report : '';
+  const draftKey = (owner=session?.id || currentAid, scope=session ? draftScope(currentReport) : currentReport) =>
+    'paperloom.reading.draft:' + owner + ':' + scope;
+  function writeDraft(key, draft) {
+    try {sessionStorage.setItem(key,JSON.stringify({...draft, images:[]}));} catch { /* optional */ }
+  }
+  const composedDraft = () => ({text:input.value, selection, report:currentReport, images:[...pictures]});
+  const restoreQuestion = textNode('button','恢复回退的问题');
+  restoreQuestion.type='button'; restoreQuestion.hidden=true;
+  const discardQuestion = textNode('button','丢弃回退草稿');
+  discardQuestion.type='button'; discardQuestion.hidden=true;
+  compose.prepend(restoreQuestion,discardQuestion);
+  function saveDraft() {
+    const draft=composedDraft();
+    if(session) {
+      const byReport=drafts.get(session.id) || new Map();
+      const scope=draftScope(currentReport);
+      byReport.delete(scope);
+      byReport.set(scope,draft);
+      drafts.set(session.id,byReport);
+    }
+    writeDraft(draftKey(),draft);
+  }
+  function clearSentDraft(sid, submitted) {
+    const isSubmitted = draft => draft && draft.text===submitted.text && draft.report===submitted.report
+      && draft.selection===submitted.selection && draft.images.length===submitted.images.length
+      && draft.images.every((image, index)=>image===submitted.images[index]);
+    const byReport=drafts.get(sid), scope=draftScope(submitted.report);
+    if(isSubmitted(byReport?.get(scope))) {
+      const empty={text:'',selection:'',report:submitted.report,images:[]};
+      byReport.set(scope,empty);
+      writeDraft(draftKey(sid,scope),empty);
+    }
+    if(session?.id===sid && isSubmitted(composedDraft())) {
+      input.value='';selection='';pictures=[];requestToken=null;
+      showSelection();showPictures();saveDraft();
+    }
+  }
+  function fillDraft(draft) {
+    input.value=draft.text || ''; selection=draft.selection || '';
+    currentReport=draft.report ?? currentReport; pictures=[...(draft.images || [])];
+    requestToken=null; showSelection(); showPictures();
+  }
+  function updateDraftActions() {
+    restoreQuestion.hidden=!rollbackDrafts.has(session?.id);
+    discardQuestion.hidden=!draftHistory.has(session?.id) && restoreQuestion.hidden;
+  }
+  function useRollback(report=null) {
+    const draft=rollbackDrafts.get(session?.id);
+    if(!draft || (report!==null && draft.report!==report))return;
+    fillDraft(draft); rollbackDrafts.delete(session.id); saveDraft(); updateDraftActions();
+  }
+  restoreQuestion.onclick=()=>{useRollback();input.focus();};
+  discardQuestion.onclick=()=>{
+    if(!rollbackDrafts.delete(session.id)) {
+      input.value='';selection='';pictures=[];showSelection();showPictures();saveDraft();
+    }
+    draftHistory.delete(session.id); updateDraftActions();
+    if(!history.hidden)historyController.refresh().catch(error);
+  };
+  function restoreDraft(report=null) {
+    const byReport=drafts.get(session?.id);
+    let draft=report===null ? Array.from(byReport?.values() || []).at(-1) : byReport?.get(report);
+    if(!draft)try {
+      const stored=sessionStorage.getItem(draftKey());
+      draft=JSON.parse(stored ?? (session ? sessionStorage.getItem(draftKey(session.id,currentReport)) : null));
+    } catch { /* optional */ }
+    if(draft)fillDraft(draft);
+    if(!input.value && !pictures.length && !selection)useRollback(report);
+    updateDraftActions();
+  }
   function updateReferenceScroll() {
     if(reportHistory)return;
     const rail=$('.reading-reference-rail'), chips=$('.reading-reference-chips');
@@ -141,15 +225,15 @@
     host.querySelectorAll('.reading-suggestions [data-prompt]').forEach(button=>{button.disabled=!refs.length || active || busy || !!value.archived;});
   }
   async function changeReferences(reportIds) {
-    if(!session)await start();
-    const sid=session.id,ticket=generation;
+    if(!session && !await start())return;
+    const operation=currentOperation();
     busy=true;render(session);
     try {
-      const value=await api('/sessions/'+sid+'/references','PUT',{report_ids:reportIds, mode:'workspace'});
-      if(session?.id===sid && generation===ticket){render(value);if(!history.hidden)await historyController.refresh();}
+      const value=await api('/sessions/'+operation.sid+'/references','PUT',{report_ids:reportIds, mode:'workspace'});
+      if(operation.current()){render(value);if(!history.hidden)await historyController.refresh();}
     } catch(e) {
-      if(session?.id===sid && generation===ticket)throw e;
-    } finally {if(session?.id===sid && generation===ticket){busy=false;render(session);}}
+      if(operation.current())throw e;
+    } finally {if(operation.current()){busy=false;render(session);}}
   }
   if(!reportHistory) {
     $('[data-action=new-workspace]').onclick=()=> $('[data-action=new]').click();
@@ -219,6 +303,23 @@
     document.addEventListener('keydown',e=>{if(e.key==='Escape' && !host.querySelector('dialog[open]'))close.click();});
     document.querySelector('#report-papers-toggle')?.addEventListener('click',()=>closeDock(false));
   }
+  function installSidebarFontSize() {
+    const control=$('.reading-font-size'), key='paperloom.reading.sidebar-font-size';
+    const defaultSize=13;
+    function apply(value) {
+      const size=Number(value);
+      const valid=Number.isInteger(size) && size>=12 && size<=24 ? size : defaultSize;
+      control.value=String(valid);
+      host.style.setProperty('--reading-sidebar-font-size',valid+'px');
+    }
+    let saved;
+    try{saved=localStorage.getItem(key);}catch{}
+    apply(saved);
+    control.onchange=()=>{
+      apply(control.value);
+      try{localStorage.setItem(key,control.value);}catch{}
+    };
+  }
   function installWorkspaceResize() {
     const historyPanel=$('.reading-history');
     const resize=document.createElement('div');
@@ -280,7 +381,7 @@
         if(current())render(value);
       } catch(e) {
         if(current()) {
-          if(e.status===404){clearDeletedSession();return;}
+          if(e.status===404){forgetSession(watch.sid);return;}
           status.textContent='连接暂时中断，正在恢复实时更新…';
         }
       } finally {
@@ -376,11 +477,26 @@ ${f.text}`));row.append(pieces);}
         copy.onclick=()=>navigator.clipboard.writeText(message.text).then(()=>{copy.title='已复制';}).catch(()=>error(new Error('无法访问剪贴板，请手动选择文字复制')));
         const back=iconButton('回退到本轮提问之前','undo');back.disabled=active || !!value.archived;
         back.onclick=async()=>{
-          if(!confirm('回退到本轮提问之前？当前完整对话将归档保留，原问题恢复到输入框。'))return;
-          const sid=session.id,ticket=generation;
-          try{const result=await api('/sessions/'+sid+'/rollback','POST',{message_id:message.id});if(session?.id!==sid || generation!==ticket)return;
-            generation++;lastRender='';render(result.session);input.value=result.draft.text;selection=result.draft.selection || '';pictures=result.draft.images || [];currentReport=result.draft.report?.id || '';requestToken=null;showSelection();showPictures();saveDraft();input.focus();if(!history.hidden)await historyController.refresh();
-          }catch(e){error(e);}
+          if(busy || !confirm('回退到本轮提问之前？当前完整对话将归档保留，原问题恢复到输入框。'))return;
+          const operation=currentOperation();
+          busy=true;render(session);
+          try {
+            const result=await api('/sessions/'+operation.sid+'/rollback','POST',{message_id:message.id});
+            const draft=result.draft, row=result.session;
+            if(deletedSessions.has(row.id))return;
+            rollbackDrafts.set(row.id,{text:draft.text,selection:draft.selection,report:draft.report?.id || '',images:draft.images});
+            if(!row.messages.length)draftHistory.set(row.id,{...row,messages:[],message_count:0});
+            const stayed=operation.current();
+            if(stayed) {busy=false;generation++;lastRender='';render(row);}
+            if(session?.id===row.id){
+              if(!input.value && !selection && !pictures.length)useRollback();
+              updateDraftActions();
+              if(!stayed)await refresh();
+            }
+            if(!history.hidden)await historyController.refresh();
+          }catch(e){
+            if(operation.current()){busy=false;render(session);error(e);}
+          }
         };
         copy.disabled = !message.text;
         actions.append(copy,back,textNode('span',message.model || ''));
@@ -424,9 +540,13 @@ ${f.text}`));row.append(pieces);}
   }
   async function refresh() {
     if (!session) return;
-    const sid = session.id, ticket = generation;
-    const value = await api('/sessions/' + sid);
-    if (ticket === generation && session?.id === sid) render(value);
+    const operation=currentOperation();
+    try {
+      const value=await api('/sessions/'+operation.sid);
+      if(operation.current())render(value);
+    } catch(e) {
+      if(operation.current())throw e;
+    }
   }
   function start(fresh = false) {
     if(!fresh && starting?.ticket===generation)return starting.promise;
@@ -454,7 +574,8 @@ ${f.text}`));row.append(pieces);}
       render(presented);
       if(!history.hidden)historyController.refresh().catch(error);
       // Keep a question drafted before version resolution.
-      if (!input.value) restoreDraft();
+      if (!input.value && !selection && !pictures.length) restoreDraft(reportHistory ? currentReport : null);
+      return presented;
     } catch(e) {
       if(ticket !== generation)return;
       $('[data-action=retry-start]').hidden=false;
@@ -467,41 +588,54 @@ ${f.text}`));row.append(pieces);}
   $('[data-action=history]').onclick = () => setHistory(history.hidden);
   $('[data-action=new]').onclick = () => {
     saveDraft();if(!reportHistory){currentAid='';currentReport='';}
-    session=null;lastRender='';watchSession();view.setSessionActions(false);
+    session=null;updateDraftActions();lastRender='';watchSession();view.setSessionActions(false);
     messages.replaceChildren();showWelcome();input.value='';input.disabled=false;
     selection='';pictures=[];requestToken=null;showSelection();showPictures();start(true).catch(error);
   };
   function clearDeletedSession() {
-    generation++;busy=false;session=null;watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
+    generation++;busy=false;session=null;updateDraftActions();watchSession();input.value='';input.disabled=false;selection='';pictures=[];requestToken=null;
     showSelection();showPictures();messages.replaceChildren();showWelcome();lastRender='';status.textContent='会话已删除';
     if(!reportHistory){currentAid='';currentReport='';renderReferences({references:[],messages:[]});compose.querySelector('[type=submit]').disabled=true;}
     view.setSessionActions(false);
     setHistory(true);
   }
   view.bindSessionActions(()=>session && historyController.rename(session),()=>session && historyController.remove(session));
-  $('[data-action=stop]').onclick = () => session && api('/sessions/'+session.id+'/stop','POST',{}).then(refresh).catch(error);
+  $('[data-action=stop]').onclick = async () => {
+    if(!session)return;
+    const operation=currentOperation();
+    try {await api('/sessions/'+operation.sid+'/stop','POST',{});}
+    catch(e){
+      if(session?.id===operation.sid){
+        try {await refresh();} catch { /* polling will retry */ }
+        if(operation.current())error(new Error('未能确认是否停止：'+e.message));
+      }
+      return;
+    }
+    if(session?.id===operation.sid)refresh().catch(e=>{if(operation.current())error(e);});
+  };
   async function send(payload, preserveDraft = false) {
     if(busy)return;
-    const sid = session.id, ticket = generation;
-    const submittedText = input.value, submittedSelection = selection, submittedPictures = pictures;
+    const operation=currentOperation();
+    const submitted=composedDraft();
     busy=true; compose.querySelector('[type=submit]').disabled=true;
     try {
-      await api('/sessions/'+sid+'/messages','POST',payload);
-      if(ticket !== generation || session?.id !== sid)return;
-      if(!preserveDraft) {
-        if(input.value === submittedText)input.value='';
-        if(selection === submittedSelection)selection='';
-        if(pictures === submittedPictures)pictures=[];
+      await api('/sessions/'+operation.sid+'/messages','POST',payload);
+      draftHistory.delete(operation.sid);
+      if(!preserveDraft)clearSentDraft(operation.sid,submitted);
+      if(!operation.current()){
+        if(session?.id===operation.sid){updateDraftActions();await refresh();}
+        return;
       }
-      requestToken=null; showSelection(); showPictures(); saveDraft(); await refresh();
+      updateDraftActions();
+      requestToken=null; await refresh();
       if(!history.hidden)await historyController.refresh();
     } catch(e) {
-      if(ticket === generation && session?.id === sid)throw e;
-    } finally {if(ticket === generation && session?.id === sid){busy=false;render(session);}}
+      if(operation.current())throw e;
+    } finally {if(operation.current()){busy=false;render(session);}}
   }
   compose.onsubmit = async event => {
     event.preventDefault(); if(!input.value.trim())return;
-    try {if(!session)await start(); if(!session)return; requestToken ||= crypto.randomUUID();
+    try {if(!session && !await start())return; requestToken ||= crypto.randomUUID();
       await send({text:input.value,request_id:requestToken,selection,report_id:currentReport,images:pictures});}catch(e){error(e);}
   };
   $('[data-action=retry]').onclick = () => {
@@ -724,6 +858,12 @@ ${f.text}`));row.append(pieces);}
       if(request !== historyRequest)return;
       historyLoading=false;
       list.setAttribute('aria-busy','false');
+      for(const row of getContext().draftHistory.values()){
+        if(rows.some(item=>item.id===row.id) || (reportHistory && row.mode!=='report'))continue;
+        if(aid && !(row.references || []).some(ref=>ref.paper.arxiv_id===aid.replace(/v\d+$/i,'')))continue;
+        if(q && !row.title.toLowerCase().includes(q.toLowerCase()))continue;
+        rows.unshift(row);
+      }
       const activeId=getContext().session?.id;
       view.renderHistorySummary(historyScope, rows.length, q);
       visibleHistory = rows;
@@ -802,7 +942,9 @@ ${f.text}`));row.append(pieces);}
     <div class="reading-toolbar"><button type="button" data-action="retry-start" hidden>重试加载会话</button><button type="button" data-action="history" title="查看会话历史">历史记录</button><button type="button" data-action="settings">设置</button>${adapter.menu}</div></header>
     ${adapter.paper}
     <section class="reading-history" hidden aria-label="历史记录"><div class="reading-history-heading">${adapter.historyHeading}</div><div class="reading-history-filters">${adapter.scope}<input type="search" placeholder="搜索会话、论文或对话内容…" aria-label="搜索会话标题" title="支持会话标题、论文标题、arXiv ID、提问与回答；空格分隔多个关键词"></div>${adapter.summary}<div class="reading-history-list"></div>${adapter.historyFooter}</section>
-    <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>阅读模型设置</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div><form class="reading-settings">
+    <dialog class="reading-settings-dialog"><div class="reading-history-heading"><strong>${isReport ? '阅读助手设置' : '阅读模型设置'}</strong><button type="button" data-action="close-settings" aria-label="关闭设置">×</button></div>
+    ${isReport ? `<div class="reading-display-settings"><label>侧栏字号<select class="reading-font-size" aria-label="侧栏字号" aria-describedby="reading-font-size-hint">${Array.from({length:13},(_,index)=>index+12).map(size=>`<option value="${size}">${size} px${size===13 ? '（默认）' : ''}</option>`).join('')}</select></label><p id="reading-font-size-hint">仅调整侧栏对话和输入文字，修改后自动保存。</p></div>` : ''}
+    <form class="reading-settings">
     <label><input type="checkbox" name="independent">独立配置阅读模型</label>
     <label>模型<input name="model" maxlength="200"></label><label>服务地址<input name="base_url" placeholder="默认官方接口"></label>
     <label>API Key<input type="password" name="api_key" autocomplete="new-password" placeholder="留空保留已有密钥"></label>

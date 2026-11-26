@@ -19,7 +19,7 @@ def test_structured_queries_reserve_core_budget_and_merge_sources(tmp_path):
     def search(categories, days, limit, terms=None, *, query_groups=None):
         calls.append((limit, query_groups))
         return [paper()]
-    config = DiscoveryConfig(provider="arxiv", max_candidates=10, search_plan={"version": 2, "branches": [
+    config = DiscoveryConfig(provider="arxiv", arxiv_categories=["cs.RO"], max_candidates=10, search_plan={"version": 2, "branches": [
         {"id": "core", "label": "核心主题", "groups": [["world model", "world models"]]},
         {"id": "context", "label": "应用场景", "groups": [["world model"], ["robot"]]},
         {"id": "adjacent", "label": "相邻方法", "groups": [["world model"], ["planning"]]},
@@ -62,3 +62,34 @@ def test_arxiv_compiles_grouped_literals_and_rejects_raw_query_syntax():
         assert len(queries) == 1
     finally:
         client.client.close()
+
+
+@pytest.mark.parametrize("abstract_length", [40, 4000])
+def test_model_batches_isolate_failures_and_preserve_global_order(abstract_length):
+    import json
+    from paperloom.config import AppConfig
+    from paperloom.discovery.plan_selection import evaluate_plan
+
+    cfg = AppConfig()
+    cfg.discovery.search_plan = {"version": 2, "conditions": [
+        {"id": "robot", "kind": "required", "text": "robot", "confirmed": True}]}
+    candidates = [paper(f"2611.{i:05}", abstract="robot" + "a" * (abstract_length - 5)) for i in range(46)]
+    calls = []
+
+    def chat(system, prompt, **kwargs):
+        batch = json.loads(prompt.split("数据：")[-1])["papers"]
+        calls.append([p["id"] for p in batch])
+        assert len(batch) <= 20 and len(prompt) <= 32000
+        if len(calls) == 2:
+            raise RuntimeError("batch failed")
+        return json.dumps({"papers": [{"id": p["id"], "score": 9 if p is batch[-1] else 7,
+                            "conditions": [{"id": "robot", "verdict": "satisfied", "quote": "robot"}]}
+                            for p in batch]})
+
+    accepted, rejected = evaluate_plan(candidates, cfg, SimpleNamespace(enabled=True, chat=chat))
+    assert len(calls) >= 3
+    assert [aid for batch in calls for aid in batch] == [p.arxiv_id for p in candidates]
+    assert {r["paper"]["arxiv_id"] for r in rejected} == set(calls[1])
+    assert all("batch failed" in r["paper"]["ranking_explanation"]["condition_error"] for r in rejected)
+    assert len(accepted) + len(rejected) == len(candidates)
+    assert [p.llm_score for p in accepted] == sorted([p.llm_score for p in accepted], reverse=True)

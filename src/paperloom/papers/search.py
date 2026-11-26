@@ -61,6 +61,19 @@ class Source:
     url: str = ""
 
 
+def _metadata_source(paper, key, url="", text=None, kind="metadata", version=None):
+    if not isinstance(paper, dict) or not paper.get("arxiv_id"):
+        return
+    aid = str(paper["arxiv_id"])
+    title = str(paper.get("title") or aid)
+    revision = version if kind == "notes" else paper.get("version")
+    revision = revision if isinstance(revision, int) and revision > 0 else None
+    if text is None:
+        text = "\n\n".join(str(paper.get(field) or "") for field in ("abstract", "abstract_zh"))
+    value = [title, aid, revision, text, url]
+    return Source(key, digest(value), title, aid, revision, kind, text=text, url=url)
+
+
 class SearchIndex:
     def __init__(self, root: Path, profile: str):
         self.root = root.resolve()
@@ -77,82 +90,90 @@ class SearchIndex:
         return digest([(p.relative_to(self.root).as_posix(), self._contained(p).stat().st_size,
                         p.stat().st_mtime_ns) for p in paths])
 
-    def sources(self) -> tuple[list[Source], list[str]]:
-        sources: dict[str, Source] = {}
-        warnings: list[str] = []
-
-        def metadata(paper, key, url="", text=None, kind="metadata", version=None):
-            if not isinstance(paper, dict) or not paper.get("arxiv_id"):
-                return
-            aid = str(paper["arxiv_id"])
-            title = str(paper.get("title") or aid)
-            revision = version if kind == "notes" else paper.get("version")
-            revision = revision if isinstance(revision, int) and revision > 0 else None
-            if text is None:
-                text = "\n\n".join(str(paper.get(field) or "") for field in ("abstract", "abstract_zh"))
-            value = [title, aid, revision, text, url]
-            sources[key] = Source(key, digest(value), title, aid, revision, kind, text=text, url=url)
-
+    def _reading_sources(self, key=None):
         store = ReadingStateStore(self.root, self.profile)
         # A broken reading-state file must abort refresh, not silently erase notes.
         for path in (store.path, store.library_path, store.feedback_path, store.lock_path):
             self._contained(path)
         state = store.snapshot()
-        papers = {aid: entry.get("paper", {}) for aid, entry in state["library"].items()}
-        for event in reversed(state.get("activity", [])):
-            paper = event.get("paper") or {}
-            if paper.get("arxiv_id") not in papers:
-                papers[paper.get("arxiv_id")] = paper
-        for aid, entry in state["library"].items():
-            metadata(entry.get("paper"), f"library:{aid}", "/library?" + urlencode({"q": aid}))
-        for aid, record in state.get("reading", {}).items():
-            text = str(record.get("notes") or "") + "\n\n标签：" + ", ".join(record.get("tags") or [])
+        library = state["library"]
+        if key is None:
+            library_ids, note_ids = library, state.get("reading", {})
+        else:
+            kind, _, aid = key.partition(":")
+            library_ids = [aid] if kind == "library" and aid in library else []
+            note_ids = [aid] if kind == "notes" and aid in state.get("reading", {}) else []
+        for aid in library_ids:
+            yield _metadata_source(library[aid].get("paper"), f"library:{aid}", "/library?" + urlencode({"q": aid}))
+        missing = set(note_ids).difference(library)
+        activity = {}
+        if missing:
+            for event in reversed(state.get("activity", [])):
+                paper = event.get("paper") or {}
+                aid = paper.get("arxiv_id")
+                if aid in missing:
+                    activity[aid] = paper
+                    missing.remove(aid)
+                    if not missing:
+                        break
+        for aid in note_ids:
+            record = state["reading"][aid]
             if record.get("notes") or record.get("tags"):
-                metadata(papers.get(aid) or {"arxiv_id": aid}, f"notes:{aid}",
-                         "/library?" + urlencode({"q": aid}) if aid in state["library"] else "",
-                         text=text, kind="notes", version=record.get("read_version"))
+                text = str(record.get("notes") or "") + "\n\n标签：" + ", ".join(record.get("tags") or [])
+                paper = library.get(aid, {}).get("paper") or activity.get(aid) or {"arxiv_id": aid}
+                yield _metadata_source(paper, f"notes:{aid}", "/library?" + urlencode({"q": aid}) if aid in library else "",
+                                       text=text, kind="notes", version=record.get("read_version"))
 
+    def _recommendation_sources(self, folder):
+        self._contained(folder)
+        for name in (f"recommendations-{self.profile}.json", "recommendations.json"):
+            self._contained(folder / name)
+        for item in read_recommendations(self.root, folder.name, self.profile):
+            paper = item.get("paper") or {}
+            key = f"recommendation:{paper.get('arxiv_id')}:{paper.get('version')}"
+            yield _metadata_source(paper, key, "/?" + urlencode({"date": folder.name}))
+
+    def _artifact_sources(self, path):
+        payload = read_json(self._contained(path), {})
+        if not isinstance(payload, dict) or not profile_matches(payload, self.profile):
+            return
+        paper = payload.get("paper") or {}
+        if not isinstance(paper, dict) or not paper.get("arxiv_id"):
+            return
+        key = path.relative_to(self.root).as_posix()
+        origin = next((path.with_name(name) for name in ("report.html", "paper.pdf")
+                       if path.with_name(name).is_file()), None)
+        yield _metadata_source(paper, key + ":metadata", (artifact_url(origin, self.root) or "") if origin else "")
+        quality = payload.get("report_quality", "unknown") if "reports" in path.parts else "none"
+        if quality not in QUALITIES:
+            quality = "unknown"
+        for name, kind in (("report.md", "report"), ("paper.pdf", "pdf")):
+            body = path.with_name(name)
+            if not body.is_file():
+                continue
+            self._contained(body)
+            url_path = body.with_suffix(".html") if kind == "report" else body
+            url = artifact_url(url_path, self.root) if url_path.is_file() else ""
+            source_key = body.relative_to(self.root).as_posix()
+            yield Source(source_key, self._signature(path, body),
+                str(paper.get("title") or paper["arxiv_id"]), str(paper["arxiv_id"]),
+                paper.get("version") if isinstance(paper.get("version"), int) else None,
+                kind, quality, path=body, url=url or "")
+
+    def sources(self) -> tuple[list[Source], list[str]]:
+        sources = {source.key: source for source in self._reading_sources() if source}
+        warnings = []
         for folder in sorted(self.root.glob("????-??-??"), reverse=True):
             task_checkpoint()
-            self._contained(folder)
-            for path in (folder / f"recommendations-{self.profile}.json", folder / "recommendations.json"):
-                self._contained(path)
-            for item in read_recommendations(self.root, folder.name, self.profile):
-                paper = item.get("paper") or {}
-                key = f"recommendation:{paper.get('arxiv_id')}:{paper.get('version')}"
-                if key not in sources:
-                    metadata(paper, key, "/?" + urlencode({"date": folder.name}))
-
+            for source in self._recommendation_sources(folder):
+                if source:
+                    sources.setdefault(source.key, source)
         paths = list(self.root.glob("????-??-??/reports/*/metadata.json"))
         paths += list((self.root / "papers" / (self.profile or "default")).glob("*/v*/metadata.json"))
         for path in paths:
             task_checkpoint()
             try:
-                payload = read_json(self._contained(path), {})
-                if not isinstance(payload, dict) or not profile_matches(payload, self.profile):
-                    continue
-                paper = payload.get("paper") or {}
-                if not isinstance(paper, dict) or not paper.get("arxiv_id"):
-                    continue
-                key = path.relative_to(self.root).as_posix()
-                origin = next((path.with_name(name) for name in ("report.html", "paper.pdf")
-                               if path.with_name(name).is_file()), None)
-                metadata(paper, key + ":metadata", (artifact_url(origin, self.root) or "") if origin else "")
-                quality = payload.get("report_quality", "unknown") if "reports" in path.parts else "none"
-                if quality not in QUALITIES:
-                    quality = "unknown"
-                for name, kind in (("report.md", "report"), ("paper.pdf", "pdf")):
-                    body = path.with_name(name)
-                    if not body.is_file():
-                        continue
-                    self._contained(body)
-                    url_path = body.with_suffix(".html") if kind == "report" else body
-                    url = artifact_url(url_path, self.root) if url_path.is_file() else ""
-                    source_key = body.relative_to(self.root).as_posix()
-                    sources[source_key] = Source(source_key, self._signature(path, body),
-                        str(paper.get("title") or paper["arxiv_id"]), str(paper["arxiv_id"]),
-                        paper.get("version") if isinstance(paper.get("version"), int) else None,
-                        kind, quality, path=body, url=url or "")
+                sources.update((source.key, source) for source in self._artifact_sources(path) if source)
             except (OSError, ValueError, TypeError):
                 warnings.append(f"跳过无法读取或不在输出目录内的材料：{path.name}（{path.parent.name}）")
         return list(sources.values()), warnings
@@ -356,8 +377,19 @@ class SearchIndex:
         if not row:
             return None
         # Never present a cached old note or a changed PDF as current source text.
-        sources, _ = self.sources()
-        source = next((source for source in sources if source.key == row["source"]), None)
+        key = row["source"]
+        if key.startswith(("library:", "notes:")):
+            candidates = self._reading_sources(key)
+        elif key.startswith("recommendation:"):
+            date = re.fullmatch(r"/\?date=(\d{4}-\d{2}-\d{2})", row["url"])
+            candidates = self._recommendation_sources(self.root / date[1]) if date else ()
+        else:
+            body = self._contained(self.root / key.removesuffix(":metadata"))
+            candidates = self._artifact_sources(body.with_name("metadata.json"))
+        try:
+            source = next((s for s in candidates if s and s.key == key), None)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError("来源已更新或移除，请先更新搜索索引后重新搜索。") from exc
         if source is None or source.signature != row["signature"]:
             raise ValueError("来源已更新或移除，请先更新搜索索引后重新搜索。")
         return dict(row)

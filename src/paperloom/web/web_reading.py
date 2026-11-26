@@ -113,7 +113,7 @@ def register_reading_routes(app, templates, context, current_config, jobs, outpu
 
     @app.get('/api/reading/reports')
     def reference_catalog():
-        return {'reports': service.materials.catalog()}
+        return {'reports': service.materials.catalog(deleted_profiles=app.state.profiles.deleted_ids())}
 
     @app.put('/api/reading/sessions/{sid}/references')
     def references(sid: str, body: ReadingReferenceSelection):

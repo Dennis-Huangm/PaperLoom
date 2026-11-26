@@ -13,6 +13,7 @@ def test_experiment_figures_stay_with_discussion_and_survive_repeated_finalizati
 [[实验图:figure-4]]
 ## 关键结果
 ### 修订预算
+#### Figure 5
 [[实验图:figure-5]]
 9B 前两轮改善明显，4B 改善有限。
 再次参见 [[实验图:figure-5]]。
@@ -30,9 +31,11 @@ def test_experiment_figures_stay_with_discussion_and_survive_repeated_finalizati
     final = finalize_report_structure(once, figures)
     assert final == once
     assert final.count("![论文实验图 Figure 5]") == 1
+    assert final.count("#### Figure 5") == 1
     assert final.index("## 实验设置") < final.index("experiment-figure-04.png") < final.index("## 关键结果")
     assert final.index("### 修订预算") < final.index("experiment-figure-05.png") < final.index("9B 前两轮")
     assert "原图未能提取" in final and "Figure 6" in final
+    assert "[查看原文第 7 页](paper.pdf#page=7)" in final
     assert "missing.png" not in final
     assert "[[实验图:" not in final
 
@@ -42,6 +45,50 @@ def test_experiment_image_follows_its_discussion_when_model_omits_slot() -> None
     figure = FigureCandidate(Path("experiment-figure-05.png"), 6, "Figure 5: Revision budget.", role="experiment")
     final = finalize_report_structure(report, [figure])
     assert final.index("收益趋缓") < final.index("experiment-figure-05.png") < final.index("### 消融")
+
+
+def test_figure_groups_publish_only_placements_and_the_shared_finding() -> None:
+    from paperloom.reports.report_figures import expand_experiment_groups
+
+    figures = [FigureCandidate(Path(f"figure-{n}.png"), n, f"Figure {n}: result.", role="experiment",
+                               explanation=f"解读{n}。") for n in (2, 3, 4)]
+    draft = """## 关键结果
+:::实验图组 2,3
+图2又解读了一遍。
+共同结论：两项测量共同表明收益仅出现在小数据集上。[[证据ID:S1-example]]
+图3又解读了一遍。
+:::
+
+:::实验图组 4
+共同结论：单图重复说明。
+:::
+
+### 独立测量
+处理延迟为 30 毫秒。
+"""
+    expanded = expand_experiment_groups(draft, figures)
+    windows = expand_experiment_groups(draft.replace("\n", "\r\n"), figures)
+    assert windows.replace("\r\n", "\n") == expanded
+    result = finalize_report_structure(expanded, figures)
+    for f in figures:
+        assert result.count(f.explanation) == result.count(f.path.name) == 1
+    assert "又解读" not in result and "单图重复说明" not in result
+    assert "收益仅出现在小数据集上。[[证据ID:S1-example]]" in result
+    assert "处理延迟为 30 毫秒。" in result and ":::" not in result
+
+
+def test_publication_layout_fallback_keeps_the_figure_and_its_reading() -> None:
+    from paperloom.reports.report_publication import prepare_publication
+
+    def fail_layout(*args):
+        raise ValueError("layout failed")
+
+    figure = FigureCandidate(Path("experiment-figure-01.png"), 3, "Figure 1: Results.",
+                             role="experiment", explanation="实线表示训练集。")
+    draft = "## 关键结果\n\n[[实验图:figure-1]]"
+    report = prepare_publication(draft, None, None, [figure], None, fail_layout)
+    assert report.count(figure.explanation) == report.count(figure.path.name) == 1
+    assert "[[实验图:" not in report
 
 
 def test_generation_keeps_text_evidence_when_both_figure_interpretations_fail() -> None:
@@ -63,7 +110,15 @@ def test_generation_keeps_text_evidence_when_both_figure_interpretations_fail() 
     report = generator.generate(paper, VerifiedMetadata(), ParsedPaper("Revision results", ["Revision results"]), [figure])
     final = finalize_report_structure(report, [figure])
     assert "9B 前两轮提升，4B 改善有限" in final
-    assert "Revision budget results" in final and "未作视觉解读" in final
+    from bs4 import BeautifulSoup
+    from paperloom.reports.render import markdown_with_math
+    html = BeautifulSoup(markdown_with_math(final)[0], "html.parser")
+    details = html.find("details")
+    assert details and not details.has_attr("open")
+    assert "Revision budget results" in details.get_text()
+    details.decompose()
+    assert "中文解读暂不可用" in html.get_text() and "Revision budget results" not in html.get_text()
+    assert html.find("a", href="paper.pdf#page=1")
 
 
 def test_normalize_title_replaces_literal_prompt_placeholder() -> None:

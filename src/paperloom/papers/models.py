@@ -158,6 +158,8 @@ class FigureCandidate:
     role: str = "method"
     section: str = ""
     image_available: bool = True
+    explanation_basis: str = ""
+    review_signature: str = ""
 
 
 @dataclass(slots=True)

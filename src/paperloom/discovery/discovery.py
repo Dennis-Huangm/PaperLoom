@@ -6,10 +6,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
 
+import httpx
+
 from ..papers.models import Paper
-
-
-from ..papers.paper_data import PaperResolver, alpha_enabled, base_id, with_sources
+from ..papers.paper_data import PaperResolver, alpha_enabled, base_id, merge_candidate, with_sources
+from .arxiv_client import ArxivUnavailable
 from .recent_interest import RecentInterest
 
 
@@ -21,11 +22,13 @@ class DiscoveryResult:
     rejected_dates: int = 0
     merged_count: int = 0
     recent_interest: dict = field(default_factory=dict)
+    leads: list[Paper] = field(default_factory=list, repr=False)
+    rejected_categories: int = 0
 
     def to_dict(self) -> dict:
         return {
             "sources": self.sources, "hydration": self.hydration,
-            "eligible_dates": len(self.papers), "rejected_dates": self.rejected_dates,
+            "rejected_categories": self.rejected_categories, "eligible_dates": len(self.papers), "rejected_dates": self.rejected_dates,
             "merged_count": self.merged_count,
             "recent_interest": self.recent_interest,
             "papers": [{"arxiv_id": p.arxiv_id, "discovery_sources": p.discovery_sources,
@@ -40,12 +43,46 @@ class DiscoveryError(RuntimeError):
         self.discovery_result = result
 
 
+def _source_unavailable(exc):
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in {401, 403, 429} or exc.response.status_code >= 500
+    return isinstance(exc, (ArxivUnavailable, httpx.TransportError, ConnectionError, TimeoutError))
+
+
 def eligible_publications(config, paper):
     return [pub for pub in paper.conference_publications
             if pub.get("conference") in config.conferences and pub.get("paper_type") == "long"
             and type(pub.get("year")) is int
             and config.conference_year_from <= pub["year"] <= config.conference_year_to
             and pub.get("evidence_url") and pub.get("association_evidence")]
+
+
+def admit_candidates(config, result, papers, today):
+    """Keep exploration leads available while enforcing the final channel qualifications."""
+    cutoff = today - timedelta(days=config.lookback_days)
+    categories = set(config.arxiv_categories)
+    result.papers, result.leads = [], []
+    result.rejected_dates = result.rejected_categories = 0
+    for paper in papers:
+        dated = bool(paper.published and cutoff <= paper.published.date() <= today)
+        matches_category = not categories or bool(categories.intersection([paper.primary_category, *paper.categories]))
+        recent = config.mode != "conference" and dated and matches_category
+        publications = eligible_publications(config, paper) if config.mode != "latest" else []
+        if not recent and not publications:
+            result.leads.append(paper)
+            if dated and not matches_category and config.mode != "conference":
+                result.rejected_categories += 1
+            else:
+                result.rejected_dates += 1
+            continue
+        sources = [s for s in paper.discovery_sources if s != "conference"] if recent else []
+        if recent and not sources and "active" in paper.discovery_routes:
+            sources.extend(paper.discovery_sources)
+        if publications and "conference" not in sources:
+            sources.append("conference")
+        result.papers.append(replace(paper, discovery_sources=sources,
+                                     conference_publications=publications if config.mode != "latest"
+                                     else paper.conference_publications))
 
 
 class DiscoveryService:
@@ -77,7 +114,7 @@ class DiscoveryService:
             papers, states = client.discover(self.config, self.arxiv, self.output_root, excluded_ids or set(),
                 **({'refresh': True} if self.refresh_conferences else {}))
         result.sources.update(states)
-        merged = {base_id(p.arxiv_id): p for p in result.papers}
+        merged = {base_id(p.arxiv_id): p for p in [*result.papers, *result.leads]}
         excluded = {base_id(a) for a in excluded_ids or set()}
         for paper in papers:
             publications = eligible_publications(self.config, paper)
@@ -85,16 +122,11 @@ class DiscoveryService:
             if not publications or aid in excluded:
                 continue
             previous = merged.get(aid)
-            best = previous or paper
-            combined = list(best.conference_publications)
-            for pub in publications:
-                if pub not in combined:
-                    combined.append(pub)
-            merged[aid] = replace(best, arxiv_id=aid, conference_publications=combined,
-                discovery_sources=list(dict.fromkeys([*(previous.discovery_sources if previous else []), "conference"])),
-                discovery_routes=list(dict.fromkeys([*best.discovery_routes, "conference"])))
+            candidate = replace(paper, arxiv_id=aid, conference_publications=publications,
+                                discovery_sources=["conference"], discovery_routes=["conference"])
+            merged[aid] = merge_candidate(previous, candidate) if previous else candidate
             self.resolver.remember(merged[aid])
-        result.papers = list(merged.values())
+        admit_candidates(self.config, result, merged.values(), datetime.now(timezone.utc).date())
         result.merged_count = len(merged)
         if not result.papers and not any(s.get("status") in {"ok", "empty", "partial", "truncated", "unpublished"} for s in result.sources.values()):
             raise DiscoveryError("所选检索来源均不可用，请查看来源状态后重试", result)
@@ -113,6 +145,7 @@ class DiscoveryService:
         alpha_papers: list[Paper] = []
         started = time.monotonic()
         arxiv_error = None
+        arxiv_unavailable = False
         try:
             if config.search_plan.get("version") == 2:
                 from ..profiles.profile_plan import branch_budgets
@@ -132,10 +165,11 @@ class DiscoveryService:
                         arxiv_papers.extend(replace(p, discovery_routes=list(dict.fromkeys(
                             [*p.discovery_routes, "base", f"base:{branch['id']}"]))) for p in batch[:limit])
                     except Exception as exc:
+                        arxiv_unavailable = _source_unavailable(exc)
                         failures.append(str(exc))
                         result.sources[f"arxiv:{branch['id']}"] = {"status": "failed", "count": 0, "limit": limit, "error": str(exc)}
                     result.sources[f"arxiv:{branch['id']}"]["seconds"] = round(time.monotonic() - started_branch, 3)
-                    if failures:
+                    if arxiv_unavailable:
                         # A provider failure has already exhausted its retries: skip remaining calls.
                         for remaining, cap in branches[branch_index + 1:]:
                             result.sources[f"arxiv:{remaining['id']}"] = {"status": "skipped", "count": 0, "limit": cap}
@@ -149,10 +183,13 @@ class DiscoveryService:
                 result.sources["arxiv"] = {"status": "ok", "count": len(arxiv_papers)}
         except Exception as exc:
             arxiv_error = exc
+            if config.search_plan.get("version") != 2:
+                arxiv_unavailable = True
             result.sources["arxiv"] = {"status": "failed", "error": str(exc), "count": 0}
         result.sources["arxiv"]["seconds"] = round(time.monotonic() - started, 3)
 
-        use_alpha = alpha_enabled(config) and (config.provider == "hybrid" or arxiv_error is not None)
+        incomplete_empty = result.sources["arxiv"]["status"] == "partial" and not arxiv_papers
+        use_alpha = alpha_enabled(config) and (config.provider == "hybrid" or arxiv_error is not None or incomplete_empty)
         result.sources["alphaxiv"] = {"status": "disabled" if not alpha_enabled(config) else "not_needed", "count": 0}
         if use_alpha:
             started = time.monotonic()
@@ -178,7 +215,7 @@ class DiscoveryService:
         # Independent supplemental calls preserve the full original retrieval pool.
         # Do not immediately retry a provider that has exhausted its base request.
         if interest.status == "ready":
-            if arxiv_error is None:
+            if not arxiv_unavailable:
                 started = time.monotonic()
                 try:
                     extra = self.arxiv.search(config.arxiv_categories, config.lookback_days,
@@ -211,31 +248,22 @@ class DiscoveryService:
         for batch, source, route in batches:
             for paper in batch:
                 aid = base_id(paper.arxiv_id)
-                if aid in merged:
-                    previous = merged[aid]
-                    # A complete cache returned by alphaXiv must not override
-                    # the official metadata from a later live arXiv request.
-                    prefer_live = source == "arxiv" and (
-                        "arxiv" not in previous.discovery_sources
-                        or previous.metadata_status != "complete"
-                        or (paper.version or 0) >= (previous.version or 0)
-                    )
-                    best = paper if prefer_live else previous
-                    merged[aid] = replace(best, arxiv_id=aid,
-                        discovery_sources=list(dict.fromkeys([*previous.discovery_sources, source])),
-                        discovery_routes=list(dict.fromkeys([*previous.discovery_routes, *paper.discovery_routes, route])))
-                else:
-                    cached = self.resolver.cached(aid, fresh_only=arxiv_error is None) if source == "alphaxiv" else None
-                    merged[aid] = replace(cached or paper, arxiv_id=aid,
-                                          discovery_sources=[source], discovery_routes=list(dict.fromkeys([*paper.discovery_routes, route])))
+                previous = merged.get(aid)
+                metadata = paper
+                if previous is None and source == "alphaxiv":
+                    metadata = self.resolver.cached(aid, fresh_only=not arxiv_unavailable) or paper
+                candidate = replace(metadata, arxiv_id=aid, discovery_sources=[source],
+                                    discovery_routes=list(dict.fromkeys([*paper.discovery_routes, route])))
+                merged[aid] = merge_candidate(previous, candidate) if previous else candidate
                 if source == "arxiv":
                     self.resolver.remember(merged[aid])
 
         result.merged_count = len(merged)
-        missing = [aid for aid, p in merged.items() if p.metadata_status != "complete" and aid not in excluded_ids]
+        missing = [aid for aid, p in merged.items() if aid not in excluded_ids and (
+            p.metadata_status != "complete" or (config.arxiv_categories and not (p.primary_category or p.categories)))]
         result.hydration = {"requested": len(missing), "completed": 0, "status": "not_needed"}
         # An exhausted arXiv request must not be retried once for every alphaXiv ID.
-        if missing and arxiv_error:
+        if missing and arxiv_unavailable:
             result.hydration["status"] = "deferred"
         elif missing:
             try:
@@ -258,9 +286,5 @@ class DiscoveryService:
                                                        discovery_routes=paper.discovery_routes), paper.discovery_sources)
                     recovered += 1
         result.hydration["cached_fallback"] = recovered
-        for paper in merged.values():
-            if paper.published and cutoff <= paper.published.date() <= now.date():
-                result.papers.append(paper)
-            else:
-                result.rejected_dates += 1
+        admit_candidates(config, result, merged.values(), now.date())
         return result

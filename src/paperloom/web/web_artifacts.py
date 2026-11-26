@@ -1,6 +1,8 @@
 """Safe local report presentation, including artifacts made by older releases."""
 from pathlib import Path
 import html
+import logging
+import re
 import stat
 
 from fastapi.responses import HTMLResponse
@@ -9,10 +11,33 @@ from starlette.concurrency import run_in_threadpool
 
 from ..reports.render import report_document
 from ..reports.markdown_rendering import ReportRenderError
+from ..reports.report_visits import ReportVisitStore
 from ..utils import read_json
 
 
 class ReportStaticFiles(StaticFiles):
+    def _record_open(self, path: str) -> None:
+        parts = Path(path).parts
+        # Only single-paper catalog reports participate, never weekly/overview pages.
+        if (len(parts) != 4 or parts[1] != 'reports'
+                or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', parts[0])):
+            return
+        metadata, info = self.lookup_path(Path(path).with_name('metadata.json').as_posix())
+        if not info or not stat.S_ISREG(info.st_mode):
+            return
+        try:
+            payload = read_json(Path(metadata), {}) or {}
+            if not isinstance(payload, dict):
+                return
+            paper = payload.get('paper') or {}
+            if not isinstance(paper, dict):
+                return
+            ReportVisitStore(Path(self.directory)).record(
+                str(paper.get('arxiv_id') or ''), Path(path).as_posix())
+        except (OSError, ValueError):
+            # A history write failure must not prevent reading the report.
+            logging.getLogger(__name__).warning('无法保存报告打开记录：%s', path, exc_info=True)
+
     def _report(self, path: str) -> str | None:
         # Use StaticFiles' containment and symlink checks for every source file.
         markdown_name = Path(path).with_suffix('.md').as_posix()
@@ -37,7 +62,8 @@ class ReportStaticFiles(StaticFiles):
         return report_document(Path(source).read_text(encoding='utf-8'),
                                str(payload.get('title') or paper.get('title') or Path(path).parent.name), arxiv_id,
                                profile_id=str(payload.get('profile_id') or ''), report_id=Path(path).as_posix(),
-                               catalog_arxiv_id=str(paper.get('arxiv_id') or ''))
+                               catalog_arxiv_id=str(paper.get('arxiv_id') or ''),
+                               image_root=Path(source).parent)
 
     def _task_result(self, path: str, kind: str) -> str | None:
         from bs4 import BeautifulSoup
@@ -58,7 +84,7 @@ class ReportStaticFiles(StaticFiles):
         return task_document(content, '版本追踪与同步', kind)
 
     async def get_response(self, path, scope):
-        if any(part.casefold() in {".reading", ".jobs", ".search", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
+        if any(part.casefold() in {".reading", ".jobs", ".search", ".report-visits", ".conference-cache", ".conference-search", "backups", "restored", "schedule-config.json", "schedule-state.json"} for part in Path(path).parts):
             from starlette.exceptions import HTTPException
             raise HTTPException(status_code=404)
         if Path(path).name == 'index.html' and Path(path).parts and Path(path).parts[0] == 'citations':
@@ -87,5 +113,11 @@ class ReportStaticFiles(StaticFiles):
                     f'<p>{html.escape(str(exc))}</p><p><a href="report.md">查看原始 Markdown</a></p></html>',
                     status_code=422, headers={'Cache-Control': 'no-cache'})
             if document is not None:
-                return HTMLResponse(document, headers={'Cache-Control': 'no-cache'})
+                response = HTMLResponse(document, headers={'Cache-Control': 'no-cache'})
+        if Path(path).name == 'report.html':
+            # HTML-only legacy reports must also reach us on repeated opens.
+            response.headers['Cache-Control'] = 'no-cache'
+        if (scope['method'] == 'GET' and Path(path).name == 'report.html'
+                and (200 <= response.status_code < 300 or response.status_code == 304)):
+            await run_in_threadpool(self._record_open, path)
         return response

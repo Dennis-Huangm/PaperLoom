@@ -1,7 +1,7 @@
 """A task-scoped, bounded conversation about missing literature."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -13,14 +13,23 @@ from bs4 import BeautifulSoup
 import httpx
 
 from .conference_scope import CONFERENCES
-from .discovery import eligible_publications
+from .discovery import admit_candidates
 from ..config import AppConfig
 from ..papers.models import Paper
-from ..papers.paper_data import base_id, matches
+from ..papers.paper_data import base_id, matches, merge_candidate
 from ..related_work.graph_source import BASE, GraphSource
 from ..runtime.jobs.task_runtime import task_checkpoint
 from ..runtime.model_access.settings import ARXIV_ID_RE
 from ..utils import extract_json_object
+
+
+@dataclass
+class SearchOutcome:
+    tool: str
+    query: str
+    found: list[tuple[str, int | None]] = field(default_factory=list)
+    error: str = ""
+    read_version: int | None = None
 
 
 class ActiveSearch:
@@ -32,6 +41,7 @@ class ActiveSearch:
         self.overview = overview
         self.remaining = 10 if overview else 4
         self.log: list[dict[str, Any]] = []
+        self.outcomes: list[SearchOutcome] = []
         self.papers: dict[str, Paper] = {}
         self.references: dict[str, list[str]] = {}
         for ref in references:
@@ -81,22 +91,18 @@ class ActiveSearch:
         if aid in self.references and not any(matches(paper, ref) for ref in self.references[aid]):
             return False
         existing = self.papers.get(aid)
-        if existing is None:
-            self.papers[aid] = paper
+        merged = merge_candidate(existing, paper) if existing else paper
+        if merged != existing:
+            self.papers[aid] = merged
             self.revision += 1
-        else:
-            extra = [pub for pub in paper.conference_publications if pub not in existing.conference_publications]
-            if extra:
-                self.papers[aid] = replace(existing, conference_publications=existing.conference_publications + extra)
-                self.revision += 1
         return True
 
-    def execute(self, request, *, limit, read=None):
+    def execute(self, request, *, limit, read=None, read_versions=None):
         """Spend at most limit actions, including duplicates, empty results and failures."""
         actions = request.get("actions") if isinstance(request, dict) else None
         if not isinstance(actions, list):
-            return False
-        attempted = False
+            return []
+        outcomes = []
         for action in actions[:min(self.remaining, limit)]:
             task_checkpoint()
             self.remaining -= 1
@@ -111,35 +117,44 @@ class ActiveSearch:
             passage = action.get("passage", "")
             passage = passage.strip()[:120] if tool == "read" and isinstance(passage, str) else ""
             key = (tool, query.casefold(), str(action.get("venue", "")), str(action.get("year", "")), passage.casefold())
+            version = (read_versions or {}).get(query) if tool == "read" else None
+            key = (*key, version)
             if key in self.seen:
                 continue
             self.seen.add(key)
-            attempted = True
+            outcome = SearchOutcome(tool, query, read_version=version)
+            outcomes.append(outcome)
+            self.outcomes.append(outcome)
             row: dict[str, Any] = {"tool": tool, "query": query, "reason": reason}
             self.log.append(row)
             try:
                 if tool == "read" and read:
                     if passage:
                         row["passage"] = passage
+                    row["version"] = version
                     row["result"] = read(query, passage)
                 elif tool == "web":
                     row["leads"] = self._web_leads(query)
                 else:
                     papers = self._lookup(tool, query, action)
-                    found = []
                     for paper in papers:
                         aid = base_id(paper.arxiv_id)
                         new = aid not in self.papers
+                        if tool == "conference":
+                            paper = replace(paper, discovery_sources=["conference"],
+                                            discovery_routes=list(dict.fromkeys([*paper.discovery_routes, "conference"])))
                         if not self.accept(paper):
                             continue
-                        found.append(aid)
+                        outcome.found.append((aid, paper.version))
                         if new:
                             self.paths[aid] = discovery_path(tool, query)
-                    row["found"] = found
+                    row["found"] = [aid for aid, _ in outcome.found]
+                    row["versions"] = dict(outcome.found)
             except Exception as exc:
-                row["error"] = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
+                outcome.error = (f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError)
                                 else type(exc).__name__)
-        return attempted
+                row["error"] = outcome.error
+        return outcomes
 
     def _lookup(self, tool, query, action):
         arxiv = self.clients.arxiv
@@ -216,39 +231,27 @@ def discovery_path(tool, query):
 
 def explore_daily(search: ActiveSearch, result, interest, excluded):
     scope = search.config.discovery
-    search.papers.update({base_id(p.arxiv_id): p for p in result.papers})
+    search.papers.update({base_id(p.arxiv_id): p for p in [*result.papers, *result.leads]})
     context = {"兴趣与条件": interest, "模式": scope.mode, "日期窗口天数": scope.lookback_days,
                "会议": scope.conferences, "会议年份": [scope.conference_year_from, scope.conference_year_to],
                "种子论文": scope.seed_papers, "目标篇数": scope.recommendation_count}
     while search.remaining:
-        before, first_row = search.revision, len(search.log)
+        before = search.revision
         inventory = search.inventory()
         context["已取得候选及线索"] = inventory[:150] + inventory[150:][-30:]
         request = search.plan("即使候选已够也检查重要路线或近期关注点是否遗漏。可从旧论文追查后续工作。"
                               "发现路径重复或进一步查找不太会改变名单时停止。", context)
-        if not search.execute(request, limit=2):
+        outcomes = search.execute(request, limit=2)
+        if not outcomes:
             break
-        rows = search.log[first_row:]
-        if search.revision == before and rows and all(row.get("found") for row in rows):
+        if search.revision == before and all(outcome.found for outcome in outcomes):
             break
-    today = datetime.now(timezone.utc).date()
-    cutoff = today - timedelta(days=scope.lookback_days)
-    if scope.mode != "latest":
-        for paper in result.papers:
-            pubs = eligible_publications(scope, search.papers[base_id(paper.arxiv_id)])
-            if pubs:
-                paper.conference_publications = pubs
-                if "conference" not in paper.discovery_sources:
-                    paper.discovery_sources.append("conference")
-    for aid in search.paths:
-        p = search.papers[aid]
+    candidates = []
+    for aid, paper in search.papers.items():
         if aid in excluded:
             continue
-        pubs = eligible_publications(scope, p) if scope.mode != "latest" else []
-        recent = (scope.mode != "conference" and p.published and cutoff <= p.published.date() <= today
-                  and (not scope.arxiv_categories or set(scope.arxiv_categories).intersection(p.categories)))
-        if recent or pubs:
-            result.papers.append(replace(p, discovery_routes=["active"],
-                discovery_sources=(["arxiv"] if recent else []) + (["conference"] if pubs else []),
-                conference_publications=pubs))
+        if aid in search.paths:
+            paper = replace(paper, discovery_routes=list(dict.fromkeys([*paper.discovery_routes, "active"])))
+        candidates.append(paper)
+    admit_candidates(scope, result, candidates, datetime.now(timezone.utc).date())
     result.merged_count = max(result.merged_count, len(result.papers))

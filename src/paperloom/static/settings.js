@@ -169,6 +169,29 @@ zoteroConnect?.addEventListener('click', async () => {
   }
 });
 
+const provider = document.querySelector('#discovery-provider');
+const providerHelp = document.querySelector('#provider-help');
+const alphaEnabled = document.querySelector('[name="alphaxiv_fallback_enabled"]');
+const updateProviderHelp = () => {
+  if (!provider || !providerHelp) return;
+  providerHelp.textContent = provider.value !== 'arxiv' && alphaEnabled && !alphaEnabled.checked
+    ? providerHelp.dataset.offHelp : provider.selectedOptions[0].dataset.help;
+};
+provider?.addEventListener('change', updateProviderHelp);
+alphaEnabled?.addEventListener('change', updateProviderHelp);
+window.addEventListener('pageshow', updateProviderHelp);
+document.querySelector('#discovery-mode')?.addEventListener('change', (event) => {
+  document.querySelector('#conference-options').open = event.target.value !== 'latest';
+});
+// Reveal a folded group before native form validation focuses its invalid field.
+document.querySelector('#runtime-settings-form')?.addEventListener('invalid', (event) => {
+  let details = event.target.closest('details');
+  while (details) {
+    details.open = true;
+    details = details.parentElement.closest('details');
+  }
+}, true);
+
 const settingsLinks = [...document.querySelectorAll('.settings-section-nav a')];
 if (settingsLinks.length) {
   const nav = document.querySelector('.settings-section-nav');
@@ -192,13 +215,26 @@ if (settingsLinks.length) {
     activateLink(link);
   }));
   const sections = settingsLinks.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
-  const observer = new IntersectionObserver((entries) => {
-    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-    if (!visible) return;
-    const activeLink = settingsLinks.find((link) => link.getAttribute('href') === `#${visible.target.id}`);
-    if (activeLink) activateLink(activeLink);
-  }, {rootMargin: '-15% 0px -70% 0px', threshold: [0, .2, .5]});
-  sections.forEach((section) => observer.observe(section));
+  const toolbar = nav.closest('.settings-toolbar');
+  let scheduled = false;
+  const updateSection = () => {
+    scheduled = false;
+    const boundary = toolbar.getBoundingClientRect().bottom + 28;
+    const current = sections.filter((section) => section.getBoundingClientRect().top <= boundary).pop() || sections[0];
+    const link = settingsLinks.find((item) => item.hash === '#' + current.id);
+    if (link && !link.hasAttribute('aria-current')) activateLink(link);
+  };
+  const scheduleUpdate = () => {
+    if (!scheduled) {
+      scheduled = true;
+      requestAnimationFrame(updateSection);
+    }
+  };
+  window.addEventListener('scroll', scheduleUpdate, {passive: true});
+  window.addEventListener('resize', scheduleUpdate);
+  window.addEventListener('pageshow', scheduleUpdate);
+  document.querySelector('.settings-content').addEventListener('toggle', scheduleUpdate, true);
+
 }
 
 })();

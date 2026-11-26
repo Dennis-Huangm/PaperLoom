@@ -53,6 +53,14 @@
 @keyframes reading-pulse{50%{opacity:.45}}@media(prefers-reduced-motion:reduce){.reading-chat *{animation:none!important;transition:none!important}}
 @media print{#report-reading,.reading-tabs,.reading-open{display:none!important}}
 .reading-compose textarea:focus{box-shadow:none;border:0}.reading-chat .reading-settings-dialog:not([open]){display:none}
+/* The report sidebar keeps its own reading size, independent of report typography. */
+#report-reading .reading-message-content,#report-reading .reading-compose textarea{font-size:var(--reading-sidebar-font-size,.8125rem)}
+#report-reading .reading-message-content :is(table,blockquote,code){font-size:inherit}
+#report-reading .reading-message-content pre{font-size:.92em}
+.reading-display-settings{padding:0 0 16px;margin-bottom:16px;border-bottom:1px solid var(--rc-line);font-size:.75rem}
+.reading-display-settings label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.reading-display-settings select{width:150px}
+.reading-display-settings p{margin:8px 0 0;color:var(--rc-muted);line-height:1.6}
 /* Independent full-height reading dock; separate from the report catalog. */
 #report-reading .reading-toolbar #report-papers-toggle{position:static;border-radius:6px;padding:5px 8px;box-shadow:none;white-space:nowrap}
 #report-reading.reading-dock .reading-header{flex-wrap:wrap}

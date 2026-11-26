@@ -6,7 +6,7 @@ import os
 import re
 from paperloom.resources import PACKAGE_ROOT
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 import nh3
 from bs4 import BeautifulSoup
@@ -158,12 +158,31 @@ def _readable_draft(source):
     return str(tree), '<ul>' + ''.join(entries) + '</ul>'
 
 
+def _version_local_images(tree: BeautifulSoup, root: Path) -> None:
+    root = root.resolve()
+    for image in tree.find_all('img', src=True):
+        try:
+            source = urlsplit(image['src'])
+            if source.scheme or source.netloc or source.path.startswith(('/', '\\')):
+                continue
+            path = (root / unquote(source.path)).resolve()
+            if not path.is_relative_to(root):
+                continue
+            version = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        except (OSError, ValueError, RuntimeError):
+            continue
+        query = [(key, value) for key, value in parse_qsl(source.query, keep_blank_values=True) if key != 'v']
+        query.append(('v', version))
+        image['src'] = urlunsplit(source._replace(query=urlencode(query)))
+
+
 def report_document(
     markdown_text: str,
     title: str,
     arxiv_id: str = "",
     *, profile_id: str = "", report_id: str = "", asset_base: str = "/static",
     catalog_arxiv_id: str = "",
+    image_root: Path | None = None,
 ) -> str:
     try:
         markdown_text = compact_report(markdown_text)
@@ -181,6 +200,8 @@ def report_document(
     if (front_table is not None and not front_table.find_previous('h2')
             and [th.get_text(strip=True) for th in front_table.select('thead th')] == ['字段', '内容']):
         front_table['class'] = [*front_table.get('class', []), 'report-metadata']
+    if image_root is not None:
+        _version_local_images(tree, image_root)
     body = str(tree)
     escaped_title = html.escape(title)
     assets = html.escape(asset_base.rstrip("/"), quote=True)
@@ -206,6 +227,16 @@ def report_document(
 <header class="report-topbar"><a class="report-brand" href="/reports"><span><i class="fas fa-book-open" aria-hidden="true"></i></span><span>PaperLoom</span></a>
 <div class="report-actions"><a href="/reports"><i class="fas fa-arrow-left" aria-hidden="true"></i>返回报告库</a>{library_action}<div class="report-font-preference" data-font-preference="report" hidden>
 <label for="report-font-size">正文字号</label><select id="report-font-size"></select><button type="button" aria-label="恢复默认正文字号" title="恢复默认正文字号"><i class="fas fa-undo" aria-hidden="true"></i></button>
+</div><div class="report-width-preference" data-display-preference="reportWidth" hidden>
+<button type="button" class="report-width-toggle" popovertarget="report-width-panel"><i class="fas fa-arrows-alt-h" aria-hidden="true"></i>阅读宽度<i class="fas fa-chevron-down" aria-hidden="true"></i></button>
+<div id="report-width-panel" class="report-width-panel" popover>
+<div class="report-width-heading"><label for="report-reading-width">阅读宽度</label>
+<output for="report-reading-width" aria-hidden="true"></output>
+</div>
+<div class="report-width-controls">
+<input id="report-reading-width" type="range" autofocus>
+<div class="report-width-presets" role="group" aria-label="阅读宽度预设"></div>
+</div></div>
 </div><button type="button" id="report-print"><i class="fas fa-print" aria-hidden="true"></i>打印</button><button class="toc-toggle" type="button" aria-label="展开目录" aria-expanded="false"><i class="fas fa-list" aria-hidden="true"></i>目录</button><button type="button" class="reading-open" aria-controls="report-reading" aria-expanded="false" disabled>阅读对话 / 提问选区</button></div></header>
 <p id="report-action-message" role="status"></p>
 <button id="report-toc-toggle" class="report-nav-toggle" type="button" aria-controls="report-toc-sidebar" aria-expanded="false" hidden><i class="fas fa-list" aria-hidden="true"></i> 目录</button>
@@ -235,7 +266,8 @@ def render_report(markdown_text: str, destination: Path, title: str, arxiv_id: s
     # HTTP report views are freshly rendered by ReportStaticFiles using /static.
     atomic_write_text(destination, report_document(markdown_text, title, arxiv_id,
                                                   profile_id=profile_id, report_id=report_id,
-                                                  asset_base=_local_asset_base(destination)))
+                                                  asset_base=_local_asset_base(destination),
+                                                  image_root=destination.parent))
 
 
 

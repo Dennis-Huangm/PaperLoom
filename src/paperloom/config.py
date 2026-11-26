@@ -18,7 +18,7 @@ class DiscoveryConfig:
     openreview_username_env: str = "OPENREVIEW_USERNAME"
     openreview_password_env: str = "OPENREVIEW_PASSWORD"
     # auto preserves legacy fallback behavior; hybrid actively queries both sources.
-    provider: str = "auto"
+    provider: str = "hybrid"
     # Historical field name retained for config compatibility; enables alphaXiv in both modes.
     alphaxiv_fallback_enabled: bool = True
     alphaxiv_endpoint: str = "https://api.alphaxiv.org/mcp/v1"
@@ -79,8 +79,8 @@ class LLMConfig:
     def __post_init__(self) -> None:
         if not math.isfinite(self.request_timeout_seconds) or self.request_timeout_seconds <= 0:
             raise ValueError("模型请求读取超时必须是正的有限秒数")
-        if type(self.analysis_workers) is not int or not 1 <= self.analysis_workers <= 4:
-            raise ValueError("报告分析并发数必须是 1 到 4 之间的整数")
+        if type(self.analysis_workers) is not int or self.analysis_workers < 1:
+            raise ValueError("报告分析并发数必须是正整数")
 
 
 @dataclass(slots=True)

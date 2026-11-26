@@ -39,6 +39,7 @@ def test_application_asset_urls_change_with_content(tmp_path, monkeypatch):
 @pytest.mark.parametrize(('route', 'script', 'other'), [
     ('/settings', 'settings.js', 'conferences.js'),
     ('/conferences', 'conferences.js', 'settings.js'),
+    ('/reports', 'reports.js', 'settings.js'),
 ])
 def test_page_scripts_are_scoped_and_content_versioned(tmp_path, monkeypatch, route, script, other):
     config = tmp_path / 'config.yaml'

@@ -9,6 +9,7 @@ import threading
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...config import load_config
+from ...profiles.profiles import ProfileManager
 from .job_requests import capture_request
 from ...papers.reading_state import _locked
 from ...utils import read_json, write_json
@@ -63,6 +64,7 @@ class ProfileScheduler:
     def __init__(self, config_path: Path, output_root: Path, jobs):
         self.config_path = config_path.resolve()
         self.project = self.config_path.parent
+        self.profiles = ProfileManager(self.project)
         self.output = output_root.resolve()
         self.config_file = self.output / "schedule-config.json"
         self.state_file = self.output / "schedule-state.json"
@@ -100,12 +102,29 @@ class ProfileScheduler:
         return marker is not None and not marker.get("scheduling_confirmed", False)
 
     def save_profile(self, profile_id, spec, *, now=None):
-        load_config(self.config_path, profile_id=profile_id)
         spec = {**validate(spec), "effective_from": checked_now(now).isoformat()}
         with _locked(self.lock_file):
+            load_config(self.config_path, profile_id=profile_id)
             settings = self.settings()
             settings["profiles"][profile_id] = spec
             write_json(self.config_file, settings)
+
+    def delete_profile(self, profile_id: str) -> None:
+        with _locked(self.lock_file), self.jobs.idle_profile(profile_id):
+            self.profiles.delete_saved(profile_id)
+
+    def restore_profile(self, profile_id: str) -> None:
+        with _locked(self.lock_file):
+            if not self.profiles.is_deleted(profile_id):
+                raise KeyError(profile_id)
+            settings = self.settings()
+            plan = settings["profiles"].get(profile_id)
+            if plan is not None and not isinstance(plan, dict):
+                raise ValueError("该方向的调度配置无效，请检查后重试")
+            if plan is not None and plan.get("enabled") is not False:
+                plan["enabled"] = False
+                write_json(self.config_file, settings)
+            self.profiles.restore_saved(profile_id)
 
     def set_enabled(self, enabled: bool, *, now=None):
         if type(enabled) is not bool:
@@ -144,12 +163,16 @@ class ProfileScheduler:
                 if self.state_file.exists():
                     self._save_state(state)
                 return submitted
+            deleted = self.profiles.deleted_ids()
             for profile_id, saved in settings["profiles"].items():
                 entry = None
                 key = None
                 if self.stop_event.is_set():
                     break
-                # One invalid/deleted profile must not block the other directions.
+                if profile_id in deleted:
+                    state.get("errors", {}).pop(profile_id, None)
+                    continue
+                # One invalid plan must not block the other directions.
                 try:
                     spec = validate(saved)
                     state.setdefault("errors", {}).pop(profile_id, None)
@@ -221,8 +244,11 @@ class ProfileScheduler:
         with _locked(self.lock_file):
             settings, state = self.settings(), self.state()
             self._reconcile(state)
+            deleted = self.profiles.deleted_ids()
         rows = []
         for profile_id, saved in settings["profiles"].items():
+            if profile_id in deleted:
+                continue
             row = {"profile_id": profile_id, **saved, "next_run": ""}
             try:
                 spec = validate(saved)
@@ -244,7 +270,8 @@ class ProfileScheduler:
             rows.append(row)
         history = sorted(state["occurrences"].values(), key=lambda item: (item["date"], item.get("scheduled_at", "")), reverse=True)[:100]
         return {"enabled": settings["enabled"], "restored_paused": self.restore_paused(), "plans": rows,
-                "history": history, "errors": state.get("errors", {}), "last_error": self.last_error}
+                "history": history, "errors": {key: value for key, value in state.get("errors", {}).items()
+                                               if key not in deleted}, "last_error": self.last_error}
 
     def start(self):
         def poll():

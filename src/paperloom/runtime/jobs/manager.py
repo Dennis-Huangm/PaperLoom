@@ -85,6 +85,7 @@ class BackgroundJob:
     retry_job_id: str = ""
     submitted_detail: str = ""
     report_progress: dict = field(default_factory=dict)
+    paper_title: str = ""
 
 
 class _JobThreads:
@@ -131,7 +132,8 @@ class JobManager:
     available to internal callers that need a bounded queue.
     """
 
-    def __init__(self, output_root: Path, max_parallel: int | None = None) -> None:
+    def __init__(self, output_root: Path, max_parallel: int | None = None, *,
+                 profile_is_deleted: Callable[[str], bool] | None = None) -> None:
         self.output_root = output_root.resolve()
         self.store = JobStore(self.output_root)
         self.executor = _JobThreads() if max_parallel is None else ThreadPoolExecutor(
@@ -142,6 +144,7 @@ class JobManager:
         self.active_count = 0
         self.max_parallel = self._bounded_parallelism(max_parallel) if max_parallel is not None else None
         self.lock = threading.RLock()
+        self.profile_is_deleted = profile_is_deleted
         self.identities: dict[str, str] = {}
         self.cancel_events: dict[str, threading.Event] = {}
         self.closed = False
@@ -161,6 +164,12 @@ class JobManager:
 
     def _save(self, job):
         self.store.save(self._record(job))
+
+    @staticmethod
+    def _paper_title(checkpoint: dict) -> str:
+        paper = checkpoint.get("paper")
+        title = paper.get("title") if isinstance(paper, dict) else None
+        return " ".join(title.split()) if isinstance(title, str) else ""
 
     @staticmethod
     def _dismiss_content_warning(job):
@@ -208,9 +217,11 @@ class JobManager:
             self.identities[job.id] = value["identity"]
             self.requests[job.id] = value.get("request")
             self.checkpoints[job.id] = value.get("checkpoint") or {}
+            if job.kind == "report":
+                job.paper_title = self._paper_title(self.checkpoints[job.id])
             self.cancel_events[job.id] = threading.Event()
             job.recoverable = bool(self.requests[job.id]) and job.kind in RECOVERABLE
-            job.recovery_note = recovery_note(job.kind)
+            job.recovery_note = recovery_note(job.kind, self.requests[job.id])
             if self._dismiss_content_warning(job):
                 self._save(job)
             pdf_failure = self._pdf_failure(job)
@@ -240,6 +251,8 @@ class JobManager:
                 self.checkpoints[job_id][key] = copy.deepcopy(value)
                 if key == "report_progress":
                     self.jobs[job_id].report_progress = copy.deepcopy(value)
+                elif key == "paper":
+                    self.jobs[job_id].paper_title = self._paper_title(self.checkpoints[job_id])
                 self._save(self.jobs[job_id])
 
     @staticmethod
@@ -258,6 +271,8 @@ class JobManager:
         with self.lock:
             if self.closed:
                 raise RuntimeError("任务队列已关闭")
+            if self.profile_is_deleted and self.profile_is_deleted(profile_id):
+                raise ValueError("研究方向已删除，请先恢复再提交任务")
             if request:
                 config = restore_config(request, self.output_root)
                 if config.profile_id != profile_id or request["kind"] != kind:
@@ -283,9 +298,10 @@ class JobManager:
                 detail=f"排队中 · {detail}",
                 profile_id=profile_id,
                 recoverable=bool(request) and kind in RECOVERABLE,
-                recovery_note=recovery_note(kind), retry_of=retry_of,
+                recovery_note=recovery_note(kind, request), retry_of=retry_of,
                 submitted_detail=detail,
                 report_progress=copy.deepcopy((checkpoint or {}).get("report_progress", {})),
+                paper_title=self._paper_title(checkpoint or {}) if kind == "report" else "",
             )
             # Persist before dispatch. A failed write must not start side effects.
             self.store.save({"version": 1, "job": asdict(job), "identity": identity,
@@ -502,6 +518,15 @@ class JobManager:
         with self.lock:
             return any(job.kind == kind and job.profile_id == profile_id
                        and job.status in {"queued", "running", "cancelling"} for job in self.jobs.values())
+
+    @contextmanager
+    def idle_profile(self, profile_id: str):
+        """Keep submissions out while an idle profile is removed."""
+        with self.lock:
+            if any(job.profile_id == profile_id and job.status in {"queued", "running", "cancelling"}
+                   for job in self.jobs.values()):
+                raise ValueError("该方向还有排队或运行中的任务，请等待任务结束或取消后再删除")
+            yield
 
     def active_report_for(self, arxiv_id: str) -> bool:
         with self.lock:

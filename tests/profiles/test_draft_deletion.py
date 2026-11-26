@@ -8,13 +8,60 @@ from paperloom.profiles.profiles import ProfileManager, DraftConflict
 from tests.profiles.test_profile_drafts import workspace
 
 
-def test_delete_restore_preserve_formal_profile_and_prevent_stale_resurrection(tmp_path):
+def test_direction_list_removes_legacy_activated_draft(workspace):
+    client, _, root = workspace
+    manager = ProfileManager(root)
+    draft = new_draft(AppConfig(), 'legacy', 'Legacy', ['SVG'], [], [], 'SVG', {})
+    draft['activated_revision'] = 1
+    manager.save_draft(draft)
+    saved = {key: value for key, value in draft.items() if key != 'activated_revision'}
+    saved['name'] = 'Edited after activation'
+    manager.save(saved)
+    active = manager.active_id()
+
+    page = client.get('/profiles')
+    assert '/profiles/legacy/edit' in page.text
+    assert '/profiles/drafts/legacy' not in page.text
+    assert not (manager.root / 'drafts' / 'legacy.yaml').exists()
+    assert manager.deleted_drafts() == []
+    assert manager.get('legacy') == saved
+    assert manager.active_id() == active
+
+
+def test_retry_activation_completes_an_interrupted_save(tmp_path, monkeypatch):
     manager = ProfileManager(tmp_path)
     draft = new_draft(AppConfig(), 'svg', 'SVG', ['SVG'], [], [], 'SVG', {})
     manager.save_draft(draft)
-    manager.activate_draft('svg', 1)
-    formal = manager.get('svg')
-    manager.delete_draft('svg', 1)
+
+    def interrupt(_profile_id):
+        raise OSError('active profile could not be updated')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(manager, 'activate', interrupt)
+        with pytest.raises(OSError):
+            manager.activate_draft('svg', 1)
+
+    path = manager.root / 'drafts' / 'svg.yaml'
+    assert path.exists()
+    saved = manager.get('svg')
+    saved['name'] = 'Edited after saving'
+    manager.save(saved)
+    assert manager.activate_draft('svg', 1) == saved
+    assert manager.active_id() == 'svg'
+    assert not path.exists()
+
+
+def test_delete_restore_preserve_formal_profile_and_prevent_stale_resurrection(tmp_path):
+    manager = ProfileManager(tmp_path)
+    draft = new_draft(AppConfig(), 'svg', 'SVG', ['SVG'], [], [], 'SVG', {})
+    formal = deepcopy(draft)
+    # Older installations could continue editing a draft after enabling it.
+    draft.update(revision=2, activated_revision=1)
+    manager.save_draft(draft)
+    manager.save(formal)
+    manager.activate('svg')
+    assert manager.drafts() == [draft]
+    manager.delete_draft('svg', 2)
     assert manager.drafts() == []
     assert manager.active_id() == 'svg'
     assert manager.get('svg') == formal
@@ -25,16 +72,16 @@ def test_delete_restore_preserve_formal_profile_and_prevent_stale_resurrection(t
         manager.save_draft(deepcopy(draft))
     manager.save_preview('svg', {'revision': 1, 'status': 'ok'})
     assert manager.drafts() == []
-    restored = manager.restore_draft('svg', 1)
-    assert restored['revision'] == 2
+    restored = manager.restore_draft('svg', 2)
+    assert restored['revision'] == 3
     assert manager.deleted_drafts() == []
     assert restored['plan'] == draft['plan']
     assert manager.get('svg') == formal
     with pytest.raises(DraftConflict):
-        manager.save_draft(deepcopy(draft), expected_revision=1)
+        manager.save_draft(deepcopy(draft), expected_revision=2)
     with pytest.raises(DraftConflict):
-        manager.delete_draft('svg', 1)
-    manager.delete_draft('svg', 2)
+        manager.delete_draft('svg', 2)
+    manager.delete_draft('svg', 3)
     assert manager.unique_id('svg') == 'svg-2'
     with pytest.raises(ValueError):
         manager.restore_draft('../svg', 2)
@@ -66,10 +113,11 @@ def test_clear_deleted_drafts_preserves_live_data_and_blocks_stale_writers(tmp_p
     manager = ProfileManager(tmp_path)
     deleted = new_draft(AppConfig(), 'discarded', 'Discarded', ['SVG'], [], [], 'SVG', {})
     live = new_draft(AppConfig(), 'live', 'Live', ['SVG'], [], [], 'SVG', {})
+    formal = new_draft(AppConfig(), 'svg', 'SVG', ['SVG'], [], [], 'SVG', {})
+    manager.save(formal)
+    manager.activate('svg')
     manager.save_draft(deleted)
     manager.save_draft(live)
-    manager.activate_draft('discarded', 1)
-    formal = manager.get('discarded')
     manager.delete_draft('discarded', 1)
     second = new_draft(AppConfig(), 'second', 'Second', ['SVG'], [], [], 'SVG', {})
     manager.save_draft(second)
@@ -82,8 +130,8 @@ def test_clear_deleted_drafts_preserves_live_data_and_blocks_stale_writers(tmp_p
     assert manager.clear_deleted_drafts() == 2
     assert manager.deleted_drafts() == []
     assert manager.drafts() == [live]
-    assert manager.get('discarded') == formal
-    assert manager.active_id() == 'discarded'
+    assert manager.get('svg') == formal
+    assert manager.active_id() == 'svg'
     assert unrelated.read_text(encoding='utf-8') == 'keep'
     assert report.read_text(encoding='utf-8') == 'keep report'
     assert manager.clear_deleted_drafts() == 0

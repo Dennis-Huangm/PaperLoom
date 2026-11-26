@@ -70,6 +70,8 @@
       const link = document.createElement('a');
       link.className = 'report-paper-link';
       link.href = entry.report_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       const current = panel.dataset.arxivId
         ? entry.arxiv_id === panel.dataset.arxivId.replace(/v\d+$/, '')
         : entry.report_id === panel.dataset.reportId;

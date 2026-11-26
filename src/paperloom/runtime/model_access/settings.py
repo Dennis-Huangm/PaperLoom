@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
-from ...config import AppConfig, CitationConfig
+from ...config import AppConfig, CitationConfig, DiscoveryConfig
 from ...discovery.conference_scope import scope_from_form
 from ...utils import atomic_write_text
 
@@ -59,7 +59,7 @@ def _env_name(form: Any, name: str) -> str:
 
 
 def build_config_update(form: Any) -> dict[str, Any]:
-    provider = str(form.get("discovery_provider", "auto")).strip()
+    provider = str(form.get("discovery_provider", DiscoveryConfig().provider)).strip()
     if provider not in {"auto", "arxiv", "hybrid"}:
         raise ValueError("无效的检索来源模式")
     alphaxiv_endpoint = str(

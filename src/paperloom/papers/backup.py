@@ -27,8 +27,10 @@ from ..utils import write_json, read_json
 MAX_FILES = 100000
 MAX_TOTAL = 20 * 1024**3
 MAX_FILE = 2 * 1024**3
-DATA_DIRS = {"papers", "version-batches", "versions", "weekly", "comparisons", "citations", "metadata-cache"}
+DATA_DIRS = {"papers", "version-batches", "versions", "weekly", "comparisons", "citations",
+             "metadata-cache", "direction-overviews"}
 EXTENSIONS = {".json", ".md", ".html", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".svg"}
+PROFILE_PATH = re.compile(r"project/profiles/(?:(deleted-profiles)/)?([a-z0-9][a-z0-9-]{0,62}\.yaml)")
 
 
 def sha(path: Path) -> str:
@@ -54,8 +56,8 @@ def allowed(value: str) -> bool:
     parts = safe_name(value).parts
     if value in {"project/config.yaml", "project/.env", "project/profiles/active.txt"}:
         return True
-    if len(parts) == 3 and parts[:2] == ("project", "profiles"):
-        return bool(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}\.yaml", parts[2]))
+    if PROFILE_PATH.fullmatch(value):
+        return True
     if parts[0] != "data" or len(parts) < 2:
         return False
     data = parts[1:]
@@ -132,7 +134,7 @@ class BackupService:
             if not allowed(key):
                 continue
             parts = PurePosixPath(name).parts
-            artifact = ("reports" in parts or parts[0] in {"weekly", "comparisons", "citations", "versions"}
+            artifact = ("reports" in parts or parts[0] in {"weekly", "comparisons", "citations", "versions", "direction-overviews"}
                         or path.suffix.lower() not in {".json", ".pdf"})
             if path.suffix.lower() == ".pdf":
                 if not pdfs:
@@ -199,6 +201,9 @@ class BackupService:
                     raise ValueError("备份文件与清单不一致")
                 if "project/config.yaml" not in names:
                     raise ValueError("备份缺少配置文件")
+                profile_files = [match[2] for name in names if (match := PROFILE_PATH.fullmatch(name))]
+                if len(set(profile_files)) != len(profile_files):
+                    raise ValueError("备份同时包含同一方向的已保存和已删除记录")
                 for record in records:
                     name = record["path"]
                     if not allowed(name):
@@ -234,6 +239,16 @@ class BackupService:
     @staticmethod
     def _mapped(name: str) -> str:
         return name.removeprefix("project/") if name.startswith("project/") else "run/" + name.removeprefix("data/")
+
+    @staticmethod
+    def _other_profile_path(name: str, target: Path) -> Path | None:
+        profile = PROFILE_PATH.fullmatch(name)
+        if not profile:
+            return None
+        folder = target / "profiles"
+        if profile[1] is None:
+            folder /= "deleted-profiles"
+        return contained(folder / profile[2], target)
 
     def _bytes(self, archive, record, manifest, target):
         name = record["path"]
@@ -290,7 +305,13 @@ class BackupService:
                 existing = sha(path) if path.is_file() else None
                 if path.exists() and not path.is_file():
                     raise ValueError("恢复文件与已有目录冲突")
-                action = "新增" if existing is None else "相同" if existing == fingerprint else "保留" if mode == "keep" else "替换"
+                other_profile = self._other_profile_path(record["path"], target)
+                if other_profile is not None and other_profile.exists():
+                    if not other_profile.is_file():
+                        raise ValueError("恢复方向与已有目录冲突")
+                    action = "保留" if mode == "keep" else "替换"
+                else:
+                    action = "新增" if existing is None else "相同" if existing == fingerprint else "保留" if mode == "keep" else "替换"
                 files.append({"path": mapped, "action": action})
         archive_hash = sha(archive_path)
         current_hash = tree_hash(target)
@@ -329,6 +350,9 @@ class BackupService:
                         if actions[mapped] in {"相同", "保留"}:
                             continue
                         destination = stage / mapped
+                        other_profile = self._other_profile_path(record["path"], stage)
+                        if other_profile is not None:
+                            other_profile.unlink(missing_ok=True)
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         if self._transform(record["path"]):
                             destination.write_bytes(self._bytes(archive, record, manifest, target))

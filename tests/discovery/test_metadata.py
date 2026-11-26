@@ -131,3 +131,45 @@ def test_semantic_scholar_uses_shared_rate_limit(monkeypatch) -> None:
     verifier._semantic_scholar(_paper())
 
     assert slots == [("semantic-scholar", 1.1)]
+
+
+def test_author_identity_beats_same_title_and_more_citations():
+    import httpx
+    paper = _paper()
+    paper.authors = [Author('Diederik P Kingma'), Author('Max Welling')]
+    def candidate(names):
+        return dict(title=paper.title, authorships=[{'author': {'display_name': n}} for n in names])
+    wrong = candidate(['Other Author'])
+    right = candidate(['Diederik P. Kingma', 'Max Welling'])
+    service = MetadataVerifier(MetadataConfig())
+    service.client.close()
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={'results':[wrong, right]}))) as client:
+        service.client = client
+        assert service._openalex(paper) == right
+        paper.authors = [Author('Another Person')]
+        assert service._openalex(paper) is None
+
+
+def test_conflicting_formal_dates_stay_pending_without_publisher_confirmation():
+    source = _paper()
+    result = VerifiedMetadata(title=source.title, venue='Conference', publication_date='2025-01-01')
+    verifier = MetadataVerifier(MetadataConfig())
+    try:
+        verifier._merge_semantic(result, {'title': source.title, 'venue': 'Conference',
+                                         'publicationDate': '2025-10-27'}, source)
+    finally:
+        verifier.client.close()
+    assert result.publication_date is None and result.venue == 'Conference'
+    assert any('日期来源冲突' in note for note in result.conflicts)
+
+
+def test_semantic_record_for_different_arxiv_id_is_discarded_entirely():
+    source = _paper()
+    result = VerifiedMetadata(title=source.title)
+    verifier = MetadataVerifier(MetadataConfig())
+    try:
+        verifier._merge_semantic(result, {'title': source.title, 'venue': 'Other paper',
+                                         'externalIds': {'ArXiv': '1312.6114'}}, source)
+    finally:
+        verifier.client.close()
+    assert not result.venue and not result.sources

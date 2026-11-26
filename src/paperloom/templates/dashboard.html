@@ -134,7 +134,7 @@
     <article class="paper-inspector" aria-live="polite">
       <header class="inspector-head">
         <div><span id="inspector-position">1 / {{ recommendations|length }}</span><strong id="inspector-title">{{ selected.paper.title }}</strong></div>
-        <a id="inspector-arxiv" href="{{ selected.paper.abs_url }}" rel="noreferrer" aria-label="在 arXiv 打开"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
+        <a id="inspector-arxiv" href="{{ selected.paper.abs_url }}" aria-label="在 arXiv 打开" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>
       </header>
 
       <div class="inspector-scroll">
@@ -192,11 +192,11 @@
           <input type="hidden" name="source_date" value="{{ selected_date }}">
           <button class="button primary" type="submit"><i class="far fa-file-alt" aria-hidden="true"></i><span>生成完整报告</span></button>
         </form>
-        <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" {% if not selected.has_report %}hidden{% endif %}><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
+        <a id="inspector-report-open" class="button secondary" href="{{ selected.report_url or '#' }}" {% if not selected.has_report %}hidden{% endif %} target="_blank" rel="noopener noreferrer"><i class="far fa-folder-open" aria-hidden="true"></i>打开报告</a>
         <a id="inspector-collection" class="button secondary" href="/collection?arxiv_id={{ (selected.paper.arxiv_id ~ ('v' ~ selected.paper.version if selected.paper.version else ''))|urlencode }}&amp;origin=recommendation&amp;source_date={{ selected_date }}"><i class="fas fa-exchange-alt" aria-hidden="true"></i>收录与同步</a>
         <a id="inspector-reading" class="button secondary" {% if selected.has_report %}href="/reading?arxiv_id={{ (selected.paper.arxiv_id ~ ('v' ~ selected.paper.version if selected.paper.version else ''))|urlencode }}&amp;origin=recommendation&amp;source_date={{ selected_date }}"{% else %}aria-disabled="true" title="生成报告后可阅读对话"{% endif %}><i class="far fa-comments" aria-hidden="true"></i>阅读对话</a>
         <span id="inspector-collection-links">{% for target, url in collection_links(selected.paper.arxiv_id).items() if target != 'obsidian' or selected.has_report %}<a class="button secondary" href="{{ url }}"><i class="{{ 'fas fa-gem' if target == 'obsidian' else 'fas fa-book' }}" aria-hidden="true"></i>打开 {{ 'Obsidian' if target == 'obsidian' else 'Zotero' }}</a>{% endfor %}</span>
-        <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" rel="noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
+        <a id="inspector-pdf" class="button secondary" href="{{ selected.paper.pdf_url }}" target="_blank" rel="noopener noreferrer"><i class="far fa-file-pdf" aria-hidden="true"></i>打开 PDF</a>
       </footer>
     </article>
   </section>

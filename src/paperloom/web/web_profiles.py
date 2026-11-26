@@ -138,6 +138,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
             if d.get("search_plan", {}).get("version") == 2:
                 draft = copy.deepcopy(old)
                 draft.update(id=draft_id, name=name, revision=1)
+                draft.pop("activated_revision", None)
                 draft.pop("preview", None)
                 draft.pop("reference_check", None)
             else:
@@ -211,7 +212,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
     async def mutate_draft(request: Request, draft_id: str, action: str):
         if action not in DRAFT_ACTIONS:
             raise HTTPException(404, "未知草稿操作")
-        draft = {} if action == "restore" else get_draft(draft_id)
+        draft = {} if action in {"restore", "activate"} else get_draft(draft_id)
         try:
             data = await mutation_data(request, draft, action)
             workflow = ProfileDraftWorkflow(profiles, current_config(), jobs)
@@ -229,7 +230,7 @@ def register_profile_routes(app, profiles, current_config, templates, context, j
         if action == "delete":
             destination = "/profiles#deleted-drafts"
         elif action == "activate":
-            destination = "/profiles"
+            destination = f"/profiles?saved={draft_id}#saved-profiles"
         else:
             destination = f"/profiles/drafts/{draft_id}"
         return RedirectResponse(destination, status_code=303)

@@ -134,7 +134,7 @@ def test_new_draft_starts_overview_and_can_be_activated_before_completion(worksp
         assert entered.wait(2), "creating a direction must automatically start its overview"
         response = client.post(f"/api/profile-drafts/{draft['id']}/activate", json={"revision": draft["revision"]})
         assert response.status_code == 200
-        assert "方向小综述" in client.get(f"/profiles/drafts/{draft['id']}").text
+        assert "方向小综述" in client.get(f"/profiles/{draft['id']}/edit").text
     finally:
         release.set()
     result = wait_overview(client, draft["id"])

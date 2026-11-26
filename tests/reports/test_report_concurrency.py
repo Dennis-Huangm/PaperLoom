@@ -21,9 +21,9 @@ from paperloom.runtime.jobs.task_runtime import TaskCancelled, TaskHooks, bind_t
 def report_case(tmp_path):
     clients = []
 
-    def make(respond, *, figures=0, chunks=2):
-        config = AppConfig(output_dir=str(tmp_path / "run"))
-        config.llm.max_chunk_chars = 4000
+    def make(respond, *, figures=0, chunks=2, workers=2):
+        config = AppConfig(output_dir=str(tmp_path / "run"),
+                           llm=LLMConfig(max_chunk_chars=4000, analysis_workers=workers))
         paper = Paper.from_dict({"arxiv_id": "2501.12345", "title": "Concurrent paper"})
         parsed = ParsedPaper("".join(chr(65 + i) * 4000 for i in range(chunks)), ["source page"])
         images = []
@@ -75,7 +75,7 @@ def test_independent_figure_and_chunk_requests_overlap(report_case):
     def respond(key, user):
         if key == "figure":
             overlap.append(chunk_started.wait(1))
-            return "method figure explanation"
+            return "方法图解读"
         if key.startswith("chunk-"):
             chunk_started.set()
             return f"evidence-{key}"
@@ -86,7 +86,7 @@ def test_independent_figure_and_chunk_requests_overlap(report_case):
     assert "complete report" in generate()
     assert overlap == [True]
     assert synthesis[0].index("evidence-chunk-1") < synthesis[0].index("evidence-chunk-2")
-    assert "method figure explanation" in synthesis[0]
+    assert "方法图解读" in synthesis[0]
     assert checkpoint.state["chunks_done"] == 2
 
 
@@ -256,16 +256,16 @@ def test_multiple_figures_keep_distinct_checkpoints_and_source_order(report_case
         if key == "figure":
             number = int(re.search(r"Figure (\d+)", user[0]["text"])[1])
             time.sleep(0.02 if number == 1 else 0.005)
-            return f"explanation-{number}"
+            return f"图解-{number}"
         if key == "report":
             synthesis.append(user)
         return f"evidence-{key}"
 
     _, checkpoint, figures, generate = report_case(respond, figures=3)
     first = generate()
-    assert [figure.explanation for figure in figures] == ["explanation-1", "explanation-2", "explanation-3"]
-    assert synthesis[0].index("explanation-1") < synthesis[0].index("explanation-2") < synthesis[0].index("explanation-3")
-    assert all(json.loads((checkpoint.root / f"figure-{i}.json").read_text())["text"] == f"explanation-{i+1}"
+    assert [figure.explanation for figure in figures] == ["图解-1", "图解-2", "图解-3"]
+    assert synthesis[0].index("图解-1") < synthesis[0].index("图解-2") < synthesis[0].index("图解-3")
+    assert all(json.loads((checkpoint.root / f"figure-{i}.json").read_text(encoding="utf-8"))["text"] == f"图解-{i+1}"
                for i in range(3))
     for figure in figures:
         figure.explanation = ""
@@ -284,7 +284,7 @@ def test_table_organization_and_synthesis_wait_for_all_analysis_and_run_once(rep
         if key in {"figure", "chunk-1", "chunk-2"}:
             time.sleep(0.01)
             completed.add(key)
-            return "figure explanation" if key == "figure" else "### Table 1: Scores\n| Model | Score |\n|---|---|\n| A | 91.2 |"
+            return "方法图解读" if key == "figure" else "### Table 1: Scores\n| Model | Score |\n|---|---|\n| A | 91.2 |"
         assert completed == {"figure", "chunk-1", "chunk-2"}
         if key == "table":
             return json.dumps(plan)
@@ -314,7 +314,21 @@ def test_serial_setting_sends_only_one_analysis_request_at_a_time(report_case):
     assert peak == 1
 
 
-@pytest.mark.parametrize("workers", [0, 5, 1.5, True])
+@pytest.mark.parametrize("workers", [4, 5])
+def test_configured_analysis_requests_can_all_run_together(report_case, workers):
+    started = Barrier(workers, timeout=3)
+
+    def respond(key, user):
+        if key.startswith("chunk-"):
+            started.wait()
+        return f"evidence-{key}"
+
+    _, checkpoint, _, generate = report_case(respond, chunks=workers, workers=workers)
+    generate()
+    assert checkpoint.state["chunks_done"] == workers
+
+
+@pytest.mark.parametrize("workers", [0, -1, 1.5, True])
 def test_invalid_analysis_concurrency_is_rejected(workers):
     with pytest.raises(ValueError, match="并发数"):
         LLMConfig(analysis_workers=workers)

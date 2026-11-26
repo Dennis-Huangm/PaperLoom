@@ -32,6 +32,22 @@ def with_sources(paper: Paper, sources: list[str], publications: list[dict] | No
     return replace(paper, discovery_sources=list(dict.fromkeys(sources)), conference_publications=combined)
 
 
+def merge_candidate(existing: Paper, incoming: Paper) -> Paper:
+    """Combine discovery evidence without replacing better paper metadata."""
+    def quality(paper):
+        return (paper.metadata_status == "complete", paper.version or 0,
+                paper.metadata_source == "arxiv", paper.updated.timestamp() if paper.updated else 0)
+
+    best = incoming if quality(incoming) >= quality(existing) else existing
+    publications = list(existing.conference_publications)
+    for publication in incoming.conference_publications:
+        if publication not in publications:
+            publications.append(publication)
+    return replace(best, discovery_sources=list(dict.fromkeys(existing.discovery_sources + incoming.discovery_sources)),
+                   discovery_routes=list(dict.fromkeys(existing.discovery_routes + incoming.discovery_routes)),
+                   conference_publications=publications)
+
+
 def versioned(paper: Paper) -> Paper:
     if not paper.version:
         return paper

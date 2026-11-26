@@ -19,7 +19,9 @@
 /* One reading surface: navigation sits beside the document without card frames. */
 @media screen{
   body:has(.report-shell){background:#fff}
-  .report-shell{max-width:none;width:100%;gap:0;padding:0 0 64px;background:#fff}
+  /* Bottom spacing belongs to the article: shell padding pushes sticky panels
+     above the toolbar when the document reaches the end. */
+  .report-shell{max-width:none;width:100%;gap:0;padding:0;background:#fff}
   .report-article{border:0;border-radius:0;background:transparent;padding:44px clamp(28px,4vw,64px) 64px}
   .report-nav-panel{background:#fafaf8;border:0;border-radius:0;box-shadow:none;padding:24px 18px;gap:14px;top:0;height:100dvh}
   .report-sidebar.report-nav-panel{border-right:1px solid #eeede9}
@@ -43,7 +45,7 @@
 @media screen and (min-width:761px){.report-shell{grid-template-columns:240px minmax(0,1fr)}}
 @media screen and (min-width:1440px){.report-shell.papers-open{grid-template-columns:240px minmax(0,1fr) var(--report-papers-width,320px)}.report-shell.papers-open.toc-collapsed{grid-template-columns:minmax(0,1fr) var(--report-papers-width,320px)}}
 @media screen and (max-width:1439px){#report-papers{box-shadow:-10px 0 32px #30261a12}}
-@media screen and (max-width:760px){.report-shell{padding:0 0 32px}.report-article{padding:28px 20px}.report-sidebar.report-nav-panel{box-shadow:10px 0 32px #30261a12}}
+@media screen and (max-width:760px){.report-article{padding:28px 20px}.report-sidebar.report-nav-panel{box-shadow:10px 0 32px #30261a12}}
 /* Keep report actions reachable while reading, including when the dock narrows the page. */
 @media screen{
   :root{--report-topbar-height:68px}
@@ -71,15 +73,14 @@
 }
 @media(prefers-reduced-motion:reduce){.report-actions a,.report-actions button{transition:none}}
 
-/* Use the available monitor width, with navigation anchored beside the document. */
+/* Keep the reading area inset from the sidebars. */
 @media screen and (min-width:761px){
   .report-article{padding:40px clamp(28px,3vw,56px) 64px;font-size:17px;line-height:1.85}
-  :is(.report-article,.report-content)>:is(p,ul,ol,blockquote,h1,h2,h3,h4){max-width:none;margin-left:0;margin-right:0}
   .report-article>h1:first-child{font-size:clamp(30px,2.1vw,38px)}
   :is(.report-article,.report-content)>h1:first-child{line-height:1.3;margin-bottom:28px}
   .report-article table{line-height:1.7}
   .report-article table:not(.report-content table){font-size:15px}
-  .report-article table.report-metadata{display:table;width:100%;max-width:none;table-layout:fixed}
+  .report-article table.report-metadata{display:table;width:100%;table-layout:fixed}
   .report-article table.report-metadata :is(th,td){overflow-wrap:anywhere;min-width:0}
   .report-article table.report-metadata :is(th,td):first-child{width:10em}
   .report-nav-panel .toc-doc-title{font-size:.8125rem}
@@ -100,9 +101,68 @@
 .report-content{font-size:16px}
 @media screen{
   .report-article:has(>.report-content){container-type:inline-size}
-  .report-content{font-size:calc(clamp(15px,13px + .5cqi,18px) * var(--report-font-scale,1))}
-  .report-font-preference{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:.8125rem;white-space:nowrap}
-  .report-font-preference select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;min-height:36px;padding:4px}
+  .report-content{
+    --report-wide-image-width:min(100cqi,max(1600px,var(--report-reading-width,1200px)));
+    font-size:calc(clamp(15px,13px + .5cqi,18px) * var(--report-font-scale,1));
+  }
+  .report-article>.report-content>*,
+  .report-content>details[open]:has(table,img)>:is(summary,p,ul,ol,blockquote){
+    max-inline-size:min(100%,var(--report-reading-width,1200px));
+    margin-inline:auto;
+  }
+  .report-article>.report-content>h1:first-child{margin-inline:auto}
+  .report-article>.report-content>:is(details[open]:has(img):not(:has(table)),.report-image){
+    max-inline-size:var(--report-wide-image-width);
+  }
+  /* Markdown wraps figures in paragraphs. Let the frame expand while the caption wraps with the prose. */
+  .report-content>p>.report-image{
+    inline-size:var(--report-wide-image-width);
+    max-inline-size:none;
+    margin-inline:calc((100% - var(--report-wide-image-width)) / 2);
+  }
+  :is(.report-font-preference,.report-width-preference){display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:.8125rem;white-space:nowrap}
+  :is(.report-font-preference,.report-width-preference) select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;min-height:36px;padding:4px}
   .report-actions .report-font-preference button{padding-inline:8px}
   .report-font-preference button:disabled{opacity:.45;cursor:default}
+  .report-width-preference:has(>input[type="range"]){
+    display:grid;grid-template-columns:max-content minmax(82px,156px) 4.5em;gap:0 6px;
+    max-width:100%;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  }
+  .report-width-preference input{margin:0;accent-color:var(--accent)}
+  .report-width-preference>input{width:100%;height:20px;cursor:ew-resize}
+  .report-width-preference input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .report-width-preference output{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+  .report-width-preference>.report-width-presets{grid-column:2;display:flex;justify-content:space-between;gap:2px}
+  .report-actions .report-width-preference>.report-width-presets button{min-height:24px;height:auto;padding:2px 5px;font-size:.6875rem;line-height:1.2;border-color:transparent;color:var(--muted)}
+  .report-actions .report-width-toggle .fa-chevron-down{font-size:.625em;color:var(--muted)}
+  .report-actions .report-width-preference:has(:popover-open) .report-width-toggle{background:var(--accent-soft);border-color:#e6c5a6;color:var(--accent)}
+  .report-width-panel{
+    --report-width-panel-size:min(220px,calc(100% - 24px));
+    box-sizing:border-box;inline-size:var(--report-width-panel-size);max-block-size:calc(100dvh - 24px);
+    padding:12px 14px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);
+    box-shadow:0 8px 24px #20262d21;
+  }
+  .report-width-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-block-end:6px}
+  .report-width-heading label{font-weight:650}
+  .report-width-heading output{color:var(--muted);font-size:.9375em;font-weight:600}
+  .report-width-controls{display:grid;gap:4px}
+  .report-width-controls input{
+    inline-size:100%;block-size:26px;cursor:ew-resize;
+  }
+  .report-width-controls .report-width-presets{display:flex;justify-content:flex-end}
+  .report-actions .report-width-controls button{
+    height:auto;min-height:32px;padding:4px 8px;border-color:transparent;
+    color:var(--muted);font-size:inherit;line-height:1.25;
+  }
+  @supports (top:anchor(bottom)){
+    .report-width-toggle{anchor-name:--report-width-toggle}
+    .report-width-panel{
+      position-anchor:--report-width-toggle;inset:auto;margin:0;top:calc(anchor(bottom) + 8px);
+      left:clamp(12px,calc(anchor(center) - var(--report-width-panel-size) / 2),calc(100% - 12px - var(--report-width-panel-size)));
+      position-try-fallbacks:flip-block;
+    }
+  }
+  @supports not selector(:popover-open){
+    .report-actions .report-width-toggle{display:none}
+  }
 }

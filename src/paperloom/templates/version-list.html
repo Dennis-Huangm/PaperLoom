@@ -42,7 +42,7 @@
           {% if item.material_status.zotero == 'unknown' %}<p class="tracking-paper-meta">{{ 'Zotero 来源未刷新，请重新检查' if item.zotero_stale else item.zotero_reason or 'Zotero 版本尚未核实' }}</p>{% endif %}
           {% if item.check_error %}<p class="version-error">版本检查失败：{{ item.check_error }}</p>{% endif %}
           {% if item.sync_error %}<p class="version-error">{{ item.sync_error }}</p>{% endif %}
-          {% if item.sync_url %}<a href="{{ item.sync_url }}">查看同步记录与文件</a>{% endif %}
+          {% if item.sync_url %}<a href="{{ item.sync_url }}" target="_blank" rel="noopener noreferrer">查看同步记录与文件</a>{% endif %}
         </div>
         <div class="tracking-latest"><small>arXiv 最新</small><strong>{{ 'v' ~ item.latest_version if item.latest_version else '待检查' }}</strong></div>
       </article>

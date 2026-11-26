@@ -29,7 +29,7 @@ def workspace(tmp_path, monkeypatch):
         return model.chat(system, *args, **kwargs)
 
     monkeypatch.setattr(ResearchClients, "llm", property(lambda self: SimpleNamespace(enabled=model.enabled, chat=chat)))
-    monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=False)))
+    monkeypatch.setattr(ResearchClients, "alphaxiv", property(lambda self: SimpleNamespace(enabled=True, discover=lambda **kw: [])))
     # Newly created directions now start a background overview. Keep its
     # external literature sources offline without replacing the workflow.
     monkeypatch.setattr("paperloom.discovery.arxiv_client.ArxivClient.search_literature", lambda *a, **kw: [])
@@ -58,6 +58,20 @@ def test_generate_draft_preserves_user_intent_without_activating(workspace):
     page = client.get(f'/profiles/drafts/{draft["id"]}')
     assert page.status_code == 200
     assert "必要条件" in page.text and "survey" in page.text
+
+
+def test_draft_keeps_requested_reference_revision_for_overview(workspace, monkeypatch):
+    from paperloom.profiles.direction_overview import overview_snapshot
+    client, _, _ = workspace
+    resolved = paper("2401.00001")
+    resolved.version = 2
+    monkeypatch.setattr("paperloom.discovery.arxiv_client.ArxivClient.get", lambda self, aid: resolved)
+    response = client.post("/api/profile-drafts", json={
+        "name": "Robots", "keywords": ["robot"], "reference_ids": ["2401.00001v2"]})
+    assert response.status_code == 201
+    draft = response.json()
+    assert draft["references"][0]["title"] == resolved.title
+    assert overview_snapshot(draft)["reference_ids"] == ["2401.00001v2"]
 
 
 def test_model_names_new_direction_and_manual_rename_survives_regeneration(workspace):
@@ -166,7 +180,10 @@ def test_missing_model_client_dependency_creates_failed_draft(workspace, monkeyp
 
 def test_edit_activate_and_reject_stale_revision(workspace):
     client, _, root = workspace
-    draft = client.post("/api/profile-drafts", json={"name": "Editable", "keywords": ["world model"]}).json()
+    data = {"name": "Editable", "keywords": ["world model"], "request_id": "editable-activation"}
+    draft = client.post("/api/profile-drafts", json=data).json()
+    draft_id = draft["id"]
+    draft_url = f"/api/profile-drafts/{draft_id}"
     conditions = draft["plan"]["conditions"]
     conditions[0]["aliases"] = ["world model", "world models"]
     saved = client.post(f'/api/profile-drafts/{draft["id"]}/edit', json={
@@ -174,11 +191,22 @@ def test_edit_activate_and_reject_stale_revision(workspace):
     assert saved["revision"] == 2
     stale = client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 1})
     assert stale.status_code == 409
-    response = client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 2})
-    assert response.status_code == 200
-    assert (root / "profiles" / "active.txt").read_text().strip() == draft["id"]
+    active = (root / "profiles" / "active.txt").read_text().strip()
+    response = client.post(f"/profiles/drafts/{draft_id}/activate",
+                           data={"revision": 2, "profile_id": active}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/profiles?saved={draft_id}#saved-profiles"
+    assert (root / "profiles" / "active.txt").read_text().strip() == draft_id
+    page = client.get(response.headers["location"])
+    assert f'href="/profiles/{draft_id}/edit"' in page.text
+    assert f'href="/profiles/drafts/{draft_id}"' not in page.text
+    assert "暂无已删除草稿" in page.text
+    assert not (root / "profiles" / "drafts" / f"{draft_id}.yaml").exists()
+    assert client.get(draft_url).status_code == 404
     # Same revision is safe to retry and does not duplicate the formal profile.
-    assert client.post(f'/api/profile-drafts/{draft["id"]}/activate', json={"revision": 2}).status_code == 200
+    assert client.post(draft_url + "/activate", json={"revision": 2}).status_code == 200
+    assert client.post(draft_url + "/activate", json={"revision": 1}).status_code == 409
+    assert client.post("/api/profile-drafts", json=data).status_code == 409
 
 
 def test_regeneration_keeps_edits_and_deleted_suggestions(workspace):
@@ -393,7 +421,7 @@ def test_advanced_query_edit_is_validated_and_survives_regeneration(workspace):
 
 
 @pytest.mark.parametrize("adapter", ["json", "form"])
-@pytest.mark.parametrize("change", ["edit", "delete", "restore", "purge"])
+@pytest.mark.parametrize("change", ["edit", "delete", "restore", "purge", "activate"])
 def test_late_regeneration_cannot_overwrite_edit_or_resurrect_draft(workspace, adapter, change):
     client, model, root = workspace
     draft = client.post('/api/profile-drafts', json={"name": "Concurrent", "keywords": ["world model"]}).json()
@@ -415,6 +443,8 @@ def test_late_regeneration_cannot_overwrite_edit_or_resurrect_draft(workspace, a
                 saved = client.post(url + '/edit', json={"revision": 1, "name": "User edit wins"})
                 assert saved.status_code == 200
                 expected = saved.json()
+            elif change == 'activate':
+                assert client.post(url + '/activate', json={"revision": 1}).status_code == 200
             else:
                 assert client.post(url + '/delete', json={"revision": 1}).status_code == 200
                 if change == 'restore':
@@ -434,7 +464,7 @@ def test_late_regeneration_cannot_overwrite_edit_or_resurrect_draft(workspace, a
         assert not (root / 'profiles/drafts' / f'{draft["id"]}.yaml').exists()
 
 
-@pytest.mark.parametrize("change", ["edit", "delete", "restore"])
+@pytest.mark.parametrize("change", ["edit", "delete", "restore", "activate"])
 def test_late_preview_retains_revision_and_never_recreates_deleted_draft(workspace, monkeypatch, change):
     client, _, root = workspace
     draft = client.post('/api/profile-drafts', json={"name": "Preview race", "keywords": ["world model"]}).json()
@@ -451,6 +481,8 @@ def test_late_preview_retains_revision_and_never_recreates_deleted_draft(workspa
         assert started.wait(3)
         if change == 'edit':
             assert client.post(url + '/edit', json={"revision": 1, "name": "Edited preview"}).status_code == 200
+        elif change == 'activate':
+            assert client.post(url + '/activate', json={"revision": 1}).status_code == 200
         else:
             assert client.post(url + '/delete', json={"revision": 1}).status_code == 200
             if change == 'restore':
@@ -465,7 +497,7 @@ def test_late_preview_retains_revision_and_never_recreates_deleted_draft(workspa
         time.sleep(.01)
     assert job['status'] == 'succeeded'
     current = client.get(url)
-    if change == 'delete':
+    if change in {'delete', 'activate'}:
         assert current.status_code == 404
         assert not (root / 'profiles/drafts' / f'{draft["id"]}.yaml').exists()
     else:

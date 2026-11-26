@@ -9,6 +9,7 @@ from dataclasses import asdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
+from uuid import uuid4
 from fastapi import Form, HTTPException, status
 from fastapi.responses import JSONResponse
 from ...papers.models import Paper
@@ -29,13 +30,21 @@ def register_routes(
 ) -> None:
     @app.post("/api/jobs/report", response_class=JSONResponse)
     def create_report_job(arxiv_id: str = Form(...), origin: str = Form(""),
-                          source_date: str = Form(""), report_id: str = Form("")) -> JSONResponse:
+                          source_date: str = Form(""), report_id: str = Form(""),
+                          stage: str = Form("full"), figure: int = Form(0)) -> JSONResponse:
         arxiv_id = arxiv_id.strip()
         if not ARXIV_ID_RE.match(arxiv_id):
             raise HTTPException(status_code=400, detail="请输入有效的 arXiv ID，例如 2407.05600")
 
         task = JobContext.capture(current_config(), project_root)
         current = task.config
+        scoped = {}
+        if stage != "full":
+            if stage not in {"render", "metadata", "figure", "publish"} or origin != "report" or not report_id:
+                raise HTTPException(status_code=400, detail="局部更新需要指定本地报告和有效范围")
+            if stage == "figure" and figure < 1:
+                raise HTTPException(status_code=400, detail="请填写要更新的实验图号")
+            scoped = {"stage": stage, "figure": figure if stage == "figure" else 0}
         if origin not in {"", "recommendation", "library", "report"}:
             raise HTTPException(status_code=400, detail="无效的论文来源")
         snapshot = None
@@ -50,12 +59,14 @@ def register_routes(
             if not snapshot.version:
                 raise HTTPException(status_code=409, detail="这条历史记录没有可靠版本号；请在生成页面输入 ID 获取最新版本，或输入指定版本号")
 
+        revision = (dict(scoped, report_id=report_id, revision_id=uuid4().hex[:12],
+                         revision_date=datetime.now(ZoneInfo(current.timezone)).date().isoformat()) if scoped else {})
         job = jobs.submit_request(f"{current.profile_name} · arXiv:{arxiv_id}",
                           capture_request("report", current, project_root, arxiv_id=arxiv_id,
-                                          snapshot=snapshot.to_dict() if snapshot else None),
+                                          snapshot=snapshot.to_dict() if snapshot else None, **revision),
                           identity=task.identity("report", arxiv_id=arxiv_id, origin=origin,
                                                  source_date=source_date, report_id=report_id,
-                                                 snapshot=snapshot.to_dict() if snapshot else None))
+                                                 snapshot=snapshot.to_dict() if snapshot else None, **scoped))
         return JSONResponse(asdict(job), status_code=status.HTTP_202_ACCEPTED)
 
     @app.post("/api/jobs/digest", response_class=JSONResponse)

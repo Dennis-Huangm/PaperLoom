@@ -1,0 +1,6 @@
+  <div class="draft-checks">{% for key, label in conference_choices.items() %}<label><input type="checkbox" name="conferences" value="{{ key }}" {% if key in discovery.get('conferences', []) %}checked{% endif %}>{{ label }}</label>{% endfor %}</div>
+  <div class="form-columns">
+    <label>起始会议年份<input type="number" name="conference_year_from" min="1987" max="{{ conference_current_year }}" value="{{ discovery.get('conference_year_from') or '' }}" placeholder="如 2022"></label>
+    <label>结束会议年份<input type="number" name="conference_year_to" min="1987" max="{{ conference_current_year }}" value="{{ discovery.get('conference_year_to') or '' }}" placeholder="如 2025"></label>
+  </div>
+  <p class="draft-help">起止年份均包含，仅用于会议论文。只收录成功关联 arXiv 的主会正式长文；不含 Findings、Workshop、短文和 Demo。NIPS 与 NeurIPS 为同一会议。</p>

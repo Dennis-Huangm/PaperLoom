@@ -78,6 +78,10 @@ def parse_feed(xml_text: str) -> list[Paper]:
     return papers
 
 
+class ArxivUnavailable(RuntimeError):
+    """The API exhausted its transport or service-level retries."""
+
+
 class ArxivClient:
     def __init__(
         self,
@@ -133,7 +137,7 @@ class ArxivClient:
                         defer_rate_limit(self.rate_limit_key, delay)
             except httpx.TransportError as exc:
                 if attempt == attempts - 1:
-                    raise RuntimeError(
+                    raise ArxivUnavailable(
                         f"arXiv API 连接失败，已自动重试 {self.max_retries} 次；请稍后再次刷新每日推荐"
                     ) from exc
                 delay = self.retry_base_delay * (2**attempt)
@@ -142,10 +146,10 @@ class ArxivClient:
                     return response
                 if attempt == attempts - 1:
                     if response.status_code == 429:
-                        raise RuntimeError(
+                        raise ArxivUnavailable(
                             f"arXiv API 当前限流（HTTP 429），已按 API 规则自动退避重试 {self.max_retries} 次；请稍后再刷新每日推荐"
                         )
-                    raise RuntimeError(
+                    raise ArxivUnavailable(
                         f"arXiv API 暂时不可用（HTTP {response.status_code}），已自动重试 {self.max_retries} 次"
                     )
                 if response.status_code == 429:
@@ -153,7 +157,7 @@ class ArxivClient:
                 else:
                     delay = self.retry_base_delay * (2**attempt)
             time.sleep(max(0.0, min(delay, 30.0)))
-        raise RuntimeError("arXiv API 请求失败")
+        raise ArxivUnavailable("arXiv API 请求失败")
 
     def search(
         self,

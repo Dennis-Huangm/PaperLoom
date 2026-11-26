@@ -84,7 +84,7 @@ def create_app(config_path: Path | str) -> FastAPI:
     templates.env.filters["config_dict"] = asdict
     templates.env.filters["summary_html"] = summary_html
     templates.env.filters["clean_summary_text"] = clean_summary_text
-    jobs = JobManager(output_root)
+    jobs = JobManager(output_root, profile_is_deleted=profiles.is_deleted)
     scheduler = ProfileScheduler(config_path, output_root, jobs)
 
     @asynccontextmanager
@@ -290,7 +290,7 @@ def create_app(config_path: Path | str) -> FastAPI:
     generate_profile_draft = register_profile_routes(
         app, profiles, current_config, templates, context, jobs, project_root)
 
-    recommendations_routes.register_routes(app, context, current_config, jobs, output_root, templates)
+    recommendations_routes.register_routes(app, context, current_config, jobs, output_root, profiles, templates)
 
 
     library_routes.register_routes(app, context, current_config, output_root, selected_paper, templates)
@@ -316,7 +316,7 @@ def create_app(config_path: Path | str) -> FastAPI:
 
     related_work_routes.register_routes(app, context, current_config, jobs, output_root, project_root, templates)
 
-    profiles_routes.register_routes(app, context, generate_profile_draft, profiles, templates)
+    profiles_routes.register_routes(app, context, generate_profile_draft, profiles, scheduler, templates)
 
 
     settings_routes.register_routes(app, config_path, context, current_config, output_root, profiles, project_root, templates)

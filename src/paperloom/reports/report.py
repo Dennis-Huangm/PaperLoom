@@ -28,7 +28,7 @@ from ..sources.source_spans import (
 from .report_metadata import metadata_link, protect_metadata
 from .report_completeness import normalize_table_titles
 from .tables.report_tables import ReportTables, GeneratedReport
-from .report_figures import experiment_material, render_experiment_figures
+from .report_figures import expand_experiment_groups, experiment_material, figure_reading, render_experiment_figures
 
 
 CHUNK_SYSTEM = """你是严谨的 AI 论文阅读助手。仅依据提供的论文片段抽取信息，不得补写不存在的结论。
@@ -265,8 +265,8 @@ def finalize_report_structure(
                     f"#### {label}",
                     f"![论文方法图 {label}]({figure.path.name})",
                     "**通俗解读**",
-                    figure.explanation
-                    or "这张图用于概括该部分的方法结构；具体模块含义请结合紧随其后的核心方法说明阅读。",
+                    *figure_reading(figure),
+                    "[查看论文原文](paper.pdf)",
                 ]
             )
         if clean_analysis and not all(figure.explanation for figure in method_figures):
@@ -307,6 +307,17 @@ class ReportGenerator:
         return result
 
     def generate(
+        self, paper, metadata, parsed, main_figure,
+    ) -> str:
+        """Return ready-to-read Markdown for standalone callers."""
+        from .report_publication import prepare_publication
+        composed = self.compose(paper, metadata, parsed, main_figure)
+        if not isinstance(composed, GeneratedReport):
+            return composed
+        text = prepare_publication(composed, paper, metadata, main_figure, composed.tables, finalize_report_structure)
+        return GeneratedReport(text, composed.tables, composed.draft)
+
+    def compose(
         self,
         paper: Paper,
         metadata: VerifiedMetadata,
@@ -338,7 +349,12 @@ class ReportGenerator:
             from .tables.table_organization import organize_tables
             table_catalogue = organize_tables(evidence_notes, table_inventory, parsed, self._chat)
             synthesis_notes = table_catalogue.synthesis_notes(evidence_notes)
-        except Exception:
+        except CheckpointWriteError:
+            raise
+        except Exception as exc:
+            if isinstance(exc, OSError) and not isinstance(exc, (TimeoutError, ConnectionError)):
+                raise
+            task_warning("表格整理", f"整理失败，已保留分片笔记（{type(exc).__name__}）。")
             table_inventory, table_catalogue, synthesis_notes = [], ReportTables(()), evidence_notes
         evidence_text = "\n\n".join(f"### 片段 {i + 1}\n{note}" for i, note in enumerate(synthesis_notes))
         table_inventory_text = "\n".join(
@@ -376,12 +392,15 @@ class ReportGenerator:
 ## 实验图材料（按原文顺序，全部保留）
 {experiment_material(report_figures)}
 
-逐张使用独立一行的 `[[实验图:figure-N]]` 在对应实验讨论中选择展示位置，N 必须来自上面的材料。
+用实验图组在对应实验讨论中放置图号，编号必须来自上面的材料。
 每张图只展示一次，其他地方用原 Figure 编号引用。混合设置与结果的图保留完整图，按主要用途放置。
 设置、数据与评测流程图放“实验设置”，结果对比、定性案例、消融图放“关键结果”。各章节内实验主题沿用原论文顺序。
-图的位置紧邻对应分析，解释实验条件、比较对象、趋势、结论及限制，不要只有图而没有实验分析。
-程序负责插入原图及图示解读，不要重复生成图片链接或复述已有图示解读；正文负责解释实验意义。
-即使图片提取或视觉解读失败，也保留原文图注与正文支持的实验分析，不猜测视觉细节。
+专门讨论实验图的小节只输出以下结构（示例图号须替换为实际编号）。组内每张图的条件、趋势、局限、原文入口均随图插入。
+:::实验图组 2,3
+共同结论：用一句中文陈述只有结合这些图才能得出的判断，句末附相应证据 ID。
+:::
+单张图使用“:::实验图组 N”与下一行“:::”，其中没有共同结论字段。多张图没有共同结论时也省略此字段。
+上述图组独占所在主题的小节，不在组外按图逐项复述。其他独立实验结果、表格、实验流程另起主题小节，以正常 Markdown 完整保留。
 
 ## 分片证据笔记
 {evidence_text}
@@ -427,7 +446,7 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 3. 关键实验数值必须保留支持它的原文片段 ID；不要重新抄写摘录或自行生成页码。
 4. 不得将 arXiv 首发日期写成正式发表日期。
 5. 所有数学公式必须使用标准 LaTeX：行内公式用 `\\(...\\)`，独立公式用 `\\[...\\]`；不得用普通方括号代替公式定界符。
-6. 方法图由后续定稿器统一插入；不得输出“方法图解析”“主图说明”或在核心方法中创建 Figure/Fig. 编号小节。实验图使用上面的实验图位置指令，按实验主题组织分析。
+6. 方法图由后续定稿器统一插入；不得输出“方法图解析”“主图说明”或在核心方法中创建 Figure/Fig. 编号小节。实验图按主题放置位置指令，单图分析由图块呈现。
 7. 如果没有可靠方法图，跳过方法图内容，不得写“未提取到主图”等提示；不影响实验图及实验分析。
 8. 不得生成“阅读建议”或“核验备注”小节。
 9. {CORE_METHOD_GUIDANCE}
@@ -447,14 +466,9 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         if checkpoint:
             checkpoint.publish(report_ready=True)
         raw_draft = report
-        # Compatibility with a model that ignores the slot instruction is a
-        # projection to identities, never a second source of table values.
-        try:
-            report = table_catalogue.render(report)
-        except Exception:
-            report = table_catalogue.fallback_report(raw_draft)
+        report = expand_experiment_groups(report, report_figures)
         report = normalize_grouped_source_ids(report)
-        report = protect_metadata(self._normalize_title(report, paper.title), paper, metadata)
+        report = self._normalize_title(report, paper.title)
         return GeneratedReport(report, table_catalogue, raw_draft)
 
     def _analyze_material(self, paper, parsed, figures, chunks, banks):
@@ -467,7 +481,7 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
         # Interleave both kinds so a long figure does not hold back all text.
         for index in range(max(len(figures), len(chunks))):
             if index < len(figures):
-                tasks.append(("figure", index, partial(self._explain_figure, index, paper, figures[index], parsed)))
+                tasks.append(("figure", index, partial(self.explain_figure, index, paper, figures[index], parsed)))
             if index < len(chunks):
                 tasks.append(("chunk", index, partial(self._analyze_chunk, index + 1,
                     chunks[index], banks[index], parsed, len(chunks))))
@@ -541,7 +555,7 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 
 {chunk}
 
-独立 PDF 原文片段（可能与解析正文分片不同；同时提取这里的证据，引用实际 ID）：
+独立 PDF 原文片段（仅供原文分析和引用；窗口可能从词中间开始）：
 {span_material(bank)}
 
 本分片表格对应的完整 PDF 物理页（独立于 Docling 的列划分）：
@@ -549,63 +563,66 @@ N 必须来自上述数据里的实际 id。每个 id 只放一次；其他段�
 
 请提取：研究问题、方法机制、关键公式及符号定义、主要贡献、实验设置、关键结果与数值、作者明确陈述的局限性。
 没有出现的项目写“本片段未出现”，不要把 future work 自动当成局限性。
-另保留资源链接及附录中的指标定义；表格行与列归属不清楚时标为待核对，不猜测。
+另保留资源链接及附录中的指标定义。
+只从完整物理页或正文分片中能够同时确认原表号和表头的材料提取表格。短引用窗口只用来支持分析和引用，即使其中有多行连续数值，也不得据此另建矩阵或编造占位列名。无法确认表号或表头时，可记录原文能支持的分析，完整表格交给含有原表题和表头的分片提取。
 解析正文的表头、列数或行列归属与独立 PDF 页面不同，应回查完整页面及其证据 ID，不能把解析器多出的列、重复单元格或分片边界当作原文缺失。
 同一原表的全部模型、难度和指标应保留，不能把完整数值行压缩成无列归属的数值串。""",
         )
 
-    def _explain_figure(self, index, paper, figure, parsed):
+    def explain_figure(self, index, paper, figure, parsed):
         checkpoint = current_report_checkpoint()
-        if figure.explanation:
+        experiment = figure.role == "experiment"
+        if experiment and figure.review_signature and figure.explanation:
+            return
+        if figure.explanation and not experiment and figure.explanation != figure.caption and re.search(r"[一-鿿]", figure.explanation):
             return
         context = ""
-        if parsed and figure.role == "experiment":
+        if parsed and experiment:
             if 0 < figure.page <= len(parsed.page_texts):
                 context = parsed.page_texts[figure.page - 1][:10000]
             else:
                 context = "\n".join(page for page in parsed.page_texts if figure.caption[:30] in normalize_space(page))[:10000]
-        inputs = ["figure-explanation-v2", file_digest(figure.path) if figure.image_available else "missing",
+        figure.explanation = ""
+        figure.explanation_basis = ""
+        inputs = ["figure-reading-v4", file_digest(figure.path) if figure.image_available else "missing",
                   paper.title, paper.abstract, figure.caption, figure.role, context] if checkpoint else None
-        cached = checkpoint.get(f"figure-{index}", inputs) if checkpoint else None
-        if cached:
-            figure.explanation = cached
-            return
-        task_checkpoint()
-        try:
-            if not figure.image_available:
-                raise ValueError("image unavailable")
-            options = {"role": "experiment", "context": context} if figure.role == "experiment" else {}
-            with checkpoint.request_stage(f"figure-{index}") if checkpoint else nullcontext():
-                figure.explanation = self.llm.describe_figure(
-                    figure.path, paper.title, paper.abstract, figure.caption, **options,
-                )
-            if not figure.explanation.strip():
-                raise ValueError("empty figure explanation")
-        except Exception as vision_exc:
+        modes = ("visual", "text") if figure.image_available else ("text",)
+        stages = {"visual": f"figure-{index}", "text": f"figure-{index}-text"}
+        if checkpoint:
+            for mode in modes:
+                cached = checkpoint.get(stages[mode], inputs)
+                if cached and cached != figure.caption and re.search(r"[一-鿿]", cached):
+                    figure.explanation, figure.explanation_basis = cached, mode
+                    return
+        for mode in modes:
+            stage = stages[mode]
+            task_checkpoint()
             try:
-                guidance = ("解释实验条件、坐标或子图含义、比较对象、趋势和结论边界。只依据图注和正文，不猜测视觉细节。"
-                            if figure.role == "experiment" else "解释图的输入、关键步骤、输出和核心含义。")
-                with checkpoint.request_stage(f"figure-{index}-text") if checkpoint else nullcontext():
-                    figure.explanation = self.llm.chat(
-                        "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
-                        f"""论文：{paper.title}
-摘要：{paper.abstract[:1200]}
-原始 caption：{figure.caption}
-
-原文上下文：{context}
-请用 2-4 句通俗中文{guidance}""",
-                    ).strip()
-                if figure.role == "experiment":
-                    figure.explanation = "（依据原文图注与正文，未作视觉解读。）" + (figure.explanation or figure.caption)
-            except Exception as text_exc:
-                task_warning(
-                    "LLM 图片解读",
-                    "图示的视觉与文本解读均失败，报告将保留原始图注。"
-                    f"请检查模型是否支持图片输入（{type(vision_exc).__name__}; {type(text_exc).__name__}）。",
-                )
-                figure.explanation = ("（保留原文图注，未作视觉解读。）" if figure.role == "experiment" else "") + figure.caption
-        if checkpoint and figure.explanation:
-            checkpoint.put(f"figure-{index}", inputs, figure.explanation)
+                with checkpoint.request_stage(stage) if checkpoint else nullcontext():
+                    if mode == "visual":
+                        options = {"role": "experiment", "context": context} if experiment else {}
+                        text = self.llm.describe_figure(figure.path, paper.title, paper.abstract, figure.caption, **options)
+                    else:
+                        guidance = ("说明实验条件、比较对象、作者报告的结果及其适用范围。"
+                                    if experiment else "说明方法图的输入、步骤和输出。")
+                        text = self.llm.chat(
+                            "你是论文图示讲解助手。仅依据提供的原文，不猜测。",
+                            f"论文：{paper.title}\n摘要：{paper.abstract[:1200]}\n原始 caption：{figure.caption}"
+                            f"\n原文上下文：{context}\n请用 2–4 句中文{guidance}不要描述未看到的曲线或图像。",
+                        )
+                text = text.strip()
+                if not text or text == figure.caption or not re.search(r"[一-鿿]", text):
+                    raise ValueError("missing Chinese figure reading")
+            except CheckpointWriteError:
+                raise
+            except Exception as exc:
+                if mode == modes[-1]:
+                    task_warning("LLM 图片解读", f"图示解读未完成，已保留原文图注（{type(exc).__name__}）。")
+                continue
+            figure.explanation, figure.explanation_basis = text, mode
+            if checkpoint:
+                checkpoint.put(stage, inputs, text)
+            return
 
     @staticmethod
     def _normalize_title(report: str, paper_title: str) -> str:
